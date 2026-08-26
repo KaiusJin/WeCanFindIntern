@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field, field_validator
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.ingestion.jobspy_adapter import SUPPORTED_SITES, JobSpyQuery
+from wecanfindintern.ingestion.collection_catalog import expand_collection_catalog
+from wecanfindintern.ingestion.location_query import resolve_query_location
 from wecanfindintern.scheduler.repository import CollectionRepository
 
 
@@ -43,6 +45,7 @@ class PlanDefinition(BaseModel):
             values = dict(self.query)
             source_overrides = values.pop("source_overrides", {})
             values.update(source_overrides.get(site, {}))
+            values = resolve_query_location(values, site)
             JobSpyQuery.model_validate(
                 {
                     **values,
@@ -55,7 +58,9 @@ class PlanDefinition(BaseModel):
 
 async def seed(path: Path) -> int:
     raw = json.loads(path.read_text(encoding="utf-8"))
-    definitions = [PlanDefinition.model_validate(item) for item in raw]
+    definitions = [
+        PlanDefinition.model_validate(item) for item in expand_collection_catalog(raw)
+    ]
     database = Database(Settings.from_env())
     await database.open()
     try:
@@ -63,6 +68,7 @@ async def seed(path: Path) -> int:
         for definition in definitions:
             definition.validate_queries()
             await repository.upsert_plan(definition.model_dump(mode="json"))
+        await repository.disable_plans_except([definition.name for definition in definitions])
     finally:
         await database.close()
     return len(definitions)

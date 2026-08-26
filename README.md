@@ -86,16 +86,17 @@ PYTHONPATH=src .venv/bin/python scripts/ingest_jobspy_to_db.py \
 
 ## 启动自动多来源采集
 
-采集计划位于 `config/collection_plans.json`，默认整合 Indeed、LinkedIn、
-Glassdoor、ZipRecruiter 和 Google Jobs，并将执行间隔设为 14,400 秒（4 小时）。
+采集关键词目录位于 `config/collection_plans.json`。当前范围严格限定为美国和加拿大的
+Computer Science / Software、Data Science、Machine Learning / AI 实习与 Co-op，
+并使用已验证可用的 Indeed 和 LinkedIn。目录会自动展开为国家、关键词和来源查询。
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/seed_collection_plans.py
-PYTHONPATH=src .venv/bin/python scripts/run_collection_scheduler.py
+PYTHONPATH=src .venv/bin/python scripts/run_collection_campaign.py
 ```
 
-调度时间、运行租约、每个来源的 offset、重试次数和下次重试时间全部保存在
-PostgreSQL。worker 重启后会继续未完成的来源；重复抓取不会重复创建职位或原始快照。
+campaign 严格按“全部采集 → 全量去重 → 全量正则薪资 → DeepSeek 薪资”的顺序执行。
+采集结果若无法确认属于美国或加拿大，会在数据库写入前被排除。
 
 公开岗位格式为 `job.v3`。JSON Schema 位于 `schemas/job.v3.json`、
 `schemas/job-page.v3.json` 和 `schemas/job-facets.v2.json`，可通过以下命令重新生成：

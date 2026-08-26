@@ -15,6 +15,21 @@ class CollectionRepository:
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self.pool = pool
 
+    async def disable_plans_except(self, names: list[str]) -> None:
+        async with self.pool.connection() as connection:
+            await connection.execute(
+                """
+                UPDATE collection_plans
+                SET enabled = false,
+                    active_run_id = NULL,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                WHERE NOT (name = ANY(%s))
+                """,
+                (names,),
+            )
+
     async def upsert_plan(self, definition: dict[str, Any]) -> None:
         async with self.pool.connection() as connection:
             await connection.execute(
@@ -101,6 +116,13 @@ class CollectionRepository:
         sites: list[str],
     ) -> None:
         async with self.pool.connection() as connection, connection.transaction():
+            await connection.execute(
+                """
+                DELETE FROM collection_checkpoints
+                WHERE plan_id = %s AND NOT (source = ANY(%s))
+                """,
+                (plan_id, sites),
+            )
             for site in sites:
                 await connection.execute(
                     """

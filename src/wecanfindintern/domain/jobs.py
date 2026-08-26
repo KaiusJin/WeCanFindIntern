@@ -140,6 +140,8 @@ COUNTRY_ALIASES = {
     "united states": "US",
     "uk": "GB",
     "united kingdom": "GB",
+    "fr": "FR",
+    "france": "FR",
 }
 
 CANADIAN_REGION_ALIASES = {
@@ -224,6 +226,7 @@ COUNTRY_NAMES = {
     "CA": "Canada",
     "US": "United States",
     "GB": "United Kingdom",
+    "FR": "France",
 }
 
 CANADIAN_CITY_NAMES = {
@@ -241,6 +244,7 @@ def canonical_job_from_jobspy(
     *,
     scraped_at: datetime | None = None,
     cached_salary: SalaryRange | None = None,
+    allow_salary_extraction: bool = True,
 ) -> CanonicalJobInput:
     """Convert the JobSpy boundary model into the long-lived business contract."""
 
@@ -266,7 +270,9 @@ def canonical_job_from_jobspy(
         and job.salary.interval
         and (job.salary.minimum is not None or job.salary.maximum is not None)
     )
-    if has_structured_salary and job.salary:
+    if not allow_salary_extraction:
+        pass
+    elif has_structured_salary and job.salary:
         minimum = to_decimal(job.salary.minimum)
         maximum = to_decimal(job.salary.maximum)
         salary = SalaryRange(
@@ -289,12 +295,14 @@ def canonical_job_from_jobspy(
             job.description,
             country_code=location.country_code,
         )
-        extracted = extract_salary_hybrid(
-            job.description,
-            country_code=location.country_code,
-            title=job.title,
-            regex_result=regex_salary,
-        )
+        extracted = regex_salary
+        if extracted is None:
+            extracted = extract_salary_hybrid(
+                job.description,
+                country_code=location.country_code,
+                title=job.title,
+                regex_result=regex_salary,
+            )
         if extracted:
             salary = SalaryRange(
                 interval=extracted.interval,
@@ -424,6 +432,14 @@ def parse_location(value: str | None) -> Location:
     raw = value.strip()
     if normalize_text(raw) in {"remote", "worldwide"}:
         return Location(raw=raw, normalized="remote")
+    country_only = COUNTRY_ALIASES.get(normalize_text(raw))
+    if country_only:
+        return Location(
+            raw=raw,
+            country_code=country_only,
+            country_name=COUNTRY_NAMES.get(country_only),
+            normalized=normalize_text(country_only),
+        )
 
     parts = [part.strip() for part in raw.split(",") if part.strip()]
     city_raw = parts[0] if parts else None

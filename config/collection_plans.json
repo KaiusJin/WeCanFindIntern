@@ -1,31 +1,52 @@
-[
-  {
-    "name": "canada-software-internships",
-    "enabled": true,
-    "sites": ["indeed", "linkedin", "glassdoor", "zip_recruiter", "google"],
-    "query": {
-      "search_term": "software engineer intern",
-      "google_search_term": "software engineer intern jobs in Canada",
-      "location": "Canada",
-      "country_indeed": "Canada",
-      "job_type": "internship",
-      "distance": 50,
-      "description_format": "markdown",
-      "linkedin_fetch_description": true,
-      "enforce_annual_salary": true,
-      "source_overrides": {
-        "glassdoor": {
-          "location": "Toronto, ON"
-        },
-        "zip_recruiter": {
-          "location": "Toronto, ON"
-        }
-      },
-      "verbose": 1
+{
+  "sites": ["indeed", "linkedin"],
+  "locations": [
+    {"country_code": "CA"},
+    {"country_code": "US"}
+  ],
+  "keyword_groups": [
+    {
+      "domain": "computer-science-software",
+      "keywords": [
+        "software engineer intern",
+        "software developer intern",
+        "software engineering co-op",
+        "backend engineer intern",
+        "frontend engineer intern",
+        "full stack developer intern",
+        "cloud devops intern",
+        "cybersecurity intern",
+        "embedded software intern"
+      ]
     },
+    {
+      "domain": "data-science",
+      "keywords": [
+        "data science intern",
+        "data analyst intern",
+        "data engineer intern",
+        "analytics intern"
+      ]
+    },
+    {
+      "domain": "machine-learning-ai",
+      "keywords": [
+        "machine learning engineer intern",
+        "artificial intelligence intern",
+        "applied scientist intern",
+        "computer vision intern",
+        "natural language processing intern",
+        "MLOps intern"
+      ]
+    }
+  ],
+  "defaults": {
     "interval_seconds": 14400,
     "page_size": 25,
-    "max_results_per_source": 200,
-    "max_attempts": 5
+    "max_results_per_source": 40,
+    "max_attempts": 3,
+    "distance": 100,
+    "linkedin_fetch_description": true,
+    "verbose": 1
   }
-]
+}

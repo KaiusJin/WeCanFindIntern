@@ -9,8 +9,9 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from wecanfindintern.db.ingestion_repository import JobIngestionRepository
-from wecanfindintern.domain.jobs import canonical_job_from_jobspy, hash_text
+from wecanfindintern.domain.jobs import canonical_job_from_jobspy
 from wecanfindintern.ingestion.jobspy_adapter import JobSpyQuery, scrape_and_normalize
+from wecanfindintern.ingestion.location_query import resolve_query_location
 from wecanfindintern.scheduler.models import CollectionCheckpoint, CollectionPlan
 from wecanfindintern.scheduler.repository import CollectionRepository
 
@@ -109,6 +110,7 @@ class CollectionRunner:
         checkpoint: CollectionCheckpoint,
     ) -> datetime | None:
         offset = checkpoint.offset
+        seen_fingerprints: set[str] = set()
         await self.collection_repository.mark_running(plan.id, checkpoint.source)
 
         while offset < plan.max_results_per_source:
@@ -124,23 +126,26 @@ class CollectionRunner:
                     )
                     return None
 
-                salary_cache = await self.ingestion_repository.persisted_salaries_by_source(
-                    job.source_fingerprint for job in result.jobs
-                )
-                canonical_jobs = []
-                for job in result.jobs:
-                    description_hash = hash_text(job.description) if job.description else None
-                    persisted = salary_cache.get(job.source_fingerprint)
-                    cached_salary = (
-                        persisted[2]
-                        if persisted is not None and persisted[1] == description_hash
-                        else None
+                new_jobs = [
+                    job
+                    for job in result.jobs
+                    if job.source_fingerprint not in seen_fingerprints
+                ]
+                if not new_jobs:
+                    await self.collection_repository.mark_empty_complete(
+                        plan.id,
+                        checkpoint.source,
                     )
+                    return None
+                seen_fingerprints.update(job.source_fingerprint for job in new_jobs)
+
+                canonical_jobs = []
+                for job in new_jobs:
                     canonical = await asyncio.to_thread(
                         canonical_job_from_jobspy,
                         job,
                         scraped_at=scraped_at,
-                        cached_salary=cached_salary,
+                        allow_salary_extraction=False,
                     )
                     canonical_jobs.append(canonical)
                 await self.ingestion_repository.ingest_batch(
@@ -149,9 +154,7 @@ class CollectionRunner:
                     scraped_at=scraped_at,
                 )
                 next_offset = offset + len(result.jobs)
-                completed = (
-                    len(result.jobs) < requested or next_offset >= plan.max_results_per_source
-                )
+                completed = next_offset >= plan.max_results_per_source
                 await self.collection_repository.save_page(
                     plan_id=plan.id,
                     source=checkpoint.source,
@@ -192,6 +195,7 @@ class CollectionRunner:
         values = dict(plan.query)
         source_overrides = values.pop("source_overrides", {})
         values.update(source_overrides.get(source, {}))
+        values = resolve_query_location(values, source)
         values.update(
             sites=[source],
             offset=offset,
