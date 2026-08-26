@@ -19,7 +19,7 @@ from wecanfindintern.domain.salary import extract_salary_from_description
 from wecanfindintern.domain.salary_llm import extract_salary_hybrid
 
 
-async def backfill(*, batch_size: int, force: bool) -> int:
+async def backfill(*, batch_size: int, force: bool, refresh_salary: bool = False) -> int:
     database = Database(Settings.from_env())
     await database.open()
     updated = 0
@@ -73,9 +73,7 @@ async def backfill(*, batch_size: int, force: bool) -> int:
                     salary_maximum = decimal_value(row["salary_max"])
                     salary_currency = row["salary_currency"]
                     salary_source = row["salary_source"]
-                    should_extract_salary = salary_source == "description" or not salary_interval or (
-                        salary_minimum is None and salary_maximum is None
-                    )
+                    should_extract_salary = refresh_salary
                     if should_extract_salary:
                         regex_salary = extract_salary_from_description(
                             row["description"],
@@ -173,10 +171,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--batch-size", type=int, default=500)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--refresh-salary",
+        action="store_true",
+        help="explicitly rerun salary extraction instead of reusing persisted job values",
+    )
     args = parser.parse_args()
     if not 1 <= args.batch_size <= 5_000:
         parser.error("--batch-size must be between 1 and 5000")
-    updated = asyncio.run(backfill(batch_size=args.batch_size, force=args.force))
+    updated = asyncio.run(
+        backfill(
+            batch_size=args.batch_size,
+            force=args.force,
+            refresh_salary=args.refresh_salary,
+        )
+    )
     print(f"已更新 {updated} 个岗位，分类规则版本 {CLASSIFICATION_VERSION}")
 
 

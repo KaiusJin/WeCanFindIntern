@@ -161,6 +161,8 @@ CANADIAN_REGION_ALIASES = {
     "nunavut": "NU",
     "nu": "NU",
     "ontario": "ON",
+    "ontraio": "ON",
+    "ontairo": "ON",
     "on": "ON",
     "prince edward island": "PE",
     "pei": "PE",
@@ -173,6 +175,34 @@ CANADIAN_REGION_ALIASES = {
     "yukon": "YT",
     "yt": "YT",
 }
+
+US_REGION_NAMES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
+    "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
+    "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho",
+    "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+    "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+    "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
+    "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+    "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island",
+    "SC": "South Carolina", "SD": "South Dakota", "TN": "Tennessee",
+    "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia",
+    "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin",
+    "WY": "Wyoming", "DC": "District of Columbia",
+}
+
+US_REGION_ALIASES = {
+    alias: code
+    for code, name in US_REGION_NAMES.items()
+    for alias in (code.casefold(), name.casefold())
+}
+US_REGION_ALIASES.update({
+    "washington dc": "DC",
+    "washington d c": "DC",
+    "district columbia": "DC",
+})
 
 CANADIAN_REGION_NAMES = {
     "AB": "Alberta",
@@ -210,6 +240,7 @@ def canonical_job_from_jobspy(
     job: NormalizedJob,
     *,
     scraped_at: datetime | None = None,
+    cached_salary: SalaryRange | None = None,
 ) -> CanonicalJobInput:
     """Convert the JobSpy boundary model into the long-lived business contract."""
 
@@ -251,6 +282,8 @@ def canonical_job_from_jobspy(
             annualized_minimum=annualize_salary(minimum, job.salary.interval),
             annualized_maximum=annualize_salary(maximum, job.salary.interval),
         )
+    elif cached_salary is not None:
+        salary = cached_salary.model_copy(deep=True)
     else:
         regex_salary = extract_salary_from_description(
             job.description,
@@ -401,8 +434,11 @@ def parse_location(value: str | None) -> Location:
     if country is None and len(parts) == 2:
         # JobSpy sometimes returns "City, Region" without a country.
         region_raw = parts[-1]
-        if normalize_text(region_raw) in CANADIAN_REGION_ALIASES:
+        normalized_region = normalize_text(region_raw)
+        if normalized_region in CANADIAN_REGION_ALIASES:
             country = "CA"
+        elif normalized_region in US_REGION_ALIASES:
+            country = "US"
     elif country is None and len(parts) >= 3 and len(parts[-1]) == 2:
         country = parts[-1].upper()
 
@@ -431,6 +467,8 @@ def normalize_region_code(value: str | None, country_code: str | None) -> str | 
     normalized = normalize_text(value)
     if country_code == "CA" or normalized in CANADIAN_REGION_ALIASES:
         return CANADIAN_REGION_ALIASES.get(normalized, value.strip().upper())
+    if country_code == "US" or normalized in US_REGION_ALIASES:
+        return US_REGION_ALIASES.get(normalized, value.strip().upper())
     return value.strip().upper()
 
 
@@ -459,6 +497,8 @@ def normalize_region_name(
 ) -> str | None:
     if country_code == "CA" and region_code:
         return CANADIAN_REGION_NAMES.get(region_code, raw_value)
+    if country_code == "US" and region_code:
+        return US_REGION_NAMES.get(region_code, raw_value)
     return raw_value.strip() if raw_value else None
 
 

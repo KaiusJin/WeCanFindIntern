@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from wecanfindintern.db.ingestion_repository import JobIngestionRepository
-from wecanfindintern.domain.jobs import canonical_job_from_jobspy
+from wecanfindintern.domain.jobs import canonical_job_from_jobspy, hash_text
 from wecanfindintern.ingestion.jobspy_adapter import JobSpyQuery, scrape_and_normalize
 from wecanfindintern.scheduler.models import CollectionCheckpoint, CollectionPlan
 from wecanfindintern.scheduler.repository import CollectionRepository
@@ -124,9 +124,25 @@ class CollectionRunner:
                     )
                     return None
 
-                canonical_jobs = [
-                    canonical_job_from_jobspy(job, scraped_at=scraped_at) for job in result.jobs
-                ]
+                salary_cache = await self.ingestion_repository.persisted_salaries_by_source(
+                    job.source_fingerprint for job in result.jobs
+                )
+                canonical_jobs = []
+                for job in result.jobs:
+                    description_hash = hash_text(job.description) if job.description else None
+                    persisted = salary_cache.get(job.source_fingerprint)
+                    cached_salary = (
+                        persisted[2]
+                        if persisted is not None and persisted[1] == description_hash
+                        else None
+                    )
+                    canonical = await asyncio.to_thread(
+                        canonical_job_from_jobspy,
+                        job,
+                        scraped_at=scraped_at,
+                        cached_salary=cached_salary,
+                    )
+                    canonical_jobs.append(canonical)
                 await self.ingestion_repository.ingest_batch(
                     run_id=run_id,
                     jobs=canonical_jobs,

@@ -13,7 +13,7 @@ from _cli import add_query_arguments, query_from_args
 from wecanfindintern.config import Settings
 from wecanfindintern.db.ingestion_repository import JobIngestionRepository
 from wecanfindintern.db.pool import Database
-from wecanfindintern.domain.jobs import canonical_job_from_jobspy
+from wecanfindintern.domain.jobs import canonical_job_from_jobspy, hash_text
 from wecanfindintern.ingestion.jobspy_adapter import scrape_and_normalize
 
 
@@ -32,9 +32,25 @@ async def persist(query, normalized_jobs, scraped_at: datetime, batch_size: int)
     )
     counts: Counter[str] = Counter()
     try:
-        canonical_jobs = [
-            canonical_job_from_jobspy(job, scraped_at=scraped_at) for job in normalized_jobs
-        ]
+        salary_cache = await repository.persisted_salaries_by_source(
+            job.source_fingerprint for job in normalized_jobs
+        )
+        canonical_jobs = []
+        for job in normalized_jobs:
+            description_hash = hash_text(job.description) if job.description else None
+            persisted = salary_cache.get(job.source_fingerprint)
+            cached_salary = (
+                persisted[2]
+                if persisted is not None and persisted[1] == description_hash
+                else None
+            )
+            canonical = await asyncio.to_thread(
+                canonical_job_from_jobspy,
+                job,
+                scraped_at=scraped_at,
+                cached_salary=cached_salary,
+            )
+            canonical_jobs.append(canonical)
         for batch in chunks(canonical_jobs, batch_size):
             counts.update(
                 await repository.ingest_batch(

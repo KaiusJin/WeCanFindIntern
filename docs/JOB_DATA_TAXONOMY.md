@@ -64,7 +64,8 @@ JobSpy 原始行
 `unknown`。
 
 地点采用明确的三级层级：`country → region → city`。加拿大省和地区统一为官方
-两位码，例如 Ontario/ON 统一存储为 `ON`，Alberta 统一为 `AB`，避免 facets 和
+两位码，例如 Ontario/Ontraio/ON 统一存储为 `ON`，Alberta 统一为 `AB`；美国州名
+和州缩写也统一为 USPS 两位代码，例如 California/CA 统一为 `CA`，避免 facets 和
 趋势统计出现重复地区。常见城市别名也统一为一个官方显示名，例如 Montreal 和
 Montréal 都存入结构化城市 `Montréal`。`location.text` 永远保留来源原文。
 

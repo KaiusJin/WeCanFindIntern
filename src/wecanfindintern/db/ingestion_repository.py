@@ -21,7 +21,7 @@ from wecanfindintern.deduplication import (
     DedupeAction,
     choose_duplicate,
 )
-from wecanfindintern.domain.jobs import CanonicalJobInput
+from wecanfindintern.domain.jobs import CanonicalJobInput, SalaryRange
 
 
 class IngestionOutcome(StrEnum):
@@ -41,6 +41,50 @@ class JobIngestionRepository:
 
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self.pool = pool
+
+    async def persisted_salaries_by_source(
+        self,
+        source_fingerprints: Iterable[str],
+    ) -> dict[str, tuple[int, str | None, SalaryRange]]:
+        """Return job-ID-owned salary results for previously seen source jobs."""
+
+        fingerprints = sorted(set(source_fingerprints))
+        if not fingerprints:
+            return {}
+        binary_fingerprints = [bytes.fromhex(value) for value in fingerprints]
+        async with self.pool.connection() as connection:
+            rows = await (
+                await connection.execute(
+                    """
+                    SELECT encode(js.source_fingerprint, 'hex') AS source_fingerprint,
+                           j.id AS job_id, encode(j.description_hash, 'hex') AS description_hash,
+                           j.salary_interval, j.salary_min, j.salary_max, j.salary_currency,
+                           j.salary_source, j.salary_annual_min, j.salary_annual_max
+                    FROM job_sources js
+                    JOIN jobs j ON j.id = js.job_id
+                    WHERE js.source_fingerprint = ANY(%s::bytea[])
+                      AND j.salary_interval IS NOT NULL
+                      AND (j.salary_min IS NOT NULL OR j.salary_max IS NOT NULL)
+                    """,
+                    (binary_fingerprints,),
+                )
+            ).fetchall()
+        return {
+            row["source_fingerprint"]: (
+                row["job_id"],
+                row["description_hash"],
+                SalaryRange(
+                    interval=row["salary_interval"],
+                    minimum=row["salary_min"],
+                    maximum=row["salary_max"],
+                    currency=row["salary_currency"],
+                    source=row["salary_source"],
+                    annualized_minimum=row["salary_annual_min"],
+                    annualized_maximum=row["salary_annual_max"],
+                ),
+            )
+            for row in rows
+        }
 
     async def start_run(
         self,
