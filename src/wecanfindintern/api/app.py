@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.staticfiles import StaticFiles
 
 from wecanfindintern.api.models import (
     CollectionPlanResponse,
@@ -36,6 +38,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+WEB_DIR = Path(__file__).resolve().parents[3] / "web"
 
 
 def repository(request: Request) -> JobReadRepository:
@@ -136,3 +140,8 @@ async def list_collection_plans(
     repo: RepositoryDependency,
 ) -> list[CollectionPlanResponse]:
     return await repo.list_collection_plans()
+
+
+# Keep the browser experience in the same deployable service as the data API.
+# API routes are declared first, so the catch-all static route does not shadow them.
+app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")

@@ -18,6 +18,8 @@ from wecanfindintern.domain.classification import (
     ScheduleType,
     classify_job,
 )
+from wecanfindintern.domain.salary import extract_salary_from_description
+from wecanfindintern.domain.salary_llm import extract_salary_hybrid
 from wecanfindintern.ingestion.jobspy_adapter import NormalizedJob, canonicalize_url
 
 
@@ -228,18 +230,48 @@ def canonical_job_from_jobspy(
     block_key = hash_text(f"{block_company}|{location_key}")
 
     salary = None
-    if job.salary:
+    has_structured_salary = bool(
+        job.salary
+        and job.salary.interval
+        and (job.salary.minimum is not None or job.salary.maximum is not None)
+    )
+    if has_structured_salary and job.salary:
         minimum = to_decimal(job.salary.minimum)
         maximum = to_decimal(job.salary.maximum)
         salary = SalaryRange(
             interval=job.salary.interval,
             minimum=minimum,
             maximum=maximum,
-            currency=job.salary.currency.upper() if job.salary.currency else None,
-            source=job.salary.source,
+            currency=(
+                job.salary.currency.upper()
+                if job.salary.currency
+                else default_salary_currency(location.country_code)
+            ),
+            source=job.salary.source or "provider",
             annualized_minimum=annualize_salary(minimum, job.salary.interval),
             annualized_maximum=annualize_salary(maximum, job.salary.interval),
         )
+    else:
+        regex_salary = extract_salary_from_description(
+            job.description,
+            country_code=location.country_code,
+        )
+        extracted = extract_salary_hybrid(
+            job.description,
+            country_code=location.country_code,
+            title=job.title,
+            regex_result=regex_salary,
+        )
+        if extracted:
+            salary = SalaryRange(
+                interval=extracted.interval,
+                minimum=extracted.minimum,
+                maximum=extracted.maximum,
+                currency=extracted.currency,
+                source=extracted.source,
+                annualized_minimum=annualize_salary(extracted.minimum, extracted.interval),
+                annualized_maximum=annualize_salary(extracted.maximum, extracted.interval),
+            )
 
     classification = classify_job(
         title=job.title,
@@ -446,8 +478,26 @@ def derive_work_mode(job: NormalizedJob) -> WorkMode:
         return WorkMode.HYBRID
     if "remote" in source_value or job.is_remote is True:
         return WorkMode.REMOTE
+    inferred = infer_work_mode_from_text(job.description)
+    if inferred:
+        return inferred
     # False only means the source did not classify it as remote; it does not prove onsite.
     return WorkMode.UNKNOWN
+
+
+def infer_work_mode_from_text(description: str | None) -> WorkMode | None:
+    """Infer only explicit work-mode wording from a job description."""
+
+    text = normalize_text(description)
+    if not text:
+        return None
+    if "hybrid" in text:
+        return WorkMode.HYBRID
+    if any(token in text for token in ("fully remote", "100 remote", "work remotely", "remote position")):
+        return WorkMode.REMOTE
+    if any(token in text for token in ("on site", "onsite", "in person", "work at our")):
+        return WorkMode.ONSITE
+    return None
 
 
 def hash_text(value: str) -> str:
@@ -473,6 +523,14 @@ def annualize_salary(value: Decimal | None, interval: str | None) -> Decimal | N
         return None
     factor = SALARY_ANNUALIZATION_FACTORS.get(normalize_text(interval))
     return (value * factor).quantize(Decimal("0.01")) if factor else None
+
+
+def default_salary_currency(country_code: str | None) -> str:
+    return {
+        "CA": "CAD",
+        "US": "USD",
+        "GB": "GBP",
+    }.get(country_code or "", "USD")
 
 
 def ensure_utc(value: datetime) -> datetime:

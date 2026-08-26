@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="WeCanFindIntern job search and discovery" />
+    <title>WeCanFindIntern · Find your next opportunity</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">WeCanFindIntern<span>_</span></a>
+      <div class="topbar-note">Internships & early-career roles</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">JOB DISCOVERY / 01</p>
+        <h1>Find work worth starting.</h1>
+        <p class="hero-copy">Search jobs, skills, and locations to find your next move.</p>
+        <form id="search-form" class="searchbar">
+          <label class="search-input">
+            <span aria-hidden="true">⌕</span>
+            <input id="query" name="query" type="search" placeholder="Search jobs, skills, or companies — e.g. Python intern" autocomplete="off" />
+          </label>
+          <label class="search-location">
+            <span aria-hidden="true">⌖</span>
+            <input id="location" type="text" placeholder="Location, e.g. Toronto" autocomplete="off" />
+          </label>
+          <button class="primary-button" type="submit">Search jobs</button>
+        </form>
+        <div class="quick-searches" aria-label="Popular searches">
+          <span>Popular:</span>
+          <button type="button" data-query="software engineer intern">Software Engineer Intern</button>
+          <button type="button" data-query="data analyst">Data Analyst</button>
+          <button type="button" data-query="product designer">Product Designer</button>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="filters-panel">
+          <div class="filter-heading">
+            <h2>Filter jobs</h2>
+            <button id="clear-filters" class="text-button" type="button">Clear</button>
+          </div>
+
+          <label class="field-label" for="country">Country</label>
+          <select id="country"><option value="">All countries</option></select>
+
+          <label class="field-label" for="region">State / province</label>
+          <select id="region"><option value="">All regions</option></select>
+
+          <label class="field-label" for="city">City</label>
+          <select id="city"><option value="">All cities</option></select>
+
+          <label class="field-label" for="work-mode">Work mode</label>
+          <select id="work-mode">
+            <option value="">All work modes</option>
+            <option value="remote">Remote</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="onsite">On-site</option>
+            <option value="unknown">Work mode not specified</option>
+          </select>
+
+          <label class="field-label" for="opportunity-type">Opportunity type</label>
+          <select id="opportunity-type"><option value="">All opportunity types</option></select>
+
+          <label class="field-label" for="schedule-type">Schedule</label>
+          <select id="schedule-type"><option value="">All schedules</option></select>
+
+          <label class="field-label" for="category">Job category</label>
+          <select id="category"><option value="">All categories</option></select>
+
+          <label class="field-label" for="skill">Skill</label>
+          <select id="skill"><option value="">All skills</option></select>
+
+          <label class="checkbox-field">
+            <input id="has-salary" type="checkbox" />
+            <span>Only show jobs with salary</span>
+          </label>
+
+          <label class="field-label" for="annual-salary">Minimum annual salary</label>
+          <div class="salary-input"><span>$</span><input id="annual-salary" type="number" min="0" step="5000" placeholder="e.g. 50000" /><span>CAD</span></div>
+        </aside>
+
+        <section class="results-panel" aria-live="polite">
+          <div class="results-toolbar">
+            <div>
+              <p class="eyebrow">OPEN ROLES</p>
+              <h2 id="results-title">Latest jobs</h2>
+            </div>
+            <div class="results-meta">
+              <span id="result-status">Loading…</span>
+              <button id="refresh" class="icon-button" type="button" title="Refresh">↻</button>
+            </div>
+          </div>
+          <div id="error" class="notice error" hidden></div>
+          <div id="job-list" class="job-list"></div>
+          <div id="empty-state" class="empty-state" hidden>
+            <div class="empty-icon">⌁</div>
+            <h3>No matching jobs</h3>
+            <p>Try removing a filter or using a broader search term.</p>
+          </div>
+          <button id="load-more" class="load-more" type="button" hidden>Load more jobs</button>
+        </section>
+      </section>
+    </main>
+
+    <dialog id="job-dialog" class="job-dialog">
+      <button id="close-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
+      <div id="job-detail"></div>
+    </dialog>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

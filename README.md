@@ -116,6 +116,10 @@ PYTHONPATH=src .venv/bin/python scripts/backfill_job_classification.py
 PYTHONPATH=src .venv/bin/uvicorn wecanfindintern.api.app:app --reload
 ```
 
+启动后打开 <http://127.0.0.1:8000/> 即可使用职位搜索与浏览页面。页面支持关键词搜索，
+国家/地区/城市、工作模式、机会类型、工时、职位方向、技能和薪资筛选；职位卡片可打开
+详情并跳转到原始职位链接。
+
 ## 运行测试
 
 ```bash

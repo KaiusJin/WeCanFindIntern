@@ -9,6 +9,7 @@ description = "High-throughput job collection and data API for WeCanFindIntern"
 requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.116,<1.0",
+  "openai>=2.0,<3.0",
   "psycopg[binary,pool]>=3.2,<4.0",
   "python-jobspy==1.1.82",
   "uvicorn>=0.35,<1.0",

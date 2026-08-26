@@ -10,7 +10,13 @@ from decimal import Decimal
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.domain.classification import CLASSIFICATION_VERSION, classify_job
-from wecanfindintern.domain.jobs import annualize_salary, parse_location
+from wecanfindintern.domain.jobs import (
+    annualize_salary,
+    infer_work_mode_from_text,
+    parse_location,
+)
+from wecanfindintern.domain.salary import extract_salary_from_description
+from wecanfindintern.domain.salary_llm import extract_salary_hybrid
 
 
 async def backfill(*, batch_size: int, force: bool) -> int:
@@ -26,7 +32,8 @@ async def backfill(*, batch_size: int, force: bool) -> int:
                         """
                         SELECT id, title, description, employment_types, source_skills,
                                work_mode, salary_interval, salary_min, salary_max,
-                               location_text, classification_version
+                               salary_currency, salary_source,
+                               location_text, country_code, classification_version
                         FROM jobs
                         WHERE id > %s
                           AND (%s OR classification_version < %s)
@@ -48,7 +55,51 @@ async def backfill(*, batch_size: int, force: bool) -> int:
                         source_skills=row["source_skills"] or [],
                         work_mode=row["work_mode"],
                     )
+                    work_mode = row["work_mode"]
+                    if work_mode == "unknown":
+                        inferred = infer_work_mode_from_text(row["description"])
+                        if inferred:
+                            work_mode = inferred.value
+                            classification = classify_job(
+                                title=row["title"],
+                                description=row["description"],
+                                employment_types=row["employment_types"] or [],
+                                source_skills=row["source_skills"] or [],
+                                work_mode=work_mode,
+                            )
                     location = parse_location(row["location_text"])
+                    salary_interval = row["salary_interval"]
+                    salary_minimum = decimal_value(row["salary_min"])
+                    salary_maximum = decimal_value(row["salary_max"])
+                    salary_currency = row["salary_currency"]
+                    salary_source = row["salary_source"]
+                    should_extract_salary = salary_source == "description" or not salary_interval or (
+                        salary_minimum is None and salary_maximum is None
+                    )
+                    if should_extract_salary:
+                        regex_salary = extract_salary_from_description(
+                            row["description"],
+                            country_code=location.country_code or row["country_code"],
+                        )
+                        extracted_salary = await asyncio.to_thread(
+                            extract_salary_hybrid,
+                            row["description"],
+                            country_code=location.country_code or row["country_code"],
+                            title=row["title"],
+                            regex_result=regex_salary,
+                        )
+                        if extracted_salary:
+                            salary_interval = extracted_salary.interval
+                            salary_minimum = extracted_salary.minimum
+                            salary_maximum = extracted_salary.maximum
+                            salary_currency = extracted_salary.currency
+                            salary_source = extracted_salary.source
+                        elif salary_source == "description":
+                            salary_interval = None
+                            salary_minimum = None
+                            salary_maximum = None
+                            salary_currency = None
+                            salary_source = None
                     await connection.execute(
                         """
                         UPDATE jobs
@@ -60,7 +111,13 @@ async def backfill(*, batch_size: int, force: bool) -> int:
                             skill_tags = %s,
                             requirement_tags = %s,
                             display_tags = %s,
+                            work_mode = %s,
                             classification_version = %s,
+                            salary_interval = %s,
+                            salary_min = %s,
+                            salary_max = %s,
+                            salary_currency = %s,
+                            salary_source = %s,
                             salary_annual_min = %s,
                             salary_annual_max = %s,
                             city = %s,
@@ -82,13 +139,15 @@ async def backfill(*, batch_size: int, force: bool) -> int:
                             classification.skill_tags,
                             classification.requirement_tags,
                             classification.display_tags,
+                            work_mode,
                             classification.classification_version,
-                            annualize_salary(
-                                decimal_value(row["salary_min"]), row["salary_interval"]
-                            ),
-                            annualize_salary(
-                                decimal_value(row["salary_max"]), row["salary_interval"]
-                            ),
+                            salary_interval,
+                            salary_minimum,
+                            salary_maximum,
+                            salary_currency,
+                            salary_source,
+                            annualize_salary(salary_minimum, salary_interval),
+                            annualize_salary(salary_maximum, salary_interval),
                             location.city,
                             location.region_code,
                             location.region_name,

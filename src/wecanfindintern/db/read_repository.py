@@ -122,9 +122,9 @@ class JobReadRepository:
             predicates.append("j.salary_annual_max >= %s")
             parameters.append(filters.annual_salary_min)
         if filters.has_salary is True:
-            predicates.append("j.salary_max IS NOT NULL")
+            predicates.append("coalesce(j.salary_max, j.salary_annual_max) IS NOT NULL")
         elif filters.has_salary is False:
-            predicates.append("j.salary_max IS NULL")
+            predicates.append("j.salary_max IS NULL AND j.salary_annual_max IS NULL")
         if filters.currency:
             predicates.append("j.salary_currency = %s")
             parameters.append(filters.currency)
@@ -388,7 +388,16 @@ class JobReadRepository:
 
 def job_list_item(row: dict[str, Any]) -> JobListItem:
     salary = None
-    if any(row[key] is not None for key in ("salary_interval", "salary_min", "salary_max")):
+    if any(
+        row[key] is not None
+        for key in (
+            "salary_interval",
+            "salary_min",
+            "salary_max",
+            "salary_annual_min",
+            "salary_annual_max",
+        )
+    ):
         salary = SalaryResponse(
             interval=row["salary_interval"],
             minimum=row["salary_min"],

@@ -12,6 +12,7 @@
       "distance": 50,
       "description_format": "markdown",
       "linkedin_fetch_description": true,
+      "enforce_annual_salary": true,
       "source_overrides": {
         "glassdoor": {
           "location": "Toronto, ON"

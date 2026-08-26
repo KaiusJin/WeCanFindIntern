@@ -6,5 +6,6 @@ __pycache__/
 *.egg-info/
 .coverage
 .DS_Store
+.env
 data/raw/*
 !data/raw/.gitkeep
