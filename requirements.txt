@@ -1,0 +1,3 @@
+# JobSpy 源码已固定在 vendor/JobSpy，使用本地 editable 安装以便审计和升级。
+-e ./vendor/JobSpy
+-e .

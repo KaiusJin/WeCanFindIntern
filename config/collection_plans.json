@@ -1,0 +1,30 @@
+[
+  {
+    "name": "canada-software-internships",
+    "enabled": true,
+    "sites": ["indeed", "linkedin", "glassdoor", "zip_recruiter", "google"],
+    "query": {
+      "search_term": "software engineer intern",
+      "google_search_term": "software engineer intern jobs in Canada",
+      "location": "Canada",
+      "country_indeed": "Canada",
+      "job_type": "internship",
+      "distance": 50,
+      "description_format": "markdown",
+      "linkedin_fetch_description": true,
+      "source_overrides": {
+        "glassdoor": {
+          "location": "Toronto, ON"
+        },
+        "zip_recruiter": {
+          "location": "Toronto, ON"
+        }
+      },
+      "verbose": 1
+    },
+    "interval_seconds": 14400,
+    "page_size": 25,
+    "max_results_per_source": 200,
+    "max_attempts": 5
+  }
+]

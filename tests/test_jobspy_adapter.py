@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+from datetime import date
+
+import pandas as pd
+import pytest
+
+from wecanfindintern.ingestion.jobspy_adapter import (
+    JOBSPY_COLUMNS,
+    JobSpyQuery,
+    build_source_fingerprint,
+    canonicalize_url,
+    clean_scalar,
+    dataframe_to_records,
+    normalize_record,
+    stabilize_jobspy_frame,
+)
+
+
+def sample_row() -> dict:
+    row = {column: None for column in JOBSPY_COLUMNS}
+    row.update(
+        {
+            "id": "abc123",
+            "site": "indeed",
+            "job_url": "https://example.com/job/abc123?utm_source=test",
+            "title": "Software Engineer Intern",
+            "company": "Example Co",
+            "location": "Toronto, ON, Canada",
+            "date_posted": date(2026, 8, 24),
+            "job_type": "internship, fulltime",
+            "salary_source": "direct_data",
+            "interval": "hourly",
+            "min_amount": 25.0,
+            "max_amount": 32.0,
+            "currency": "CAD",
+            "is_remote": False,
+            "emails": "jobs@example.com, recruiter@example.com",
+            "skills": "Python, AWS",
+        }
+    )
+    return row
+
+
+def test_empty_frame_receives_stable_columns() -> None:
+    stable = stabilize_jobspy_frame(pd.DataFrame())
+    assert stable.empty
+    assert list(stable.columns) == list(JOBSPY_COLUMNS)
+
+
+def test_pandas_missing_value_becomes_none() -> None:
+    assert clean_scalar(pd.NA) is None
+
+
+def test_normalize_jobspy_record() -> None:
+    frame = stabilize_jobspy_frame(pd.DataFrame([sample_row()]))
+    record = dataframe_to_records(frame)[0]
+    job = normalize_record(record)
+
+    assert job.source == "indeed"
+    assert job.title == "Software Engineer Intern"
+    assert job.date_posted == date(2026, 8, 24)
+    assert job.employment_types == ["internship", "fulltime"]
+    assert job.source_skills == ["Python", "AWS"]
+    assert job.salary is not None
+    assert job.salary.currency == "CAD"
+    assert job.salary.minimum == 25.0
+
+
+def test_fingerprint_uses_source_id_when_present() -> None:
+    first = build_source_fingerprint("indeed", "abc123", "https://one.example/job")
+    second = build_source_fingerprint("indeed", "abc123", "https://two.example/job")
+    assert first == second
+
+
+def test_canonical_url_removes_tracking_parameters() -> None:
+    assert (
+        canonicalize_url("HTTPS://Example.COM/job/123/?utm_source=x&keep=yes#section")
+        == "https://example.com/job/123?keep=yes"
+    )
+
+
+def test_google_requires_google_search_term() -> None:
+    with pytest.raises(ValueError, match="google_search_term"):
+        JobSpyQuery(sites=["google"], search_term="software engineer")
+
+
+def test_indeed_rejects_incompatible_filters() -> None:
+    with pytest.raises(ValueError, match="Indeed"):
+        JobSpyQuery(
+            sites=["indeed"],
+            search_term="software engineer",
+            job_type="internship",
+            hours_old=24,
+        )

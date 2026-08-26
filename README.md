@@ -1,0 +1,131 @@
+# WeCanFindIntern — JobSpy 职位采集
+
+本目录完成项目的职位采集基础能力：
+
+- 使用 vendored JobSpy 源码抓取职位；
+- 保留 JobSpy 原始 DataFrame / CSV；
+- 将第三方字段转换为项目内部稳定 JSONL 格式；
+- 为每个来源职位生成可重复的 `source_fingerprint`，方便后续幂等写入；
+- 提供输出格式检查和自动化测试。
+- 将标准职位幂等写入 PostgreSQL，并自动完成跨来源去重；
+- 按来源保存分页断点，失败时指数退避重试；
+- 使用数据库租约安全运行多个采集 worker，默认每 4 小时更新；
+- 提供高性能游标分页职位数据接口。
+
+JobSpy 源码位于 `vendor/JobSpy`，当前版本与提交记录见
+[`docs/JOBSPY_INTEGRATION.md`](docs/JOBSPY_INTEGRATION.md)。
+
+数据库结构、去重规则和 API 使用方式见
+[`docs/DATA_API.md`](docs/DATA_API.md)。
+
+岗位分类、标签、薪资换算和前端展示字段规范见
+[`docs/JOB_DATA_TAXONOMY.md`](docs/JOB_DATA_TAXONOMY.md)。
+
+## 环境准备
+
+需要 Python 3.10 或更高版本。
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+docker compose up -d postgres
+cp .env.example .env
+set -a
+source .env
+set +a
+PYTHONPATH=src .venv/bin/python scripts/migrate.py
+```
+
+## 查看 JobSpy 实际返回格式
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/inspect_jobspy_output.py \
+  --site indeed \
+  --search-term "software engineer intern" \
+  --location "Toronto, ON" \
+  --country-indeed Canada \
+  --results-wanted 5
+```
+
+该命令会显示：
+
+- DataFrame 行列数；
+- 实际列名和数据类型；
+- 每列空值数量；
+- 一条经过截断的示例记录。
+
+## 抓取并保存职位
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/scrape_jobs.py \
+  --site indeed \
+  --site linkedin \
+  --search-term "software engineer intern" \
+  --location "Toronto, ON" \
+  --country-indeed Canada \
+  --results-wanted 20 \
+  --output-dir data/raw
+```
+
+每次运行会生成两个文件：
+
+- `*_jobspy_raw.csv`：JobSpy 原始表格格式；
+- `*_normalized.jsonl`：WeCanFindIntern 内部稳定格式。
+
+## 抓取并写入数据库
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/ingest_jobspy_to_db.py \
+  --site indeed \
+  --search-term "software engineer intern" \
+  --location "Toronto, ON" \
+  --country-indeed Canada \
+  --results-wanted 100
+```
+
+## 启动自动多来源采集
+
+采集计划位于 `config/collection_plans.json`，默认整合 Indeed、LinkedIn、
+Glassdoor、ZipRecruiter 和 Google Jobs，并将执行间隔设为 14,400 秒（4 小时）。
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/seed_collection_plans.py
+PYTHONPATH=src .venv/bin/python scripts/run_collection_scheduler.py
+```
+
+调度时间、运行租约、每个来源的 offset、重试次数和下次重试时间全部保存在
+PostgreSQL。worker 重启后会继续未完成的来源；重复抓取不会重复创建职位或原始快照。
+
+公开岗位格式为 `job.v3`。JSON Schema 位于 `schemas/job.v3.json`、
+`schemas/job-page.v3.json` 和 `schemas/job-facets.v2.json`，可通过以下命令重新生成：
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/export_schemas.py
+```
+
+岗位分类规则升级后回填现有数据：
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/backfill_job_classification.py
+```
+
+启动数据接口：
+
+```bash
+PYTHONPATH=src .venv/bin/uvicorn wecanfindintern.api.app:app --reload
+```
+
+## 运行测试
+
+```bash
+PYTHONPATH=src .venv/bin/python -m pytest
+```
+
+## 使用约束
+
+- Indeed 中 `hours_old`、`job_type + is_remote`、`easy_apply` 三组筛选只能选择一组。
+- LinkedIn 中 `hours_old` 与 `easy_apply` 不能同时使用。
+- `linkedin_fetch_description` 会为每个职位增加额外请求，默认关闭。
+- 不同来源并不保证填充所有字段；业务代码应使用内部标准格式，而不是直接依赖 DataFrame。
+- 请遵守职位来源网站的条款、访问频率要求及适用法律。

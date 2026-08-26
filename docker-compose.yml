@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wecanfindintern
+      POSTGRES_USER: wecanfindintern
+      POSTGRES_PASSWORD: wecanfindintern
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - wecanfindintern_postgres:/var/lib/postgresql/data
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wecanfindintern -d wecanfindintern"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  wecanfindintern_postgres:
+

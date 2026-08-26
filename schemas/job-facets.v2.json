@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "FacetCount": {
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "string"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value",
+        "count"
+      ],
+      "title": "FacetCount",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "job-facets.v2",
+      "default": "job-facets.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "opportunity_types": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Opportunity Types",
+      "type": "array"
+    },
+    "schedule_types": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Schedule Types",
+      "type": "array"
+    },
+    "job_categories": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Job Categories",
+      "type": "array"
+    },
+    "work_modes": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Work Modes",
+      "type": "array"
+    },
+    "skills": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Skills",
+      "type": "array"
+    },
+    "countries": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Countries",
+      "type": "array"
+    },
+    "regions": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Regions",
+      "type": "array"
+    },
+    "cities": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Cities",
+      "type": "array"
+    },
+    "companies": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Companies",
+      "type": "array"
+    }
+  },
+  "required": [
+    "opportunity_types",
+    "schedule_types",
+    "job_categories",
+    "work_modes",
+    "skills",
+    "countries",
+    "regions",
+    "cities",
+    "companies"
+  ],
+  "title": "JobFacetsResponse",
+  "type": "object"
+}

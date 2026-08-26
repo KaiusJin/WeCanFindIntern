@@ -1,0 +1,442 @@
+{
+  "$defs": {
+    "JobListItem": {
+      "properties": {
+        "schema_version": {
+          "const": "job.v2",
+          "default": "job.v2",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "company_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Company Name"
+        },
+        "location": {
+          "$ref": "#/$defs/LocationResponse"
+        },
+        "work_mode": {
+          "title": "Work Mode",
+          "type": "string"
+        },
+        "employment_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Employment Types",
+          "type": "array"
+        },
+        "opportunity_type": {
+          "title": "Opportunity Type",
+          "type": "string"
+        },
+        "schedule_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Schedule Types",
+          "type": "array"
+        },
+        "primary_schedule_type": {
+          "title": "Primary Schedule Type",
+          "type": "string"
+        },
+        "job_category": {
+          "title": "Job Category",
+          "type": "string"
+        },
+        "job_subcategories": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Job Subcategories",
+          "type": "array"
+        },
+        "date_posted": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Date Posted"
+        },
+        "published_at": {
+          "format": "date-time",
+          "title": "Published At",
+          "type": "string"
+        },
+        "seniority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Seniority"
+        },
+        "seniority_level": {
+          "title": "Seniority Level",
+          "type": "string"
+        },
+        "salary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SalaryResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill_tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Skill Tags",
+          "type": "array"
+        },
+        "display_tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Display Tags",
+          "type": "array"
+        },
+        "source_count": {
+          "title": "Source Count",
+          "type": "integer"
+        },
+        "first_seen_at": {
+          "format": "date-time",
+          "title": "First Seen At",
+          "type": "string"
+        },
+        "last_seen_at": {
+          "format": "date-time",
+          "title": "Last Seen At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "company_name",
+        "location",
+        "work_mode",
+        "employment_types",
+        "opportunity_type",
+        "schedule_types",
+        "primary_schedule_type",
+        "job_category",
+        "job_subcategories",
+        "date_posted",
+        "published_at",
+        "seniority",
+        "seniority_level",
+        "salary",
+        "skill_tags",
+        "display_tags",
+        "source_count",
+        "first_seen_at",
+        "last_seen_at"
+      ],
+      "title": "JobListItem",
+      "type": "object"
+    },
+    "LocationResponse": {
+      "properties": {
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Text"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Display Name"
+        },
+        "city": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "City"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Region"
+        },
+        "region_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Region Code"
+        },
+        "region_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Region Name"
+        },
+        "region_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Region Type"
+        },
+        "country": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Country"
+        },
+        "country_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Country Code"
+        },
+        "country_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Country Name"
+        }
+      },
+      "required": [
+        "text",
+        "display_name",
+        "city",
+        "region",
+        "region_code",
+        "region_name",
+        "region_type",
+        "country",
+        "country_code",
+        "country_name"
+      ],
+      "title": "LocationResponse",
+      "type": "object"
+    },
+    "SalaryResponse": {
+      "properties": {
+        "interval": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Interval"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Minimum"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Maximum"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Currency"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "annualized_minimum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Annualized Minimum"
+        },
+        "annualized_maximum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Annualized Maximum"
+        }
+      },
+      "required": [
+        "interval",
+        "minimum",
+        "maximum",
+        "currency",
+        "source",
+        "annualized_minimum",
+        "annualized_maximum"
+      ],
+      "title": "SalaryResponse",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "job-page.v2",
+      "default": "job-page.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/JobListItem"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "next_cursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Next Cursor"
+    },
+    "has_more": {
+      "title": "Has More",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "items",
+    "next_cursor",
+    "has_more"
+  ],
+  "title": "JobPage",
+  "type": "object"
+}

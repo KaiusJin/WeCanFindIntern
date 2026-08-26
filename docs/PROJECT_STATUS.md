@@ -1,0 +1,134 @@
+# WeCanFindIntern 项目任务拆分与当前状态
+
+更新时间：2026-08-25  
+状态口径：以当前工作区文件和本地可运行验证为准。
+
+## 一、项目当前目标
+
+当前项目的核心目标是先完成一个稳定的多来源实习/职位数据后端：
+
+```text
+JobSpy 多来源抓取
+  → 第三方数据标准化
+  → 岗位分类、技能/要求标签、地点和薪资标准化
+  → 去重、幂等写入 PostgreSQL
+  → 定时采集、断点续跑和失败重试
+  → 版本化岗位 API 与筛选 Facets
+```
+
+目前重点是“岗位数据平台基础设施”，简历匹配、AI 推荐、收藏和求职流程还没有进入实现阶段。
+
+## 二、已经完成的步骤
+
+| 阶段 | 已完成内容 | 现有证据 | 状态 |
+|---|---|---|---|
+| 1. 项目骨架 | Python 包、配置、脚本、测试目录和 vendored JobSpy 已建立 | `src/`、`scripts/`、`tests/`、`vendor/JobSpy/` | 已完成 |
+| 2. 多来源采集接入 | 已按 JobSpy 结构接入 Indeed、LinkedIn、Glassdoor、ZipRecruiter、Google Jobs 等来源配置 | `src/wecanfindintern/ingestion/jobspy_adapter.py`、`config/collection_plans.json` | 已实现，真实覆盖仍需扩大 |
+| 3. 原始数据保留 | 支持保存 JobSpy 原始 CSV | `data/raw/*_jobspy_raw.csv` | 已完成 |
+| 4. 数据标准化 | 将 DataFrame 转换为稳定的 `NormalizedJob`，处理空值、日期、URL、薪资、技能等字段 | `jobspy_adapter.py` | 已完成 |
+| 5. 业务岗位模型 | 已有 `CanonicalJobInput`、公司、地点、薪资和岗位字段模型 | `src/wecanfindintern/domain/jobs.py` | 已完成 |
+| 6. 岗位分类 | 支持机会类型、工时、岗位大类、子类、技能标签、要求标签和展示标签 | `src/wecanfindintern/domain/classification.py` | 已完成 |
+| 7. 地点/薪资规范化 | 支持国家、省州/地区、城市三级地点；支持不同薪资周期年化 | `domain/jobs.py`、分类测试 | 已完成 |
+| 8. 去重和幂等设计 | 已实现来源指纹、URL/公司/地点/JD 候选去重、事务和 advisory lock | `deduplication.py`、`db/ingestion_repository.py` | 已实现，需真实规模验收 |
+| 9. 数据库层 | 已有迁移、连接池、写入仓库、读取仓库和自动采集相关表设计 | `migrations/0001–0006`、`src/wecanfindintern/db/` | 已实现，需环境验收 |
+| 10. 调度系统 | 已实现 collection plan、4 小时间隔、租约、offset、断点、重试和 exhausted 状态 | `scheduler/`、`config/collection_plans.json` | 已实现，需故障演练 |
+| 11. 数据 API | 已实现职位列表、详情、筛选、游标分页、Facets、采集运行状态和采集计划接口 | `src/wecanfindintern/api/app.py`、`docs/DATA_API.md` | 已实现 |
+| 12. API 契约 | 已有 `job.v3`、`job-page.v3`、`job-facets.v2` schema 和契约检查脚本 | `schemas/`、`scripts/verify_data_api_contract.py` | 已完成 |
+| 13. 技术文档 | 已有 JobSpy 集成、数据 API、岗位分类/展示规范和原任务拆分文档 | `docs/` | 已完成 |
+
+## 三、当前做得怎么样
+
+### 已在当前环境确认的结果
+
+- 自动化测试：`17 passed`。
+- Ruff 静态检查：`All checks passed!`。
+- 当前已有 Indeed 原始采集产物：1 个 CSV 和 1 个标准化 JSONL 文件。
+- 当前标准化 JSONL 样本为 5 条记录。
+- 代码结构已覆盖从采集到 API 的主要后端链路。
+- 任务拆分、数据契约、迁移文件和运行脚本相对齐全，已经不是单纯的原型目录。
+
+### 目前的质量判断
+
+| 方面 | 判断 | 说明 |
+|---|---|---|
+| 代码骨架 | 较好 | 分层清晰，采集、领域模型、数据库、调度和 API 已拆开 |
+| 单元测试 | 合格但范围偏小 | 17 项测试覆盖分类、薪资、地点、适配器和部分调度异常 |
+| 单来源采集 | 已有可运行验证 | 当前可见的真实数据产物来自 Indeed |
+| 多来源采集 | 已接入但未完全验收 | 还缺每个来源的真实成功率、字段完整率和反爬表现 |
+| 数据库能力 | 设计和代码已具备 | 当前状态快照未重新连接 PostgreSQL 验证实际数据量和迁移状态 |
+| 调度可靠性 | 已实现主要机制 | 仍需进程中断、网络失败、数据库断连和重复 worker 测试 |
+| API 生产准备度 | 接近后端 MVP | 还缺并发性能、真实规模索引验证、监控告警和前端联调 |
+| 产品完整度 | 仍在基础设施阶段 | 前端浏览、搜索、简历匹配、推荐和求职管理尚未完成 |
+
+## 四、还剩什么步骤
+
+### P0：先把数据平台稳定下来
+
+- [ ] 对每个计划中的真实来源分别抓取验收：成功率、超时、限流、字段空值率、重复率。
+- [ ] 生成采集运行报告：`fetched / created / merged / unchanged / failed`、耗时和错误摘要。
+- [ ] 建立数据质量指标：地点完整率、JD 完整率、薪资公开率、技能标签覆盖率和重复率。
+- [ ] 在真实 PostgreSQL 上确认迁移、索引、游标分页和 Facets 查询。
+- [ ] 用真实规模数据运行 `EXPLAIN (ANALYZE, BUFFERS)`，验证地点、技能、薪资和关键词查询。
+- [ ] 演练 worker 中断、数据库断连、来源超时、重复 worker 并发和断点重放。
+- [ ] 增加失败告警、重试上限通知、结构化日志和基础运行监控。
+- [ ] 明确原始 JD 保存周期、删除策略、来源条款和访问频率限制。
+- [ ] 补齐城市标准 ID、时区、无城市远程岗位和多地点岗位处理。
+
+### P1：完成职位搜索和浏览产品
+
+- [ ] 职位列表、卡片、详情页和直接申请跳转。
+- [ ] 国家 → 省州/地区 → 城市级联筛选。
+- [ ] 机会类型、工时、岗位类别、技能、远程模式和薪资筛选。
+- [ ] 关键词全文搜索。
+- [ ] 自然语言查询解析，例如“加拿大 Python AWS 后端实习”。
+- [ ] 趋势数据：岗位数量、技能热度、地区分布和公司活跃度。
+
+### P2：加入简历和推荐能力
+
+- [ ] 简历上传、文本解析和用户技能画像。
+- [ ] 简历与 JD 的结构化匹配评分。
+- [ ] 缺失技能、推荐原因和技能提升建议。
+- [ ] 语义检索、候选岗位排序和推荐解释。
+- [ ] 为模型输出保存版本、置信度、输入快照和可重跑记录。
+
+### P2：加入求职管理
+
+- [ ] 收藏职位。
+- [ ] `Interested → Applied → Interview → Offer / Rejected` 状态流转。
+- [ ] 用户备注、提醒、申请时间线和岗位状态变化。
+- [ ] 区分已关闭、重复和已申请岗位。
+
+### P3：产品化和上线运营
+
+- [ ] 用户认证、权限和个人数据隔离。
+- [ ] 隐私、简历删除、数据导出和审计日志。
+- [ ] 生产部署、密钥管理、备份恢复和迁移流程。
+- [ ] API 限流、日志、指标、链路追踪和成本监控。
+- [ ] 端到端测试、浏览器验收测试和发布流水线。
+
+## 五、建议的下一步顺序
+
+1. 先对所有来源做一次真实采集验收，并产出数据质量表。
+2. 接着完成调度/重试/断点/去重的故障测试。
+3. 再做职位列表、详情和地点级联筛选，形成可演示的 MVP。
+4. 然后增加全文搜索、自然语言搜索和趋势 API。
+5. 最后加入简历匹配、AI 推荐和求职流程管理。
+
+## 六、当前结论
+
+项目已经完成“多来源岗位采集后端”的主要代码和接口骨架，当前最接近“可验证的后端 MVP”，但还不能称为生产稳定版本。下一阶段的重点不是继续扩展 AI 功能，而是先完成真实来源覆盖、数据质量、故障恢复、监控告警和前端联调。
+
+## 七、关键文件
+
+- [项目 README](../README.md)
+- [原任务拆分](PROJECT_TASK_BREAKDOWN.md)
+- [JobSpy 集成说明](JOBSPY_INTEGRATION.md)
+- [数据 API 说明](DATA_API.md)
+- [岗位字段与分类规范](JOB_DATA_TAXONOMY.md)
+- [采集适配器](../src/wecanfindintern/ingestion/jobspy_adapter.py)
+- [岗位领域模型](../src/wecanfindintern/domain/jobs.py)
+- [岗位分类规则](../src/wecanfindintern/domain/classification.py)
+- [数据库写入仓库](../src/wecanfindintern/db/ingestion_repository.py)
+- [调度运行器](../src/wecanfindintern/scheduler/runner.py)
+- [API 应用](../src/wecanfindintern/api/app.py)
+
