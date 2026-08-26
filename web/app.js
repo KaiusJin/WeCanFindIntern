@@ -1,4 +1,4 @@
-const state = { cursor: null, hasMore: false, facets: null };
+const state = { cursor: null, hasMore: false, facets: null, loading: false };
 
 const labels = {
   remote: "Remote", hybrid: "Hybrid", onsite: "On-site", unknown: "Not specified",
@@ -109,6 +109,9 @@ function renderJob(job) {
 async function loadJobs({ append = false } = {}) {
   const list = $("#job-list");
   const error = $("#error");
+  if (state.loading || (append && (!state.hasMore || !state.cursor))) return;
+  state.loading = true;
+  $("#load-more").disabled = true;
   if (!append) { state.cursor = null; list.innerHTML = ""; $("#empty-state").hidden = true; }
   $("#result-status").textContent = append ? "Loading more…" : "Searching…";
   const params = readFilters();
@@ -117,17 +120,25 @@ async function loadJobs({ append = false } = {}) {
     const response = await fetch(`/api/v1/jobs?${params}`);
     if (!response.ok) throw new Error(`Search failed (${response.status})`);
     const page = await response.json();
-    list.insertAdjacentHTML("beforeend", page.items.map(renderJob).join(""));
+    const existingIds = new Set(
+      [...list.querySelectorAll(".job-card")].map((card) => card.dataset.id),
+    );
+    const newItems = page.items.filter((job) => !existingIds.has(job.id));
+    list.insertAdjacentHTML("beforeend", newItems.map(renderJob).join(""));
     state.cursor = page.next_cursor;
     state.hasMore = page.has_more;
     $("#load-more").hidden = !page.has_more;
-    $("#result-status").textContent = page.items.length ? `${page.items.length}${page.has_more ? "+" : ""} results` : "0 results";
+    const loadedCount = list.querySelectorAll(".job-card").length;
+    $("#result-status").textContent = loadedCount ? `${loadedCount}${page.has_more ? "+" : ""} results` : "0 results";
     $("#empty-state").hidden = Boolean(list.children.length);
     error.hidden = true;
   } catch (requestError) {
     error.textContent = requestError.message;
     error.hidden = false;
     $("#result-status").textContent = "Load failed";
+  } finally {
+    state.loading = false;
+    $("#load-more").disabled = false;
   }
 }
 
