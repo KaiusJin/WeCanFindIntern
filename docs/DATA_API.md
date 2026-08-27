@@ -25,13 +25,13 @@ set -a
 source .env
 set +a
 docker compose up -d postgres
-PYTHONPATH=src .venv/bin/python scripts/migrate.py
+PYTHONPATH=src .venv/bin/python scripts/maintenance/migrate.py
 ```
 
 ## 抓取并写入
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/ingest_jobspy_to_db.py \
+PYTHONPATH=src .venv/bin/python scripts/collection/ingest_jobspy_to_db.py \
   --site indeed \
   --search-term "software engineer intern" \
   --location "Toronto, ON" \

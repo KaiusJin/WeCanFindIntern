@@ -17,7 +17,7 @@ JobSpy 多来源抓取
   → 全英文职位搜索、筛选、列表和详情页面
 ```
 
-当前 P0 数据链路和 P1 搜索浏览主体已经完成；简历匹配、AI 推荐、收藏和求职流程还没有进入实现阶段。
+当前 P0 数据链路、P1 搜索浏览主体和基础申请跟踪已经完成；简历匹配、推荐和完整求职流程仍在后续计划中。
 
 ## 二、已经完成的步骤
 
@@ -31,12 +31,13 @@ JobSpy 多来源抓取
 | 6. 岗位分类 | 支持机会类型、工时、岗位大类、子类、技能标签、要求标签和展示标签 | `src/wecanfindintern/domain/classification.py` | 已完成 |
 | 7. 地点/薪资/招聘季节规范化 | 支持国家、省州/地区、城市三级地点；薪资与招聘季节均采用全量正则优先、DeepSeek JSON 约束回退并按岗位内容哈希持久化 | `domain/salary*.py`、`domain/recruiting_term*.py` | 已完成 |
 | 8. 去重和幂等设计 | 已实现来源指纹、URL/公司/地点/JD 候选去重、事务和 advisory lock | `deduplication.py`、`db/ingestion_repository.py` | 已实现，需真实规模验收 |
-| 9. 数据库层 | 已有迁移、连接池、写入仓库、读取仓库和自动采集相关表设计 | `migrations/0001–0008`、`src/wecanfindintern/db/` | 已实现并完成本地迁移 |
+| 9. 数据库层 | 已有迁移、连接池、写入仓库、读取仓库、自动采集和申请跟踪相关表设计 | `migrations/0001–0009`、`src/wecanfindintern/db/`、`src/wecanfindintern/tracker/` | 已实现并完成本地迁移 |
 | 10. 调度系统 | 已实现 collection plan、4 小时间隔、租约、offset、断点、重试和 exhausted 状态 | `scheduler/`、`config/collection_plans.json` | 已实现，需故障演练 |
 | 11. 数据 API | 已实现职位列表、详情、筛选、游标分页、Facets、采集运行状态和采集计划接口 | `src/wecanfindintern/api/app.py`、`docs/DATA_API.md` | 已实现 |
-| 12. API 契约 | 已有 `job.v3`、`job-page.v3`、`job-facets.v2` schema 和契约检查脚本 | `schemas/`、`scripts/verify_data_api_contract.py` | 已完成 |
-| 13. 技术文档 | 已有 JobSpy 集成、数据 API、岗位分类/展示规范和原任务拆分文档 | `docs/` | 已完成 |
-| 14. 搜索和浏览页面 | 全英文搜索框、筛选器、职位卡片、详情弹窗、分页加载和原职位跳转 | `web/`、`src/wecanfindintern/api/app.py` | 已完成 |
+| 12. API 契约 | 已有 `job.v3`、`job-page.v3`、`job-facets.v2` schema 和契约检查脚本 | `schemas/`、`scripts/dev/verify_data_api_contract.py` | 已完成 |
+| 13. 申请跟踪 | 支持申请记录、阶段、备注、统计和职位详情关联 | `migrations/0009_application_tracker.sql`、`src/wecanfindintern/tracker/` | 已实现，仍需完善用户隔离 |
+| 14. 技术文档 | 已有 JobSpy 集成、数据 API、岗位分类/展示规范和项目状态文档 | `docs/` | 已完成 |
+| 15. 搜索和浏览页面 | 全英文搜索框、筛选器、职位卡片、详情弹窗、分页加载、原职位跳转和申请跟踪入口 | `web/`、`src/wecanfindintern/api/app.py` | 已完成 |
 
 ## 三、当前做得怎么样
 
@@ -72,7 +73,7 @@ JobSpy 多来源抓取
 | 数据库能力 | 设计和代码已具备 | 当前状态快照未重新连接 PostgreSQL 验证实际数据量和迁移状态 |
 | 调度可靠性 | 已实现主要机制 | 仍需进程中断、网络失败、数据库断连和重复 worker 测试 |
 | API 生产准备度 | 接近后端 MVP | 还缺并发性能、真实规模索引验证和监控告警 |
-| 产品完整度 | 搜索浏览 MVP 已完成 | 简历匹配、推荐和求职管理尚未完成 |
+| 产品完整度 | 搜索浏览和基础申请跟踪 MVP 已完成 | 简历匹配、推荐、认证和完整求职流程尚未完成 |
 
 ## 四、还剩什么步骤
 
@@ -106,11 +107,11 @@ JobSpy 多来源抓取
 - [ ] 语义检索、候选岗位排序和推荐解释。
 - [ ] 为模型输出保存版本、置信度、输入快照和可重跑记录。
 
-### P2：加入求职管理
+### P2：完善求职管理
 
-- [ ] 收藏职位。
-- [ ] `Interested → Applied → Interview → Offer / Rejected` 状态流转。
-- [ ] 用户备注、提醒、申请时间线和岗位状态变化。
+- [x] 申请记录、阶段流转、备注和基础统计。
+- [ ] 收藏职位并与申请记录关联。
+- [ ] 增加提醒、申请时间线和岗位状态变化记录。
 - [ ] 区分已关闭、重复和已申请岗位。
 
 ### P3：产品化和上线运营
@@ -127,7 +128,7 @@ JobSpy 多来源抓取
 2. 接着完成调度/重试/断点/去重的故障测试。
 3. 扩大职位搜索浏览 MVP 的真实数据规模并处理长尾字段。
 4. 然后增加自然语言搜索和趋势 API。
-5. 最后加入简历匹配、AI 推荐和求职流程管理。
+5. 最后加入简历匹配、推荐和完整求职流程管理。
 
 ## 六、当前结论
 
@@ -136,7 +137,7 @@ JobSpy 多来源抓取
 ## 七、关键文件
 
 - [项目 README](../README.md)
-- [原任务拆分](PROJECT_TASK_BREAKDOWN.md)
+- 当前剩余任务见本文第四、第五节；原任务拆分内容已合并到本状态文档。
 - [JobSpy 集成说明](JOBSPY_INTEGRATION.md)
 - [数据 API 说明](DATA_API.md)
 - [岗位字段与分类规范](JOB_DATA_TAXONOMY.md)

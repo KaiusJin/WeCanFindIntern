@@ -8,7 +8,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/kaius/Project/WeCanFIndIntern/scripts/run_collection_campaign_launchd.sh</string>
+    <string>/Users/kaius/Project/WeCanFIndIntern/scripts/collection/run_collection_campaign_launchd.sh</string>
   </array>
 
   <key>WorkingDirectory</key>

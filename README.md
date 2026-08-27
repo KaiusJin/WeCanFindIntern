@@ -34,13 +34,13 @@ cp .env.example .env
 set -a
 source .env
 set +a
-PYTHONPATH=src .venv/bin/python scripts/migrate.py
+PYTHONPATH=src .venv/bin/python scripts/maintenance/migrate.py
 ```
 
 ## 查看 JobSpy 实际返回格式
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/inspect_jobspy_output.py \
+PYTHONPATH=src .venv/bin/python scripts/dev/inspect_jobspy_output.py \
   --site indeed \
   --search-term "software engineer intern" \
   --location "Toronto, ON" \
@@ -58,7 +58,7 @@ PYTHONPATH=src .venv/bin/python scripts/inspect_jobspy_output.py \
 ## 抓取并保存职位
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/scrape_jobs.py \
+PYTHONPATH=src .venv/bin/python scripts/dev/scrape_jobs.py \
   --site indeed \
   --site linkedin \
   --search-term "software engineer intern" \
@@ -76,7 +76,7 @@ PYTHONPATH=src .venv/bin/python scripts/scrape_jobs.py \
 ## 抓取并写入数据库
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/ingest_jobspy_to_db.py \
+PYTHONPATH=src .venv/bin/python scripts/collection/ingest_jobspy_to_db.py \
   --site indeed \
   --search-term "software engineer intern" \
   --location "Toronto, ON" \
@@ -91,8 +91,8 @@ Computer Science / Software、Data Science、Machine Learning / AI 实习与 Co-
 并使用已验证可用的 Indeed 和 LinkedIn。目录会自动展开为国家、关键词和来源查询。
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/seed_collection_plans.py
-PYTHONPATH=src .venv/bin/python scripts/run_collection_campaign.py
+PYTHONPATH=src .venv/bin/python scripts/collection/seed_collection_plans.py
+PYTHONPATH=src .venv/bin/python scripts/collection/run_collection_campaign.py
 ```
 
 campaign 严格按“全部采集 → 全量去重 → 全量正则薪资 → DeepSeek 薪资 →
@@ -126,13 +126,13 @@ tail -f logs/collector-error.log
 `schemas/job-page.v3.json` 和 `schemas/job-facets.v2.json`，可通过以下命令重新生成：
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/export_schemas.py
+PYTHONPATH=src .venv/bin/python scripts/dev/export_schemas.py
 ```
 
 岗位分类规则升级后回填现有数据：
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/backfill_job_classification.py
+PYTHONPATH=src .venv/bin/python scripts/maintenance/backfill_job_classification.py
 ```
 
 启动数据接口：

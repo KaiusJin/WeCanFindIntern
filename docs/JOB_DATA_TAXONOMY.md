@@ -295,9 +295,9 @@ GET /api/v1/jobs?country=CA&opportunity_type=co_op&schedule_type=full_time&categ
 7. 重新导出 JSON Schema。
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/migrate.py
-PYTHONPATH=src .venv/bin/python scripts/backfill_job_classification.py
-PYTHONPATH=src .venv/bin/python scripts/export_schemas.py
+PYTHONPATH=src .venv/bin/python scripts/maintenance/migrate.py
+PYTHONPATH=src .venv/bin/python scripts/maintenance/backfill_job_classification.py
+PYTHONPATH=src .venv/bin/python scripts/dev/export_schemas.py
 ```
 
 `backfill_job_classification.py` 默认只更新旧版本岗位；`--force` 用于同版本规则的
