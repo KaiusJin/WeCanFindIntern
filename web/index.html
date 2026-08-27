@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260827-skills-layout-v2" />
+    <link rel="stylesheet" href="/styles.css?v=20260827-clean-v9" />
   </head>
   <body>
     <header class="topbar">
@@ -531,7 +531,7 @@
               <span id="tracker-result-count" class="tracker-result-count">Loading…</span>
             </div>
             <div class="tracker-head-actions">
-              <select id="tracker-sort" aria-label="Sort applications"><option value="updated:desc">Recently updated</option><option value="applied:desc">Newest applied</option><option value="priority:asc">Priority</option><option value="company:asc">Company A–Z</option></select>
+              <select id="tracker-sort" aria-label="Sort applications"><option value="updated:desc">Recently updated</option><option value="applied:desc">Newest applied</option><option value="company:asc">Company A–Z</option></select>
             </div>
           </div>
 
@@ -539,13 +539,12 @@
             <div id="tracker-bulk-bar" class="tracker-bulk-bar" hidden>
               <strong><span id="tracker-selected-count">0</span> selected</strong>
               <select id="tracker-bulk-stage" aria-label="Bulk change stage"><option value="">Move to…</option><option value="interested">Interested</option><option value="applied">Applied</option><option value="interview">Interview</option><option value="offer">Offer</option><option value="rejected">Refused</option></select>
-              <select id="tracker-bulk-priority" aria-label="Bulk change priority"><option value="">Set priority…</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select>
               <button id="tracker-bulk-delete" class="bulk-btn bulk-btn-delete" type="button">Delete</button>
               <button id="tracker-clear-selection" class="bulk-btn bulk-btn-clear" type="button">Clear</button>
             </div>
             <div class="tracker-table-wrap">
               <table class="tracker-table">
-                <thead><tr><th class="select-col"><input id="tracker-select-page" type="checkbox" aria-label="Select page" /></th><th>Company / role</th><th>Stage</th><th>Location</th><th>Applied</th><th>Next action</th><th>Updated</th><th></th></tr></thead>
+                <thead><tr><th class="select-col"><input id="tracker-select-page" type="checkbox" aria-label="Select page" /></th><th>Company / role</th><th>Stage</th><th>Location</th><th>Source</th><th>Applied</th><th>Updated</th><th></th></tr></thead>
                 <tbody id="tracker-table-body"></tbody>
               </table>
               <div id="tracker-empty" class="empty-state" hidden><div class="empty-icon">⌁</div><h3>No applications found</h3><p>Try a broader search or add your first opportunity.</p></div>
@@ -608,10 +607,6 @@
             <input type="text" id="custom-salary" class="career-input" placeholder="e.g. $45/hr or $90,000/yr" />
           </div>
           <div class="field-group">
-            <label class="field-label" for="custom-priority">Priority</label>
-            <select id="custom-priority" class="career-select"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select>
-          </div>
-          <div class="field-group">
             <label class="field-label" for="custom-source">Source</label>
             <select id="custom-source" class="career-select">
               <option value="wecanfindintern">WecanFindIntern</option>
@@ -624,14 +619,6 @@
           <div class="field-group">
             <label class="field-label" for="custom-applied-at">Applied date</label>
             <input type="date" id="custom-applied-at" class="career-input" />
-          </div>
-          <div class="field-group">
-            <label class="field-label" for="custom-follow-up">Follow-up reminder</label>
-            <input type="datetime-local" id="custom-follow-up" class="career-input" />
-          </div>
-          <div class="field-group">
-            <label class="field-label" for="custom-next-step">Next action</label>
-            <input type="text" id="custom-next-step" class="career-input" placeholder="Send recruiter a follow-up" />
           </div>
         </div>
         <div class="field-group" style="margin-top: 14px;">
@@ -677,9 +664,7 @@
         <h3 class="tracker-detail-section-title">Application tracking</h3>
         <div class="tracker-drawer-grid tracker-status-grid">
           <label class="field-group"><span class="field-label">Stage</span><select id="drawer-stage" class="career-select"><option value="interested">Interested</option><option value="applied">Applied</option><option value="interview">Interview</option><option value="offer">Offer</option><option value="rejected">Refused</option></select></label>
-          <label class="field-group"><span class="field-label">Priority</span><select id="drawer-priority" class="career-select"><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
           <label class="field-group"><span class="field-label">Applied date</span><input id="drawer-applied-at" class="career-input" type="date" /></label>
-          <label class="field-group"><span class="field-label">Follow-up reminder</span><input id="drawer-follow-up" class="career-input" type="datetime-local" /></label>
         </div>
         <div class="drawer-save-row"><span id="drawer-save-status" class="settings-save-feedback" hidden>Saved</span><button id="save-tracker-drawer" class="primary-button" type="button">Save changes</button></div>
         <section class="timeline-section">
@@ -730,12 +715,12 @@
         <div class="field-group" style="margin-top: 18px;">
           <label class="field-label" for="setting-api-key" id="setting-key-label">Gemini API Key</label>
           <div class="password-input-wrap">
-            <input type="password" id="setting-api-key" class="career-input" placeholder="AIzaSy... (leave blank to use server default)" autocomplete="off" />
+            <input type="password" id="setting-api-key" class="career-input" placeholder="Enter your Gemini API key (AIzaSy...)" autocomplete="off" />
             <button type="button" class="toggle-password-btn" id="toggle-key-visibility" title="Toggle visibility">
               <svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
             </button>
           </div>
-          <p class="field-hint" id="setting-key-hint">Leave blank to use the backend server's default environment key.</p>
+          <p class="field-hint" id="setting-key-hint">Enter your API key. Keys are stored locally in your browser.</p>
         </div>
 
         <div class="settings-dialog-footer">
@@ -758,6 +743,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script src="/app.js?v=20260827-skills-layout-v2" defer></script>
+    <script src="/app.js?v=20260827-clean-v9" defer></script>
   </body>
 </html>

@@ -5,14 +5,11 @@ const trackerState = {
   trackedJobIds: new Set(),
   trackedJobs: new Map(),
   selectedIds: new Set(),
-  attentionItems: [],
-  analytics: null,
   loading: false,
   page: 1,
   pageSize: 50,
   total: 0,
   totalPages: 0,
-  view: localStorage.getItem("wecan_tracker_view") || "list",
   requestVersion: 0,
 };
 
@@ -168,12 +165,15 @@ function formatRelativeTime(dateValue) {
   const diffSec = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
   if (diffSec < 60) return "just now";
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 60) return `${diffMin}min ago`;
   const diffHour = Math.floor(diffMin / 60);
   if (diffHour < 24) return `${diffHour}h ago`;
   const diffDay = Math.floor(diffHour / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "numeric" }).format(date);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  const diffMonth = Math.floor(diffDay / 30);
+  if (diffMonth < 12) return `${diffMonth}mo ago`;
+  const diffYear = Math.floor(diffMonth / 12);
+  return `${diffYear}y ago`;
 }
 
 function updateLastUpdatedBadge(lastUpdatedIso) {
@@ -452,7 +452,7 @@ document.querySelectorAll(".nav-tab").forEach((btn) => {
 const SETTINGS_STORAGE_KEY = "wecanfindintern_ai_settings_v3";
 
 const aiSettings = {
-  selectedModel: "DeepSeek:deepseek-v4-flash",
+  selectedModel: "Gemini:gemini-3.7-flash",
   deepseekKey: "",
   geminiKey: "",
   openaiKey: "",
@@ -462,7 +462,7 @@ const EYE_SVG_OPEN = `<svg class="eye-svg" width="16" height="16" viewBox="0 0 2
 const EYE_SVG_OFF = `<svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 
 function syncKeyFieldWithModel() {
-  const modelVal = $("#setting-selected-model")?.value || "DeepSeek:deepseek-v4-flash";
+  const modelVal = $("#setting-selected-model")?.value || "";
   const [provider] = modelVal.split(":");
   const keyInput = $("#setting-api-key");
   const keyLabel = $("#setting-key-label");
@@ -472,19 +472,24 @@ function syncKeyFieldWithModel() {
 
   if (provider === "DeepSeek") {
     keyLabel.textContent = "DeepSeek API Key";
-    keyInput.placeholder = "sk-... (leave blank to use server default)";
+    keyInput.placeholder = "Enter your DeepSeek API key (sk-...)";
     keyInput.value = aiSettings.deepseekKey || "";
-    if (keyHint) keyHint.textContent = "Leave blank to use the backend server's default DEEPSEEK_API_KEY.";
+    if (keyHint) keyHint.textContent = "API key is required to use DeepSeek.";
   } else if (provider === "OpenAI") {
     keyLabel.textContent = "OpenAI API Key";
-    keyInput.placeholder = "sk-proj-... (leave blank to use server default)";
+    keyInput.placeholder = "Enter your OpenAI API key (sk-...)";
     keyInput.value = aiSettings.openaiKey || "";
-    if (keyHint) keyHint.textContent = "Leave blank to use the backend server's default OPENAI_API_KEY.";
-  } else {
+    if (keyHint) keyHint.textContent = "API key is required to use OpenAI.";
+  } else if (provider === "Gemini") {
     keyLabel.textContent = "Gemini API Key";
-    keyInput.placeholder = "AIzaSy... (leave blank to use server default)";
+    keyInput.placeholder = "Enter your Gemini API key (AIzaSy...)";
     keyInput.value = aiSettings.geminiKey || "";
-    if (keyHint) keyHint.textContent = "Leave blank to use the backend server's default GEMINI_API_KEY.";
+    if (keyHint) keyHint.textContent = "API key is required to use Gemini.";
+  } else {
+    keyLabel.textContent = "API Key";
+    keyInput.placeholder = "Enter your API key";
+    keyInput.value = "";
+    if (keyHint) keyHint.textContent = "Please select an AI model.";
   }
 }
 
@@ -498,12 +503,12 @@ function loadSettings() {
   } catch (_) {}
 
   const modelEl = $("#setting-selected-model");
-  if (modelEl) modelEl.value = aiSettings.selectedModel || "DeepSeek:deepseek-v4-flash";
+  if (modelEl) modelEl.value = aiSettings.selectedModel || "Gemini:gemini-3.7-flash";
   syncKeyFieldWithModel();
 }
 
 function saveSettings() {
-  const modelVal = $("#setting-selected-model")?.value || "DeepSeek:deepseek-v4-flash";
+  const modelVal = $("#setting-selected-model")?.value || "";
   const [provider] = modelVal.split(":");
   const currentKey = $("#setting-api-key")?.value.trim() || "";
 
@@ -512,7 +517,7 @@ function saveSettings() {
     aiSettings.deepseekKey = currentKey;
   } else if (provider === "OpenAI") {
     aiSettings.openaiKey = currentKey;
-  } else {
+  } else if (provider === "Gemini") {
     aiSettings.geminiKey = currentKey;
   }
 
@@ -529,20 +534,34 @@ function saveSettings() {
 }
 
 function getEffectiveAiConfig() {
-  const [provider, modelName] = (aiSettings.selectedModel || "DeepSeek:deepseek-v4-flash").split(":");
+  if (!aiSettings.selectedModel) {
+    return { provider: null, model_name: null, api_key: null };
+  }
+  const [provider, modelName] = aiSettings.selectedModel.split(":");
   let apiKey = null;
   if (provider === "DeepSeek") {
     apiKey = aiSettings.deepseekKey || null;
   } else if (provider === "OpenAI") {
     apiKey = aiSettings.openaiKey || null;
-  } else {
+  } else if (provider === "Gemini") {
     apiKey = aiSettings.geminiKey || null;
   }
   return {
-    provider: provider,
-    model_name: modelName || (provider === "DeepSeek" ? "deepseek-v4-flash" : provider === "OpenAI" ? "gpt-4o-mini" : "gemini-3.7-flash"),
+    provider: provider || null,
+    model_name: modelName || null,
     api_key: apiKey,
   };
+}
+
+function validateAiConfig() {
+  const config = getEffectiveAiConfig();
+  if (!config.provider || !config.model_name) {
+    throw new Error("Please open Settings (⚙) and select an AI model first.");
+  }
+  if (!config.api_key) {
+    throw new Error(`Missing ${config.provider} API key. Please open Settings (⚙) and enter your API key.`);
+  }
+  return config;
 }
 
 function syncDialogScrollLock() {
@@ -642,11 +661,18 @@ $("#btn-run-ats")?.addEventListener("click", async () => {
     return;
   }
 
+  let config;
+  try {
+    config = validateAiConfig();
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+
   $("#ats-empty").hidden = true;
   $("#ats-loading").hidden = false;
   $("#ats-result-card").hidden = true;
 
-  const config = getEffectiveAiConfig();
   try {
     const res = await fetch("/api/v1/career/ats-review", {
       method: "POST",
@@ -726,12 +752,19 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
     return;
   }
 
+  let config;
+  try {
+    config = validateAiConfig();
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+
   $("#interview-empty").hidden = true;
   $("#interview-loading").hidden = false;
   $("#interview-active-card").hidden = true;
   $("#interview-report-card").hidden = true;
 
-  const config = getEffectiveAiConfig();
   try {
     const res = await fetch("/api/v1/career/interview/questions", {
       method: "POST",
@@ -863,7 +896,14 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
     return;
   }
 
-  const config = getEffectiveAiConfig();
+  let config;
+  try {
+    config = validateAiConfig();
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+
   const formData = new FormData();
   formData.append("job_description", jdText);
   formData.append("question_context", q?.question || "");
@@ -952,12 +992,19 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
     return;
   }
 
+  let config;
+  try {
+    config = validateAiConfig();
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+
   $("#cl-empty").hidden = true;
   $("#cl-loading").hidden = false;
   $("#cl-result-card").hidden = true;
   $("#cl-export-group").hidden = true;
 
-  const config = getEffectiveAiConfig();
   try {
     const res = await fetch("/api/v1/career/cover-letter/generate", {
       method: "POST",
@@ -1067,366 +1114,6 @@ document.addEventListener("click", (event) => {
 });
 
 // =========================================================
-// APPLICATION TRACKER CONTROLLER (LOCAL POSTGRESQL PERSISTENCE)
-// =========================================================
-
-/* Legacy card-only tracker retained in history; replaced by the scalable workspace below.
-
-async function fetchTrackerData() {
-  trackerState.loading = true;
-  try {
-    const res = await fetch("/api/v1/tracker");
-    if (!res.ok) throw new Error("Failed to load tracker data");
-    const data = await res.json();
-    trackerState.applications = data.items || [];
-    trackerState.stats = data.stats || {};
-    trackerState.trackedJobIds = new Set(
-      trackerState.applications
-        .filter((app) => app.job_id)
-        .map((app) => app.job_id)
-    );
-    renderTrackerStats();
-    renderTrackerBoard();
-    updateBookmarkButtons();
-  } catch (err) {
-    console.error("Tracker fetch error:", err);
-  } finally {
-    trackerState.loading = false;
-  }
-}
-
-function renderTrackerStats() {
-  const s = trackerState.stats;
-  if ($("#stat-total")) $("#stat-total").textContent = (s.total || 0).toLocaleString();
-  if ($("#stat-interested")) $("#stat-interested").textContent = (s.interested_count || 0).toLocaleString();
-  if ($("#stat-applied")) $("#stat-applied").textContent = (s.applied_count || 0).toLocaleString();
-  if ($("#stat-interview")) $("#stat-interview").textContent = (s.interview_count || 0).toLocaleString();
-  if ($("#stat-offer")) $("#stat-offer").textContent = (s.offer_count || 0).toLocaleString();
-  if ($("#stat-rate")) $("#stat-rate").textContent = `${s.response_rate_percent || 0}%`;
-
-  if ($("#count-interested")) $("#count-interested").textContent = s.interested_count || 0;
-  if ($("#count-applied")) $("#count-applied").textContent = s.applied_count || 0;
-  if ($("#count-interview")) $("#count-interview").textContent = s.interview_count || 0;
-  if ($("#count-offer")) $("#count-offer").textContent = s.offer_count || 0;
-  if ($("#count-rejected")) $("#count-rejected").textContent = s.rejected_count || 0;
-}
-
-function renderTrackerBoard() {
-  const stages = ["interested", "applied", "interview", "offer", "rejected"];
-  const grouped = {
-    interested: [],
-    applied: [],
-    interview: [],
-    offer: [],
-    rejected: [],
-  };
-
-  trackerState.applications.forEach((app) => {
-    const st = app.stage || "interested";
-    if (grouped[st]) {
-      grouped[st].push(app);
-    }
-  });
-
-  stages.forEach((st) => {
-    const colList = $(`#cards-${st}`);
-    if (!colList) return;
-    const items = grouped[st];
-    if (!items.length) {
-      colList.innerHTML = `<div class="kanban-empty-hint">No opportunities in this stage</div>`;
-      return;
-    }
-
-    colList.innerHTML = items
-      .map((app) => {
-        const salaryBadge = app.salary_text
-          ? `<span class="tracker-card-salary">${escapeHtml(app.salary_text)}</span>`
-          : "";
-        const notePreview = app.notes
-          ? `<div class="tracker-notes-preview" data-app-id="${app.id}" title="Click to edit notes">${escapeHtml(app.notes)}</div>`
-          : `<div class="tracker-notes-preview" style="color:var(--muted); font-style:italic;" data-app-id="${app.id}">+ Add notes / interview details</div>`;
-
-        return `
-        <div class="tracker-card" data-app-id="${app.id}">
-          <div class="tracker-card-header">
-            <span class="tracker-card-company">${escapeHtml(app.company_name)}</span>
-            <h4 class="tracker-card-title">${escapeHtml(app.title)}</h4>
-            <div class="tracker-card-meta">
-              <span>${escapeHtml(app.location_text || "Location not specified")}</span>
-              ${app.work_mode ? `<span>· ${escapeHtml(workModeLabel(app.work_mode))}</span>` : ""}
-            </div>
-            ${salaryBadge}
-          </div>
-
-          <div class="tracker-stage-select-wrap">
-            <select class="tracker-stage-select" data-app-id="${app.id}" aria-label="Change stage">
-              <option value="interested" ${app.stage === "interested" ? "selected" : ""}>Interested</option>
-              <option value="applied" ${app.stage === "applied" ? "selected" : ""}>Applied</option>
-              <option value="interview" ${app.stage === "interview" ? "selected" : ""}>Interview</option>
-              <option value="offer" ${app.stage === "offer" ? "selected" : ""}>Offer</option>
-              <option value="rejected" ${app.stage === "rejected" ? "selected" : ""}>Refused</option>
-            </select>
-          </div>
-
-          ${notePreview}
-
-          <div class="tracker-card-actions">
-            <div class="tracker-ai-links">
-              <button type="button" class="tracker-icon-btn btn-ai-ats" data-app-id="${app.id}" title="Evaluate in ATS Review">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
-                <span>ATS</span>
-              </button>
-              <button type="button" class="tracker-icon-btn btn-ai-interview" data-app-id="${app.id}" title="Practice in Interview Coach">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path></svg>
-                <span>Mock</span>
-              </button>
-              <button type="button" class="tracker-icon-btn btn-ai-cl" data-app-id="${app.id}" title="Generate Cover Letter">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                <span>Letter</span>
-              </button>
-            </div>
-            <button type="button" class="tracker-icon-btn btn-delete" data-app-id="${app.id}" title="Remove from Pipeline">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-            </button>
-          </div>
-        </div>`;
-      })
-      .join("");
-  });
-
-  $$(".tracker-stage-select").forEach((sel) => {
-    sel.addEventListener("change", async (e) => {
-      const appId = e.target.dataset.appId;
-      const newStage = e.target.value;
-      await updateApplicationStage(appId, newStage);
-    });
-  });
-
-  $$(".tracker-notes-preview").forEach((preview) => {
-    preview.addEventListener("click", () => {
-      const appId = preview.dataset.appId;
-      openTrackerNotesDialog(appId);
-    });
-  });
-
-  $$(".btn-ai-ats").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const app = trackerState.applications.find((a) => a.id === btn.dataset.appId);
-      if (!app) return;
-      $("#ats-jd-text").value = `${app.title} at ${app.company_name}\n\nLocation: ${app.location_text || "Unspecified"}\n\nNotes:\n${app.notes || ""}`;
-      switchTab("tab-ats");
-    });
-  });
-
-  $$(".btn-ai-interview").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const app = trackerState.applications.find((a) => a.id === btn.dataset.appId);
-      if (!app) return;
-      $("#interview-jd-text").value = `${app.title} at ${app.company_name}\n\nLocation: ${app.location_text || "Unspecified"}\n\nNotes:\n${app.notes || ""}`;
-      switchTab("tab-interview");
-    });
-  });
-
-  $$(".btn-ai-cl").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const app = trackerState.applications.find((a) => a.id === btn.dataset.appId);
-      if (!app) return;
-      $("#cl-jd-text").value = `${app.title} at ${app.company_name}\n\nLocation: ${app.location_text || "Unspecified"}\n\nNotes:\n${app.notes || ""}`;
-      switchTab("tab-cover-letter");
-    });
-  });
-
-  $$(".tracker-icon-btn.btn-delete").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const appId = btn.dataset.appId;
-      await deleteTrackedApplication(appId);
-    });
-  });
-}
-
-function updateBookmarkButtons() {
-  $$(".job-bookmark-btn").forEach((btn) => {
-    const jId = btn.dataset.jobId;
-    const isSaved = trackerState.trackedJobIds?.has(jId);
-    btn.classList.toggle("saved", Boolean(isSaved));
-    btn.title = isSaved ? "Tracked in Pipeline" : "Bookmark / Track Job";
-    btn.innerHTML = isSaved
-      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`
-      : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
-  });
-}
-
-async function updateApplicationStage(appId, newStage) {
-  try {
-    const res = await fetch(`/api/v1/tracker/${appId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage: newStage }),
-    });
-    if (!res.ok) throw new Error("Failed to update stage");
-    await fetchTrackerData();
-  } catch (err) {
-    alert(`Could not update application stage: ${err.message}`);
-  }
-}
-
-function openTrackerNotesDialog(appId) {
-  const app = trackerState.applications.find((a) => a.id === appId);
-  if (!app) return;
-  $("#notes-dialog-app-id").value = app.id;
-  $("#notes-dialog-job-title").textContent = `${app.title}`;
-  $("#notes-dialog-company").textContent = `${app.company_name} · ${app.location_text || "Unspecified"}`;
-  $("#notes-dialog-stage").value = app.stage || "interested";
-  $("#notes-dialog-text").value = app.notes || "";
-
-  const dialog = $("#tracker-notes-dialog");
-  dialog?.showModal();
-  syncDialogScrollLock();
-}
-
-async function saveTrackerNotes() {
-  const appId = $("#notes-dialog-app-id").value;
-  const stage = $("#notes-dialog-stage").value;
-  const notes = $("#notes-dialog-text").value.trim();
-
-  if (!appId) return;
-  try {
-    const res = await fetch(`/api/v1/tracker/${appId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage, notes }),
-    });
-    if (!res.ok) throw new Error("Failed to save notes");
-    $("#tracker-notes-dialog")?.close();
-    await fetchTrackerData();
-  } catch (err) {
-    alert(`Save failed: ${err.message}`);
-  }
-}
-
-async function deleteTrackedApplication(appId) {
-  if (!confirm("Are you sure you want to remove this job from your pipeline?")) return;
-  try {
-    const res = await fetch(`/api/v1/tracker/${appId}`, { method: "DELETE" });
-    if (!res.ok) throw new Error("Failed to delete application");
-    $("#tracker-notes-dialog")?.close();
-    await fetchTrackerData();
-  } catch (err) {
-    alert(`Delete failed: ${err.message}`);
-  }
-}
-
-async function toggleBookmarkJob(jobId, jobContext = null) {
-  const existing = trackerState.applications.find((a) => a.job_id === jobId);
-  if (existing) {
-    // Already in pipeline, prompt to view or delete
-    switchTab("tab-tracker");
-    return;
-  }
-
-  // Add to tracker as Interested
-  let payload = {
-    job_id: jobId,
-    company_name: "Company",
-    title: "Internship Role",
-    stage: "interested",
-  };
-
-  if (jobContext) {
-    payload.company_name = jobContext.company || "Company";
-    payload.title = jobContext.title || "Internship Role";
-    payload.location_text = jobContext.location || "";
-  } else {
-    const card = $(`.job-card[data-id="${jobId}"]`);
-    if (card) {
-      payload.title = card.querySelector("h3")?.textContent || "Internship Role";
-      payload.company_name = card.querySelector(".company-name")?.textContent || "Company";
-      payload.location_text = card.querySelector(".job-location")?.textContent || "";
-    }
-  }
-
-  try {
-    const res = await fetch("/api/v1/tracker", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error("Failed to track job");
-    await fetchTrackerData();
-  } catch (err) {
-    alert(`Could not add to pipeline: ${err.message}`);
-  }
-}
-
-// Custom Job Dialog Wiring
-$("#btn-open-custom-job")?.addEventListener("click", () => {
-  $("#custom-job-form").reset();
-  $("#custom-job-error").hidden = true;
-  const dialog = $("#custom-job-dialog");
-  dialog?.showModal();
-  syncDialogScrollLock();
-});
-$("#close-custom-job-dialog")?.addEventListener("click", () => $("#custom-job-dialog")?.close());
-$("#btn-cancel-custom-job")?.addEventListener("click", () => $("#custom-job-dialog")?.close());
-$("#custom-job-dialog")?.addEventListener("click", (e) => {
-  if (e.target === $("#custom-job-dialog")) $("#custom-job-dialog")?.close();
-});
-
-$("#custom-job-form")?.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const company = $("#custom-company").value.trim();
-  const title = $("#custom-title").value.trim();
-  const location = $("#custom-location").value.trim();
-  const workMode = $("#custom-work-mode").value;
-  const stage = $("#custom-stage").value;
-  const salary = $("#custom-salary").value.trim();
-  const url = $("#custom-url").value.trim();
-  const notes = $("#custom-notes").value.trim();
-
-  if (!company || !title) return;
-
-  try {
-    const res = await fetch("/api/v1/tracker", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        company_name: company,
-        title: title,
-        location_text: location || null,
-        work_mode: workMode || null,
-        stage: stage || "interested",
-        salary_text: salary || null,
-        job_url: url || null,
-        notes: notes || null,
-      }),
-    });
-    if (!res.ok) throw new Error("Failed to save custom application");
-    $("#custom-job-dialog")?.close();
-    await fetchTrackerData();
-  } catch (err) {
-    const errBox = $("#custom-job-error");
-    if (errBox) {
-      errBox.textContent = err.message;
-      errBox.hidden = false;
-    }
-  }
-});
-
-// Tracker Notes Dialog Wiring
-$("#close-tracker-notes-dialog")?.addEventListener("click", () => $("#tracker-notes-dialog")?.close());
-$("#btn-cancel-tracker-notes")?.addEventListener("click", () => $("#tracker-notes-dialog")?.close());
-$("#btn-save-tracker-notes")?.addEventListener("click", saveTrackerNotes);
-$("#btn-delete-tracked-app")?.addEventListener("click", () => {
-  const appId = $("#notes-dialog-app-id").value;
-  if (appId) deleteTrackedApplication(appId);
-});
-$("#tracker-notes-dialog")?.addEventListener("click", (e) => {
-  if (e.target === $("#tracker-notes-dialog")) $("#tracker-notes-dialog")?.close();
-});
-
-*/
-
-// =========================================================
 // SCALABLE APPLICATION TRACKER WORKSPACE
 // =========================================================
 
@@ -1444,11 +1131,6 @@ function trackerFiltersFromControls() {
   return {
     query: $("#tracker-query")?.value.trim() || "",
     stage: trackerState.stageFilter || "",
-    work_mode: "",
-    priority: "",
-    archived: "all",
-    date_from: "",
-    date_to: "",
     sort,
     direction,
   };
@@ -1467,7 +1149,7 @@ function syncTrackerFilterState() {
   const filters = trackerFiltersFromControls();
   localStorage.setItem(TRACKER_FILTER_KEY, JSON.stringify({ query: filters.query, stage: filters.stage, sort: filters.sort, direction: filters.direction }));
   const url = new URL(window.location.href);
-  ["tq", "tstage", "tmode", "tpriority", "tarchive", "tfrom", "tto", "tsort"].forEach((key) => url.searchParams.delete(key));
+  ["tq", "tstage", "tsort"].forEach((key) => url.searchParams.delete(key));
   if (filters.query) url.searchParams.set("tq", filters.query);
   if (filters.stage) url.searchParams.set("tstage", filters.stage);
   if (`${filters.sort}:${filters.direction}` !== "updated:desc") url.searchParams.set("tsort", `${filters.sort}:${filters.direction}`);
@@ -1549,10 +1231,6 @@ function trackerDate(value, fallback = "—") {
   return Number.isNaN(date.getTime()) ? fallback : new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-function stageBadge(stage) {
-  return `<span class="tracker-stage-badge stage-${escapeHtml(stage)}">${escapeHtml(trackerStageLabels[stage] || label(stage))}</span>`;
-}
-
 const trackerSourceLabels = {
   wecanfindintern: "WecanFindIntern",
   linkedin: "LinkedIn",
@@ -1577,35 +1255,18 @@ function renderTrackerList() {
   $("#tracker-results-title").textContent = titleMap[trackerState.stageFilter] || "All applications";
   $("#tracker-result-count").textContent = `${trackerState.total.toLocaleString()} record${trackerState.total === 1 ? "" : "s"}`;
   body.innerHTML = items.map((app) => {
-    const nextAction = app.next_step || (app.follow_up_at ? `Follow up ${trackerDate(app.follow_up_at)}` : "Add next action");
-    const priority = app.priority === "high" ? `<span class="priority-mark" title="High priority">●</span>` : "";
     return `<tr class="tracker-row" data-app-id="${app.id}">
       <td class="select-col"><input class="tracker-row-check" data-app-id="${app.id}" type="checkbox" aria-label="Select ${escapeHtml(app.title)}" ${trackerState.selectedIds.has(app.id) ? "checked" : ""} /></td>
-      <td><div class="tracker-role-cell"><strong>${priority}${escapeHtml(app.company_name)}</strong><span>${escapeHtml(app.title)}</span><small>${escapeHtml(trackerSourceLabels[app.source] || "Other")}</small></div></td>
+      <td><div class="tracker-role-cell"><strong>${escapeHtml(app.company_name)}</strong><span>${escapeHtml(app.title)}</span></div></td>
       <td><select class="tracker-inline-stage stage-${escapeHtml(app.stage)}" data-app-id="${app.id}" aria-label="Change stage for ${escapeHtml(app.title)}"><option value="interested" ${app.stage === "interested" ? "selected" : ""}>Interested</option><option value="applied" ${app.stage === "applied" ? "selected" : ""}>Applied</option><option value="interview" ${app.stage === "interview" ? "selected" : ""}>Interview</option><option value="offer" ${app.stage === "offer" ? "selected" : ""}>Offer</option><option value="rejected" ${app.stage === "rejected" ? "selected" : ""}>Refused</option></select></td>
-      <td><div class="tracker-muted-cell"><span>${escapeHtml(app.location_text || "Unspecified")}</span><small>${escapeHtml(workModeLabel(app.work_mode))}</small></div></td>
+      <td><span class="tracker-cell-text">${escapeHtml(app.location_text || "Unspecified")}</span></td>
+      <td><span class="tracker-cell-text">${escapeHtml(trackerSourceLabels[app.source] || "Other")}</span></td>
       <td><input class="tracker-inline-date" data-app-id="${app.id}" type="date" value="${toDateInput(app.applied_at)}" aria-label="Applied date for ${escapeHtml(app.title)}" /></td>
-      <td><button class="tracker-next-action" data-app-id="${app.id}" type="button">${escapeHtml(nextAction)}</button></td>
       <td><span title="${escapeHtml(new Date(app.updated_at).toLocaleString())}">${escapeHtml(formatRelativeTime(app.updated_at))}</span></td>
       <td><button class="tracker-row-menu" data-app-id="${app.id}" type="button" aria-label="Open application">›</button></td>
     </tr>`;
   }).join("");
   updateBulkBar();
-}
-
-function renderTrackerBoard() {
-  const grouped = { interested: [], applied: [], interview: [], offer: [], rejected: [] };
-  trackerState.applications.forEach((app) => grouped[app.stage]?.push(app));
-  Object.entries(grouped).forEach(([stage, items]) => {
-    const list = $(`#cards-${stage}`);
-    if (!list) return;
-    if (!items.length) { list.innerHTML = `<div class="kanban-empty-hint">No applications on this page</div>`; return; }
-    list.innerHTML = items.slice(0, 20).map((app) => `<article class="tracker-card compact-tracker-card" data-app-id="${app.id}" tabindex="0">
-      <div><span class="tracker-card-company">${escapeHtml(app.company_name)}</span><h4 class="tracker-card-title">${escapeHtml(app.title)}</h4></div>
-      <div class="tracker-card-meta"><span>${escapeHtml(app.location_text || "Unspecified")}</span>${app.priority === "high" ? `<span class="priority-label">High priority</span>` : ""}</div>
-      <div class="compact-card-footer"><span>${escapeHtml(app.next_step || trackerDate(app.follow_up_at, "No next action"))}</span><button type="button" data-app-id="${app.id}" aria-label="Open details">›</button></div>
-    </article>`).join("");
-  });
 }
 
 function renderTrackerPagination() {
@@ -1623,47 +1284,7 @@ function updateBulkBar() {
   $("#tracker-selected-count").textContent = count.toLocaleString();
 }
 
-function setTrackerView(view) {
-  trackerState.view = view;
-  localStorage.setItem("wecan_tracker_view", view);
-  $$("[data-tracker-view]").forEach((button) => button.classList.toggle("active", button.dataset.trackerView === view));
-  ["list", "board", "analytics"].forEach((name) => { $(`#tracker-${name}-view`).hidden = name !== view; });
-  if (view === "analytics") loadTrackerAnalytics();
-}
-
-async function loadTrackerAttention({ show = true } = {}) {
-  const panel = $("#attention-panel");
-  if (show) panel.hidden = false;
-  const response = await fetch("/api/v1/tracker/needs-attention?limit=30");
-  if (!response.ok) return;
-  const data = await response.json();
-  trackerState.attentionItems = data.items || [];
-  $("#attention-list").innerHTML = trackerState.attentionItems.length ? trackerState.attentionItems.map((item) => `<button class="attention-item attention-${escapeHtml(item.reason_type)}" data-app-id="${item.application.id}" type="button"><span class="attention-dot"></span><span><strong>${escapeHtml(item.application.company_name)} · ${escapeHtml(item.application.title)}</strong><small>${escapeHtml(item.reason)}${item.due_at ? ` · ${trackerDate(item.due_at)}` : ""}</small></span><span>›</span></button>`).join("") : `<p class="attention-clear">Everything is up to date.</p>`;
-}
-
-function analyticsBars(title, items, labelKey = "label") {
-  const max = Math.max(1, ...items.map((item) => item.count));
-  return `<section class="analytics-card"><h3>${escapeHtml(title)}</h3><div class="analytics-bars">${items.length ? items.map((item) => `<div class="analytics-bar-row"><span>${escapeHtml(item[labelKey] || label(item.stage))}</span><div><i style="width:${Math.max(4, item.count / max * 100)}%"></i></div><strong>${item.count}</strong></div>`).join("") : `<p class="tracker-view-note">Not enough data yet.</p>`}</div></section>`;
-}
-
-async function loadTrackerAnalytics() {
-  const root = $("#tracker-analytics");
-  if (!root) return;
-  root.innerHTML = `<div class="loading-state"><div class="spinner"></div><span>Building your insights…</span></div>`;
-  const response = await fetch("/api/v1/tracker/analytics");
-  if (!response.ok) { root.innerHTML = `<div class="notice error">Could not load insights.</div>`; return; }
-  const data = await response.json();
-  trackerState.analytics = data;
-  root.innerHTML = `<section class="analytics-card analytics-highlight"><span>Average response time</span><strong>${data.average_days_to_response == null ? "—" : `${data.average_days_to_response} days`}</strong><p>From application to the first recorded outcome.</p></section><section class="analytics-card conversion-card"><h3>Conversion health</h3><div><span>Application → interview</span><strong>${data.application_to_interview_percent}%</strong></div><div><span>Interview → offer</span><strong>${data.interview_to_offer_percent}%</strong></div></section>${analyticsBars("Pipeline mix", data.stages, "stage")}${analyticsBars("Applications by week", data.weekly_applications.map((item) => ({ label: trackerDate(item.week_start), count: item.count })))}${analyticsBars("Top companies", data.top_companies)}${analyticsBars("Top locations", data.top_locations)}${analyticsBars("Application sources", data.top_sources)}${analyticsBars("Role categories", data.top_categories)}`;
-}
-
 function toDateInput(value) { return value ? String(value).slice(0, 10) : ""; }
-function toDateTimeInput(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 16);
-}
 
 function syncTrackerLinkActions() {
   const url = $("#drawer-url").value.trim();
@@ -1688,10 +1309,11 @@ async function openTrackerDrawer(appId) {
     : "External application · You can edit both the job information and tracking fields.";
   $("#drawer-origin-notice").classList.toggle("platform-origin", isPlatformJob);
   const fields = {
-    "#drawer-stage": app.stage, "#drawer-priority": app.priority || "normal",
+    "#drawer-stage": app.stage,
     "#drawer-applied-at": toDateInput(app.applied_at),
-    "#drawer-follow-up": toDateTimeInput(app.follow_up_at), "#drawer-source": app.source || "other",
-    "#drawer-url": app.job_url || "", "#drawer-jd-input": app.job_description || "",
+    "#drawer-source": app.source || "other",
+    "#drawer-url": app.job_url || "",
+    "#drawer-jd-input": app.job_description || "",
   };
   Object.entries(fields).forEach(([selector, value]) => { $(selector).value = value; });
   $("#drawer-jd-readonly").innerHTML = app.job_description ? renderMarkdown(app.job_description) : "<p>No job description is available.</p>";
@@ -1720,11 +1342,9 @@ async function saveTrackerDrawer() {
   const appId = $("#drawer-app-id").value;
   if (!appId) return;
   const dateIso = (selector) => $(selector).value ? new Date(`${$(selector).value}T12:00:00`).toISOString() : null;
-  const dateTimeIso = (selector) => $(selector).value ? new Date($(selector).value).toISOString() : null;
   const payload = {
-    stage: $("#drawer-stage").value, priority: $("#drawer-priority").value,
+    stage: $("#drawer-stage").value,
     applied_at: dateIso("#drawer-applied-at"),
-    follow_up_at: dateTimeIso("#drawer-follow-up"),
   };
   if ($("#tracker-detail-drawer").dataset.originType === "custom") {
     Object.assign(payload, {
@@ -1754,7 +1374,22 @@ async function loadTrackerTimeline(appId) {
   }
   const events = await response.json();
   root.innerHTML = events.length
-    ? events.map((event) => `<article class="timeline-item"><span class="timeline-marker event-${escapeHtml(event.event_type)}"></span><div><strong>${escapeHtml(event.title)}</strong>${event.details ? `<p>${escapeHtml(event.details)}</p>` : ""}<time>${trackerDate(event.occurred_at)} · ${escapeHtml(formatRelativeTime(event.occurred_at))}</time></div></article>`).join("")
+    ? events.map((event) => {
+        const typeClass = escapeHtml(event.event_type || "note");
+        const stageKey = (event.title || "").toLowerCase().replace(/[^a-z]/g, "");
+        const stageClass = `stage-${escapeHtml(stageKey)}`;
+        return `<article class="timeline-item">
+          <div class="timeline-spine">
+            <span class="timeline-marker event-${typeClass} ${stageClass}"></span>
+          </div>
+          <div class="timeline-content">
+            <div class="timeline-header">
+              <strong class="timeline-title">${escapeHtml(event.title)}</strong>
+              <time class="timeline-time">${escapeHtml(trackerDate(event.occurred_at))}</time>
+            </div>
+          </div>
+        </article>`;
+      }).join("")
     : `<p class="tracker-view-note">No progress recorded yet.</p>`;
 }
 
@@ -1767,19 +1402,6 @@ async function bulkUpdateTracker(payload) {
   await fetchTrackerData();
 }
 
-function showTrackerUndo(message, undoAction) {
-  let toast = $("#tracker-undo-toast");
-  if (!toast) {
-    document.body.insertAdjacentHTML("beforeend", `<div id="tracker-undo-toast" class="tracker-undo-toast" hidden><span></span><button type="button">Undo</button></div>`);
-    toast = $("#tracker-undo-toast");
-  }
-  clearTimeout(trackerState.undoTimer);
-  toast.querySelector("span").textContent = message;
-  const button = toast.querySelector("button");
-  button.onclick = async () => { toast.hidden = true; await undoAction(); };
-  toast.hidden = false;
-  trackerState.undoTimer = setTimeout(() => { toast.hidden = true; }, 6000);
-}
 
 async function deleteTrackedApplication(appId) {
   if (!confirm("Delete this application and its activity permanently?")) return;
@@ -1789,40 +1411,99 @@ async function deleteTrackedApplication(appId) {
   await fetchTrackerData();
 }
 
+let plainToastTimer;
+function showPlainToast(message, actionLabel = null, onAction = null) {
+  let toast = $("#plain-toast");
+  if (!toast) {
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `<div id="plain-toast" class="plain-toast" hidden><span class="plain-toast-msg"></span><button class="plain-toast-action" type="button" hidden></button></div>`
+    );
+    toast = $("#plain-toast");
+  }
+  const msgEl = toast.querySelector(".plain-toast-msg");
+  const actionBtn = toast.querySelector(".plain-toast-action");
+  msgEl.textContent = message;
+
+  if (actionLabel && onAction) {
+    actionBtn.textContent = actionLabel;
+    actionBtn.hidden = false;
+    actionBtn.onclick = () => {
+      toast.hidden = true;
+      toast.classList.remove("visible");
+      onAction();
+    };
+  } else {
+    actionBtn.hidden = true;
+    actionBtn.onclick = null;
+  }
+
+  toast.hidden = false;
+  requestAnimationFrame(() => toast.classList.add("visible"));
+  clearTimeout(plainToastTimer);
+  plainToastTimer = setTimeout(() => {
+    toast.classList.remove("visible");
+    setTimeout(() => { toast.hidden = true; }, 200);
+  }, 3200);
+}
+
 function updateBookmarkButtons() {
   $$(".job-bookmark-btn").forEach((btn) => {
-    const saved = trackerState.trackedJobIds.has(btn.dataset.jobId);
+    const tracked = trackerState.trackedJobs.get(btn.dataset.jobId);
+    const saved = Boolean(tracked);
     btn.classList.toggle("saved", saved);
-    btn.title = saved ? "Tracked in workspace" : "Track this job";
     btn.setAttribute("aria-pressed", String(saved));
-    btn.innerHTML = saved
-      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`
-      : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+
+    if (!saved) {
+      btn.title = "Save to Interested";
+      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+    } else if (tracked.stage === "interested") {
+      btn.title = "Interested · Click to remove";
+      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+    } else {
+      const stageName = trackerStageLabels[tracked.stage] || tracked.stage;
+      btn.title = `${stageName} in Tracker · Click to view`;
+      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+    }
   });
 }
 
 async function toggleBookmarkJob(jobId) {
   const existing = trackerState.trackedJobs.get(jobId);
-  if (existing) {
-    switchTab("tab-tracker");
-    openTrackerDrawer(existing.application_id);
-    return;
-  }
   const buttons = $$(`.job-bookmark-btn[data-job-id="${jobId}"]`);
-  buttons.forEach((button) => { button.disabled = true; });
+  buttons.forEach((b) => { b.disabled = true; });
+
   try {
-    const response = await fetch(`/api/v1/tracker/bookmarks/${jobId}`, { method: "PUT" });
-    if (!response.ok) throw new Error("Could not add this job to your tracker.");
-    const application = await response.json();
-    const trackedState = { job_id: jobId, application_id: application.id, stage: application.stage };
-    trackerState.trackedJobs.set(jobId, trackedState);
-    trackerState.trackedJobIds.add(jobId);
-    updateBookmarkButtons();
-    await fetchTrackerData();
+    if (!existing) {
+      const res = await fetch(`/api/v1/tracker/bookmarks/${jobId}`, { method: "PUT" });
+      if (!res.ok) throw new Error("Could not save this job to your tracker.");
+      const app = await res.json();
+      trackerState.trackedJobs.set(jobId, { job_id: jobId, application_id: app.id, stage: app.stage });
+      trackerState.trackedJobIds.add(jobId);
+      updateBookmarkButtons();
+      showPlainToast("Saved to Interested", "Open Tracker ↗", () => {
+        switchTab("tab-tracker");
+      });
+      await fetchTrackerData({ keepSelection: true });
+    } else if (existing.stage === "interested") {
+      const res = await fetch(`/api/v1/tracker/bookmarks/${jobId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Could not remove bookmark.");
+      trackerState.trackedJobs.delete(jobId);
+      trackerState.trackedJobIds.delete(jobId);
+      updateBookmarkButtons();
+      showPlainToast("Removed from Interested");
+      await fetchTrackerData({ keepSelection: true });
+    } else {
+      const stageName = trackerStageLabels[existing.stage] || existing.stage;
+      showPlainToast(`This job is in stage [${stageName}] in your Tracker`, "Open Tracker ↗", () => {
+        switchTab("tab-tracker");
+        openTrackerDrawer(existing.application_id);
+      });
+    }
   } catch (error) {
     alert(error.message);
   } finally {
-    buttons.forEach((button) => { button.disabled = false; });
+    buttons.forEach((b) => { b.disabled = false; });
   }
 }
 
@@ -1867,12 +1548,9 @@ $("#tracker-table-body")?.addEventListener("change", async (event) => {
   if (!response.ok) { alert("Inline update failed."); await fetchTrackerData({ keepSelection: true }); return; }
   await fetchTrackerData({ keepSelection: true });
 });
-$("#tracker-board-view")?.addEventListener("click", (event) => { const target = event.target.closest("[data-app-id]"); if (target) openTrackerDrawer(target.dataset.appId); });
-$("#attention-list")?.addEventListener("click", (event) => { const target = event.target.closest("[data-app-id]"); if (target) openTrackerDrawer(target.dataset.appId); });
 $("#tracker-select-page")?.addEventListener("change", (event) => { trackerState.applications.forEach((app) => event.target.checked ? trackerState.selectedIds.add(app.id) : trackerState.selectedIds.delete(app.id)); renderTrackerList(); renderTrackerPagination(); });
 $("#tracker-clear-selection")?.addEventListener("click", () => { trackerState.selectedIds.clear(); renderTrackerList(); renderTrackerPagination(); });
 $("#tracker-bulk-stage")?.addEventListener("change", (event) => { if (event.target.value) bulkUpdateTracker({ stage: event.target.value }); event.target.value = ""; });
-$("#tracker-bulk-priority")?.addEventListener("change", (event) => { if (event.target.value) bulkUpdateTracker({ priority: event.target.value }); event.target.value = ""; });
 $("#tracker-bulk-delete")?.addEventListener("click", async () => {
   const ids = [...trackerState.selectedIds]; if (!ids.length || !confirm(`Delete ${ids.length} applications permanently?`)) return;
   const response = await fetch("/api/v1/tracker/bulk", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
@@ -1900,10 +1578,6 @@ $("#drawer-copy-job")?.addEventListener("click", async (event) => {
   setTimeout(() => { event.target.textContent = "Copy"; }, 1200);
 });
 $("#btn-delete-tracked-app")?.addEventListener("click", () => { const id = $("#drawer-app-id").value; if (id) deleteTrackedApplication(id); });
-async function bulkUpdateTrackerForIds(ids, payload) {
-  const response = await fetch("/api/v1/tracker/bulk", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, ...payload }) });
-  if (response.ok) await fetchTrackerData();
-}
 $("#btn-open-custom-job")?.addEventListener("click", () => { $("#custom-job-form").reset(); $("#custom-job-error").hidden = true; $("#custom-job-dialog")?.showModal(); syncDialogScrollLock(); });
 $("#close-custom-job-dialog")?.addEventListener("click", () => $("#custom-job-dialog")?.close());
 $("#btn-cancel-custom-job")?.addEventListener("click", () => $("#custom-job-dialog")?.close());
@@ -1914,10 +1588,9 @@ $("#custom-job-form")?.addEventListener("submit", async (event) => {
     company_name: $("#custom-company").value.trim(), title: $("#custom-title").value.trim(),
     location_text: $("#custom-location").value.trim() || null, work_mode: $("#custom-work-mode").value || null,
     stage: $("#custom-stage").value, salary_text: $("#custom-salary").value.trim() || null,
-    priority: $("#custom-priority").value, source: $("#custom-source").value,
+    source: $("#custom-source").value,
     applied_at: $("#custom-applied-at").value ? new Date(`${$("#custom-applied-at").value}T12:00:00`).toISOString() : null,
-    follow_up_at: $("#custom-follow-up").value ? new Date($("#custom-follow-up").value).toISOString() : null,
-    next_step: $("#custom-next-step").value.trim() || null, job_url: $("#custom-url").value.trim() || null,
+    job_url: $("#custom-url").value.trim() || null,
     job_description: $("#custom-job-description").value.trim() || null,
   };
   const response = await fetch("/api/v1/tracker", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });

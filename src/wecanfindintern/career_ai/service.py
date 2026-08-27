@@ -57,37 +57,25 @@ def match_level(score: int) -> str:
 def _resolve_api_key(provider: str, api_key: str | None = None) -> str:
     if api_key and api_key.strip():
         return api_key.strip()
-    if provider == "DeepSeek":
-        key = os.environ.get("DEEPSEEK_API_KEY", "")
-        if not key:
-            raise ValueError("Missing DeepSeek API Key. Please provide one in request or set DEEPSEEK_API_KEY.")
-        return key
-    if provider == "OpenAI":
-        key = os.environ.get("OPENAI_API_KEY", "")
-        if not key:
-            raise ValueError("Missing OpenAI API Key. Please provide one in request or set OPENAI_API_KEY.")
-        return key
-    # Default: Gemini
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
-    if not key:
-        raise ValueError("Missing Gemini API Key. Please provide one in request or set GEMINI_API_KEY.")
-    return key
+    raise ValueError(f"Missing {provider} API key. Please enter your API key in Settings.")
 
 
 def _call_openai_compatible(
     api_key: str,
-    model_name: str,
+    model_name: str | None,
     messages: list[dict[str, str]],
     base_url: str | None = None,
     response_format: dict[str, str] | None = None,
 ) -> tuple[str, int]:
+    if not model_name or not model_name.strip():
+        raise ValueError("No AI model selected. Please select a model in Settings.")
     from openai import OpenAI
     client = OpenAI(api_key=api_key, base_url=base_url)
     kwargs: dict[str, Any] = {}
     if response_format:
         kwargs["response_format"] = response_format
     resp = client.chat.completions.create(
-        model=model_name,
+        model=model_name.strip(),
         messages=messages,
         **kwargs,
     )
@@ -101,43 +89,18 @@ def _call_gemini_with_fallback(
     prompt: Any,
     requested_model: str | None = None,
 ) -> str:
-    """Execute Gemini generate_content: try gemini-3.7-flash first, then gemini-2.5-flash."""
+    """Execute Gemini generate_content using strictly the user-requested model."""
+    if not requested_model or not requested_model.strip():
+        raise ValueError("No AI model selected. Please select a model in Settings.")
     import google.generativeai as genai
     genai.configure(api_key=api_key)
 
-    models_to_try: list[str] = []
-    if requested_model and requested_model.strip():
-        clean_model = requested_model.strip().replace("models/", "")
-        models_to_try.append(clean_model)
-    
-    for m in ["gemini-3.7-flash", "gemini-2.5-flash"]:
-        if m not in models_to_try:
-            models_to_try.append(m)
-
-    last_err: Exception | None = None
-    for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(model_name)
-            resp = model.generate_content(prompt)
-            if resp and resp.text:
-                return resp.text
-        except Exception as exc:
-            last_err = exc
-            continue
-
-    if last_err:
-        raise last_err
-    raise RuntimeError("Gemini execution failed for gemini-3.7-flash and gemini-2.5-flash.")
-
-
-def _init_gemini_client(api_key: str, model_name: str | None = None) -> Any:
-    import google.generativeai as genai
-    genai.configure(api_key=api_key)
-    target_model = model_name or "gemini-2.0-flash"
-    try:
-        return genai.GenerativeModel(target_model)
-    except Exception:
-        return genai.GenerativeModel("gemini-1.5-flash")
+    target_model = requested_model.strip().replace("models/", "")
+    model = genai.GenerativeModel(target_model)
+    resp = model.generate_content(prompt)
+    if resp and resp.text:
+        return resp.text
+    raise RuntimeError(f"Gemini model {target_model} returned empty response.")
 
 
 # --- 1. ATS Resume Review ---
@@ -153,6 +116,8 @@ def generate_ats_review(
         return AtsReviewResponse(ok=False, error="Resume text cannot be empty.")
     if not job_description.strip():
         return AtsReviewResponse(ok=False, error="Job description cannot be empty.")
+    if not model_name or not model_name.strip():
+        return AtsReviewResponse(ok=False, error="No AI model selected. Please select a model in Settings.")
 
     try:
         resolved_key = _resolve_api_key(provider, api_key)
@@ -182,11 +147,9 @@ Provide an objective evaluation. Return a VALID JSON object ONLY:
     if provider in ("DeepSeek", "OpenAI"):
         try:
             base_url = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com") if provider == "DeepSeek" else None
-            default_model = "deepseek-v4-flash" if provider == "DeepSeek" else "gpt-4o-mini"
-            target_model = model_name or default_model
             raw_content, total_tokens = _call_openai_compatible(
                 api_key=resolved_key,
-                model_name=target_model,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": "You are a senior recruiter. Output strictly valid JSON."},
                     {"role": "user", "content": prompt},
@@ -239,6 +202,8 @@ def generate_interview_questions(
 ) -> InterviewQuestionsResponse:
     if not job_description.strip():
         return InterviewQuestionsResponse(ok=False, error="Job description cannot be empty.")
+    if not model_name or not model_name.strip():
+        return InterviewQuestionsResponse(ok=False, error="No AI model selected. Please select a model in Settings.")
 
     try:
         resolved_key = _resolve_api_key(provider, api_key)
@@ -265,11 +230,9 @@ Return a VALID JSON array of 3 objects:
     if provider in ("DeepSeek", "OpenAI"):
         try:
             base_url = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com") if provider == "DeepSeek" else None
-            default_model = "deepseek-v4-flash" if provider == "DeepSeek" else "gpt-4o-mini"
-            target_model = model_name or default_model
             raw_content, _ = _call_openai_compatible(
                 api_key=resolved_key,
-                model_name=target_model,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": "You are an expert interviewer. Output strictly valid JSON array or object containing questions."},
                     {"role": "user", "content": prompt},
@@ -295,13 +258,7 @@ Return a VALID JSON array of 3 objects:
         questions = [InterviewQuestionItem.model_validate(item) for item in items_raw[:3]]
         return InterviewQuestionsResponse(ok=True, questions=questions)
     except Exception as exc:
-        # Fallback to smart default questions
-        fallback = [
-            InterviewQuestionItem(id=1, category="icebreaker", category_label="Icebreaker & Motivation", question="Please briefly introduce yourself and share why you are interested in this position."),
-            InterviewQuestionItem(id=2, category="behavioral", category_label="Behavioral (STAR)", question="Describe a complex project or technical challenge you tackled that demonstrates the skills required in this role."),
-            InterviewQuestionItem(id=3, category="situational", category_label="Situational & Technical Depth", question="If faced with tight deadlines and ambiguous requirements in this role, how would you prioritize and deliver?"),
-        ]
-        return InterviewQuestionsResponse(ok=True, questions=fallback)
+        return InterviewQuestionsResponse(ok=False, error=f"Gemini question error: {exc}")
 
 
 def generate_tts_audio(text: str) -> bytes | None:
@@ -327,6 +284,9 @@ def analyze_interview_performance(
     model_name: str | None = None,
     api_key: str | None = None,
 ) -> InterviewAnalyzeResponse:
+    if not model_name or not model_name.strip():
+        return InterviewAnalyzeResponse(ok=False, error="No AI model selected. Please select a model in Settings.")
+
     try:
         resolved_key = _resolve_api_key(provider, api_key)
     except ValueError as exc:
@@ -367,11 +327,9 @@ Return a VALID JSON object ONLY:
     if provider in ("DeepSeek", "OpenAI"):
         try:
             base_url = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com") if provider == "DeepSeek" else None
-            default_model = "deepseek-v4-flash" if provider == "DeepSeek" else "gpt-4o-mini"
-            target_model = model_name or default_model
             raw_content, _ = _call_openai_compatible(
                 api_key=resolved_key,
-                model_name=target_model,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": "You are a master interview coach. Output strictly valid JSON."},
                     {"role": "user", "content": prompt},
@@ -432,6 +390,8 @@ def generate_cover_letter(
         return CoverLetterResponse(ok=False, error="Resume text cannot be empty.")
     if not job_description.strip():
         return CoverLetterResponse(ok=False, error="Job description cannot be empty.")
+    if not model_name or not model_name.strip():
+        return CoverLetterResponse(ok=False, error="No AI model selected. Please select a model in Settings.")
 
     try:
         resolved_key = _resolve_api_key(provider, api_key)
@@ -477,11 +437,9 @@ Return a VALID JSON object ONLY:
     if provider in ("DeepSeek", "OpenAI"):
         try:
             base_url = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com") if provider == "DeepSeek" else None
-            default_model = "deepseek-v4-flash" if provider == "DeepSeek" else "gpt-4o-mini"
-            target_model = model_name or default_model
             raw_content, total_tokens = _call_openai_compatible(
                 api_key=resolved_key,
-                model_name=target_model,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": "You are a professional cover letter writer. Output valid JSON."},
                     {"role": "user", "content": prompt},

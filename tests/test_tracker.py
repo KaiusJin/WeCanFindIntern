@@ -153,3 +153,65 @@ def test_tracked_job_ids_support_pool_dict_rows():
 
     result = asyncio.run(TrackerRepository(FakePool()).list_tracked_job_ids())
     assert result == [job_id]
+
+
+def test_unbookmark_job_safe_interested_and_protected_states():
+    job_id = uuid4()
+
+    class FakeCursor:
+        def __init__(self, row):
+            self._row = row
+            self.executed_delete = False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, query, params):
+            if "DELETE" in query:
+                self.executed_delete = True
+
+        async def fetchone(self):
+            return self._row
+
+    class FakeConnection:
+        def __init__(self, row):
+            self._row = row
+            self.cursor_obj = FakeCursor(row)
+
+        def cursor(self, row_factory=None):
+            return self.cursor_obj
+
+        def transaction(self):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakePool:
+        def __init__(self, row):
+            self._row = row
+
+        def connection(self):
+            return FakeConnection(self._row)
+
+    # 1. Interested stage -> safely deleted
+    deleted, stage = asyncio.run(TrackerRepository(FakePool({"id": 1, "stage": "interested"})).unbookmark_job(job_id))
+    assert deleted is True
+    assert stage is None
+
+    # 2. Applied stage -> protected
+    deleted, stage = asyncio.run(TrackerRepository(FakePool({"id": 1, "stage": "applied"})).unbookmark_job(job_id))
+    assert deleted is False
+    assert stage == "applied"
+
+    # 3. Not found -> not deleted
+    deleted, stage = asyncio.run(TrackerRepository(FakePool(None)).unbookmark_job(job_id))
+    assert deleted is False
+    assert stage is None
+

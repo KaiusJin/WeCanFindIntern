@@ -45,7 +45,14 @@ SORT_COLUMNS = {
     "company": "lower(company_name)",
     "title": "lower(title)",
     "stage": "stage",
-    "priority": "CASE priority WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END",
+}
+
+STAGE_TITLES: dict[str, str] = {
+    "interested": "Interested",
+    "applied": "Applied",
+    "interview": "Interview",
+    "offer": "Offer",
+    "rejected": "Refused",
 }
 
 
@@ -73,11 +80,10 @@ class TrackerRepository:
             clauses.append("archived_at IS NOT NULL")
         if query:
             clauses.append(
-                "(company_name ILIKE %s OR title ILIKE %s OR location_text ILIKE %s "
-                "OR notes ILIKE %s OR next_step ILIKE %s)"
+                "(company_name ILIKE %s OR title ILIKE %s OR location_text ILIKE %s OR notes ILIKE %s)"
             )
             term = f"%{query.strip()}%"
-            params.extend([term] * 5)
+            params.extend([term] * 4)
         if stage:
             clauses.append("stage = %s")
             params.append(stage.value)
@@ -95,10 +101,8 @@ class TrackerRepository:
             params.append(date_to)
         if attention_only:
             clauses.append(
-                "(follow_up_at <= now() + interval '7 days' "
-                "OR (stage = 'interested' AND application_deadline <= current_date + 7) "
-                "OR (stage = 'applied' AND applied_at <= now() - interval '7 days' "
-                "AND follow_up_at IS NULL))"
+                "((stage = 'interested' AND application_deadline <= current_date + 7) "
+                "OR (stage = 'applied' AND applied_at <= now() - interval '7 days'))"
             )
         return (" WHERE " + " AND ".join(clauses) if clauses else "", params)
 
@@ -235,6 +239,8 @@ class TrackerRepository:
             now,
             now,
         )
+        stage_key = req.stage.value if req.stage else "interested"
+        stage_title = STAGE_TITLES.get(stage_key, stage_key.title())
         async with self.pool.connection() as connection, connection.transaction():
             async with connection.cursor(row_factory=dict_row) as cursor:
                 await cursor.execute(query, values)
@@ -242,11 +248,15 @@ class TrackerRepository:
                 await cursor.execute(
                     """
                         INSERT INTO application_tracker_events (
-                            application_id, event_type, title, occurred_at
-                        ) SELECT id, 'created', 'Added to tracker', %s
+                            application_id, event_type, title, details, occurred_at
+                        ) SELECT id, 'created', %s, 'Opportunity saved to pipeline', %s
                         FROM application_tracker WHERE public_id = %s;
                         """,
-                    (now, row["id"]),
+                    (
+                        stage_title,
+                        now,
+                        row["id"],
+                    ),
                 )
         return TrackedApplication.model_validate(row)
 
@@ -282,10 +292,11 @@ class TrackerRepository:
                         CASE WHEN j.salary_interval IS NOT NULL THEN '/' || j.salary_interval END)
                 END,
                 'platform_bookmark',
-                CASE
-                    WHEN lower(COALESCE(js.source, '')) LIKE '%linkedin%' THEN 'linkedin'
-                    WHEN lower(COALESCE(js.source, '')) LIKE '%indeed%' THEN 'indeed'
-                    WHEN lower(COALESCE(js.source, '')) LIKE '%waterloo%' THEN 'waterloo_work'
+                CASE lower(COALESCE(js.source, ''))
+                    WHEN 'linkedin' THEN 'linkedin'
+                    WHEN 'indeed' THEN 'indeed'
+                    WHEN 'waterloo_work' THEN 'waterloo_work'
+                    WHEN 'waterlooworks' THEN 'waterloo_work'
                     ELSE 'wecanfindintern'
                 END,
                 'interested', 'normal', %s, %s
@@ -316,7 +327,48 @@ class TrackerRepository:
             async with connection.cursor(row_factory=dict_row) as cursor:
                 await cursor.execute(sql, (now, now, job_id))
                 row = await cursor.fetchone()
+                if row:
+                    await cursor.execute(
+                        """
+                        INSERT INTO application_tracker_events (
+                            application_id, event_type, title, details, occurred_at
+                        )
+                        SELECT id, 'created', 'Interested', 'Opportunity saved to pipeline', %s
+                        FROM application_tracker WHERE public_id = %s
+                        AND NOT EXISTS (
+                            SELECT 1 FROM application_tracker_events
+                            WHERE application_id = application_tracker.id AND event_type = 'created'
+                        );
+                        """,
+                        (now, row["id"]),
+                    )
         return TrackedApplication.model_validate(row) if row else None
+
+    async def unbookmark_job(self, job_id: UUID) -> tuple[bool, str | None]:
+        """Safely remove a bookmarked job if it is still in 'interested' stage.
+
+        Returns:
+            (True, None) if successfully deleted.
+            (False, current_stage) if the application is protected in an active stage.
+            (False, None) if the record was not found.
+        """
+        async with self.pool.connection() as connection, connection.transaction():
+            async with connection.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(
+                    "SELECT id, stage FROM application_tracker WHERE job_id = %s;",
+                    (job_id,),
+                )
+                row = await cursor.fetchone()
+                if not row:
+                    return False, None
+                stage = row["stage"]
+                if stage != "interested":
+                    return False, stage
+                await cursor.execute(
+                    "DELETE FROM application_tracker WHERE job_id = %s;",
+                    (job_id,),
+                )
+                return True, None
 
     async def update_application(
         self, public_id: UUID, req: TrackerUpdateRequest
@@ -393,7 +445,12 @@ class TrackerRepository:
                 """
                 await cursor.execute(query, params)
                 row = await cursor.fetchone()
-                if req.stage is not None and previous["stage"] != req.stage.value:
+                if req.stage is not None:
+                    prev_title = STAGE_TITLES.get(previous["stage"], previous["stage"].title())
+                    new_title = STAGE_TITLES.get(req.stage.value, req.stage.value.title())
+                    occurred = now
+                    if req.stage == ApplicationStage.APPLIED and req.applied_at:
+                        occurred = req.applied_at
                     await cursor.execute(
                         """
                             INSERT INTO application_tracker_events (
@@ -402,9 +459,9 @@ class TrackerRepository:
                             FROM application_tracker WHERE public_id = %s;
                             """,
                         (
-                            f"Moved to {req.stage.value.title()}",
-                            f"Stage changed from {previous['stage']} to {req.stage.value}",
-                            now,
+                            new_title,
+                            f"{prev_title} → {new_title}" if previous["stage"] != req.stage.value else f"{new_title} recorded",
+                            occurred,
                             public_id,
                         ),
                     )
@@ -445,13 +502,36 @@ class TrackerRepository:
                     INSERT INTO application_tracker_events (
                         application_id, event_type, title, details, occurred_at
                     )
-                    SELECT id, 'stage_change', %s,
-                        'Stage changed from ' || application_tracker.stage || ' to ' || %s,
+                    SELECT id, 'stage_change',
+                        CASE %s
+                            WHEN 'interested' THEN 'Interested'
+                            WHEN 'applied' THEN 'Applied'
+                            WHEN 'interview' THEN 'Interview'
+                            WHEN 'offer' THEN 'Offer'
+                            WHEN 'rejected' THEN 'Refused'
+                            ELSE initcap(%s)
+                        END,
+                        CASE application_tracker.stage
+                            WHEN 'interested' THEN 'Interested'
+                            WHEN 'applied' THEN 'Applied'
+                            WHEN 'interview' THEN 'Interview'
+                            WHEN 'offer' THEN 'Offer'
+                            WHEN 'rejected' THEN 'Refused'
+                            ELSE initcap(application_tracker.stage)
+                        END || ' → ' ||
+                        CASE %s
+                            WHEN 'interested' THEN 'Interested'
+                            WHEN 'applied' THEN 'Applied'
+                            WHEN 'interview' THEN 'Interview'
+                            WHEN 'offer' THEN 'Offer'
+                            WHEN 'rejected' THEN 'Refused'
+                            ELSE initcap(%s)
+                        END,
                         now()
                     FROM application_tracker
-                    WHERE public_id = ANY(%s) AND application_tracker.stage <> %s;
+                    WHERE public_id = ANY(%s);
                     """,
-                    (f"Moved to {stage.value.title()}", stage.value, ids, stage.value),
+                    (stage.value, stage.value, stage.value, stage.value, ids),
                 )
             result = await connection.execute(sql, params)
         return result.rowcount or 0
@@ -479,13 +559,10 @@ class TrackerRepository:
                 count(*) FILTER (WHERE stage = 'interview' AND archived_at IS NULL) AS interview,
                 count(*) FILTER (WHERE stage = 'offer' AND archived_at IS NULL) AS offer,
                 count(*) FILTER (WHERE stage = 'rejected' AND archived_at IS NULL) AS rejected,
-                count(*) FILTER (WHERE archived_at IS NOT NULL) AS archived,
-                count(*) FILTER (WHERE archived_at IS NULL AND (
-                    follow_up_at <= now() + interval '7 days'
-                    OR (stage = 'interested' AND application_deadline <= current_date + 7)
-                )) AS due_soon,
+                count(*) FILTER (WHERE archived_at IS NULL AND stage = 'interested'
+                    AND application_deadline <= current_date + 7) AS due_soon,
                 count(*) FILTER (WHERE archived_at IS NULL AND stage = 'applied'
-                    AND applied_at <= now() - interval '7 days' AND follow_up_at IS NULL) AS stale
+                    AND applied_at <= now() - interval '7 days') AS stale
             FROM application_tracker;
         """
         async with self.pool.connection() as connection:
@@ -516,12 +593,9 @@ class TrackerRepository:
         sql = f"""
             SELECT {APPLICATION_COLUMNS} FROM application_tracker
             WHERE archived_at IS NULL AND (
-                follow_up_at <= now() + interval '7 days'
-                OR (stage = 'interested' AND application_deadline <= current_date + 7)
-                OR (stage = 'applied' AND applied_at <= now() - interval '7 days'
-                    AND follow_up_at IS NULL)
-            ) ORDER BY CASE WHEN follow_up_at < now() THEN 0 ELSE 1 END,
-                COALESCE(follow_up_at, application_deadline::timestamptz, applied_at), updated_at
+                (stage = 'interested' AND application_deadline <= current_date + 7)
+                OR (stage = 'applied' AND applied_at <= now() - interval '7 days')
+            ) ORDER BY COALESCE(application_deadline::timestamptz, applied_at), updated_at
             LIMIT %s;
         """
         async with self.pool.connection() as connection:
@@ -533,16 +607,12 @@ class TrackerRepository:
         result: list[AttentionItem] = []
         for row in rows:
             app = TrackedApplication.model_validate(row)
-            if app.follow_up_at and app.follow_up_at <= now:
-                reason, reason_type, due_at = "Follow-up is overdue", "overdue", app.follow_up_at
-            elif app.application_deadline and app.application_deadline <= today + timedelta(days=7):
+            if app.application_deadline and app.application_deadline <= today + timedelta(days=7):
                 reason, reason_type, due_at = (
                     "Application deadline is approaching",
                     "deadline",
                     app.application_deadline,
                 )
-            elif app.follow_up_at:
-                reason, reason_type, due_at = "Follow-up coming up", "follow_up", app.follow_up_at
             else:
                 reason, reason_type, due_at = "No response after 7 days", "stale", app.applied_at
             result.append(
@@ -553,6 +623,28 @@ class TrackerRepository:
         return result
 
     async def list_events(self, public_id: UUID) -> list[TrackerEvent]:
+        ensure_sql = """
+            INSERT INTO application_tracker_events (
+                application_id, event_type, title, details, occurred_at
+            )
+            SELECT a.id, 'created',
+                CASE a.stage
+                    WHEN 'interested' THEN 'Interested'
+                    WHEN 'applied' THEN 'Applied'
+                    WHEN 'interview' THEN 'Interview'
+                    WHEN 'offer' THEN 'Offer'
+                    WHEN 'rejected' THEN 'Refused'
+                    ELSE initcap(a.stage)
+                END,
+                'Opportunity saved to pipeline',
+                COALESCE(a.created_at, now())
+            FROM application_tracker a
+            WHERE a.public_id = %s
+            AND NOT EXISTS (
+                SELECT 1 FROM application_tracker_events
+                WHERE application_id = a.id
+            );
+        """
         sql = """
             SELECT e.public_id AS id, a.public_id AS application_id, e.event_type,
                 e.title, e.details, e.occurred_at, e.created_at
@@ -560,8 +652,9 @@ class TrackerRepository:
             JOIN application_tracker a ON a.id = e.application_id
             WHERE a.public_id = %s ORDER BY e.occurred_at DESC, e.id DESC;
         """
-        async with self.pool.connection() as connection:
+        async with self.pool.connection() as connection, connection.transaction():
             async with connection.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(ensure_sql, (public_id,))
                 await cursor.execute(sql, (public_id,))
                 rows = await cursor.fetchall()
         return [TrackerEvent.model_validate(row) for row in rows]

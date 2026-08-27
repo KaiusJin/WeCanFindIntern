@@ -53,7 +53,7 @@ async def list_tracked_applications(
     archived: Literal["active", "archived", "all"] = "active",
     attention_only: bool = False,
     sort: Literal[
-        "updated", "created", "applied", "deadline", "company", "title", "stage", "priority"
+        "updated", "created", "applied", "deadline", "company", "title", "stage"
     ] = "updated",
     direction: Literal["asc", "desc"] = "desc",
     page: int = Query(default=1, ge=1),
@@ -117,6 +117,22 @@ async def bookmark_platform_job(job_id: UUID, repo: TrackerRepoDep) -> TrackedAp
     if not item:
         raise HTTPException(status_code=404, detail="Job not found")
     return item
+
+
+@tracker_router.delete("/bookmarks/{job_id}")
+async def unbookmark_platform_job(job_id: UUID, repo: TrackerRepoDep) -> dict[str, Any]:
+    deleted, stage = await repo.unbookmark_job(job_id)
+    if deleted:
+        return {"success": True, "deleted": True}
+    if stage:
+        return {
+            "success": False,
+            "deleted": False,
+            "protected": True,
+            "stage": stage,
+            "message": f"This application is currently in stage '{stage}' and is protected in your Tracker.",
+        }
+    raise HTTPException(status_code=404, detail="Tracked job not found")
 
 
 @tracker_router.get("/export.csv")

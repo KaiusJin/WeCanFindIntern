@@ -72,3 +72,57 @@ def test_exports():
     tex_str = export_latex(body, user)
     assert "Jane Doe" in tex_str
     assert "\\begin{document}" in tex_str
+
+
+def test_missing_api_key_or_model_error():
+    from wecanfindintern.career_ai.service import (
+        generate_ats_review,
+        generate_interview_questions,
+        analyze_interview_performance,
+        generate_cover_letter,
+    )
+
+    # 1. Missing model error
+    ats_no_model = generate_ats_review(
+        resume_text="Some resume",
+        job_description="Some JD",
+        provider="Gemini",
+        model_name=None,
+        api_key="AIzaSyTestKey",
+    )
+    assert not ats_no_model.ok
+    assert "No AI model selected" in ats_no_model.error
+
+    # 2. Missing API key error
+    ats_no_key = generate_ats_review(
+        resume_text="Some resume",
+        job_description="Some JD",
+        provider="Gemini",
+        model_name="gemini-2.5-flash",
+        api_key=None,
+    )
+    assert not ats_no_key.ok
+    assert "Missing Gemini API key" in ats_no_key.error
+
+    # 3. Interview questions missing model
+    iq_no_model = generate_interview_questions(
+        job_description="Some JD",
+        provider="DeepSeek",
+        model_name=None,
+        api_key="sk-test",
+    )
+    assert not iq_no_model.ok
+    assert "No AI model selected" in iq_no_model.error
+
+    # 4. Cover letter missing key
+    cl_no_key = generate_cover_letter(
+        resume_text="Resume",
+        job_description="JD",
+        user_info=UserProfile(),
+        provider="OpenAI",
+        model_name="gpt-4o-mini",
+        api_key=None,
+    )
+    assert not cl_no_key.ok
+    assert "Missing OpenAI API key" in cl_no_key.error
+
