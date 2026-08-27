@@ -20,6 +20,13 @@ body {
   font: 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+html:has(dialog[open]),
+body:has(dialog[open]),
+html.modal-open,
+body.modal-open {
+  overflow: hidden !important;
+}
+
 button, input, select {
   font: inherit;
 }
@@ -35,7 +42,14 @@ button {
   justify-content: space-between;
   margin: 0 auto;
   max-width: 1240px;
-  padding: 28px 28px 0;
+  padding: 24px 28px 0;
+  gap: 20px;
+}
+
+.topbar-brand-group {
+  align-items: center;
+  display: flex;
+  gap: 28px;
 }
 
 .brand {
@@ -44,10 +58,51 @@ button {
   font-weight: 800;
   letter-spacing: -0.04em;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .brand span {
   color: #71b542;
+}
+
+.topbar-nav {
+  align-items: center;
+  background: rgba(224, 236, 227, 0.45);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+
+.nav-tab {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 6px;
+  padding: 6px 14px;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+
+.nav-tab:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.nav-tab.active {
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(23, 64, 47, 0.08);
+  color: var(--dark-mint);
+  font-weight: 700;
+}
+
+.nav-tab .tab-icon {
+  font-size: 14px;
 }
 
 .topbar-note {
@@ -55,6 +110,12 @@ button {
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Tab Content Visibility */
+.tab-pane[hidden] {
+  display: none !important;
 }
 
 /* Main & Hero */
@@ -454,32 +515,21 @@ main {
   align-items: center;
   color: var(--muted);
   display: flex;
-  gap: 15px;
+  gap: 8px;
   font-size: 12px;
+  letter-spacing: 0.02em;
 }
 
-.last-updated-badge {
-  align-items: center;
-  background: #edf5ef;
-  border: 1px solid #d7e6da;
-  border-radius: 999px;
-  color: #3b6149;
-  display: inline-flex;
-  font-size: 11px;
-  font-weight: 650;
-  gap: 6px;
-  padding: 3px 10px;
+.last-updated-text {
+  color: var(--muted);
   white-space: nowrap;
 }
 
-.status-dot {
-  background: #22c55e;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
-  display: inline-block;
-  height: 6px;
-  width: 6px;
+.meta-dot {
+  color: #b5c7ba;
+  font-weight: 700;
 }
+
 
 
 .icon-button {
@@ -856,4 +906,692 @@ main {
 .back-to-top[hidden] {
   display: none !important;
 }
+
+/* =========================================================
+   CAREER AI SECTIONS (ATS Review, Interview Coach, Cover Letter)
+   ========================================================= */
+
+.career-workspace {
+  display: grid;
+  gap: 32px;
+  grid-template-columns: 360px 1fr;
+  align-items: start;
+  margin-top: 10px;
+}
+
+.career-form-panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(24, 54, 40, 0.03);
+  padding: 24px;
+}
+
+.career-results-panel {
+  min-width: 0;
+}
+
+.field-group {
+  margin-bottom: 18px;
+}
+
+.career-textarea {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-sizing: border-box;
+  color: var(--ink);
+  font: 14px/1.6 Inter, ui-sans-serif, system-ui, sans-serif;
+  padding: 12px 14px;
+  resize: vertical;
+  width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.career-textarea:focus {
+  border-color: var(--dark-mint);
+  box-shadow: 0 0 0 3px rgba(23, 64, 47, 0.1);
+  outline: 0;
+}
+
+.career-select, .career-input {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-sizing: border-box;
+  color: var(--ink);
+  font-size: 13px;
+  height: 40px;
+  padding: 0 12px;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+
+.career-select:focus, .career-input:focus {
+  border-color: var(--dark-mint);
+  outline: 0;
+}
+
+.career-config-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 20px;
+}
+
+.career-btn {
+  font-weight: 700;
+  min-height: 46px;
+  width: 100%;
+}
+
+/* File Dropzone */
+.file-dropzone {
+  background: #fbfdfb;
+  border: 2px dashed #c9dccb;
+  border-radius: 14px;
+  cursor: pointer;
+  padding: 20px 16px;
+  position: relative;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.file-dropzone:hover {
+  background: #f2f7f3;
+  border-color: var(--dark-mint);
+}
+
+.file-input {
+  cursor: pointer;
+  height: 100%;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.dropzone-content {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dropzone-icon {
+  font-size: 26px;
+}
+
+.dropzone-text {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Career Result Cards */
+.career-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 4px 24px rgba(24, 54, 40, 0.035);
+  margin-top: 18px;
+  padding: 28px;
+}
+
+.score-card-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 22px;
+  padding-bottom: 22px;
+  margin-bottom: 22px;
+}
+
+.score-badge-circle {
+  align-items: center;
+  background: #eaf5dc;
+  border: 2px solid #82b95b;
+  border-radius: 50%;
+  color: #27521e;
+  display: flex;
+  flex-direction: column;
+  height: 84px;
+  justify-content: center;
+  min-width: 84px;
+  width: 84px;
+}
+
+.score-number {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.score-max {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.score-meta-text {
+  flex: 1;
+}
+
+.score-level-pill {
+  background: var(--dark-mint);
+  border-radius: 999px;
+  color: #ffffff;
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.score-summary-text {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.report-block {
+  margin-top: 22px;
+}
+
+.report-block h4 {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+
+.tag-badges-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-badges-grid .tag {
+  background: #f0f7f2;
+  border-color: #d1e4d5;
+  color: #285437;
+  font-size: 12px;
+  padding: 5px 11px;
+}
+
+.tag-badges-grid.gap-grid .tag {
+  background: #fdf3f2;
+  border-color: #f7d5d2;
+  color: #b93829;
+}
+
+.career-bullet-list {
+  color: #2f4337;
+  font-size: 13.5px;
+  line-height: 1.7;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.career-bullet-list li {
+  margin-bottom: 8px;
+}
+
+/* Interview Stepper & Coach */
+.interview-stepper {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.step-badge {
+  background: #f0f7f2;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.step-badge.active {
+  background: var(--dark-mint);
+  border-color: var(--dark-mint);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.question-prompt-box {
+  background: #f6faf7;
+  border: 1px solid #dceadc;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 22px;
+}
+
+.question-badge {
+  color: #4b8058;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.question-prompt-box h3 {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  line-height: 1.4;
+  margin: 0 0 14px;
+}
+
+.audio-player-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.video-preview-wrapper {
+  background: #111a14;
+  border-radius: 14px;
+  height: 240px;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.webcam-video {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.webcam-overlay {
+  align-items: center;
+  background: rgba(17, 26, 20, 0.7);
+  bottom: 0;
+  color: #ffffff;
+  display: flex;
+  font-size: 13px;
+  justify-content: center;
+  left: 0;
+  padding: 16px;
+  position: absolute;
+  right: 0;
+  text-align: center;
+  top: 0;
+}
+
+.recording-view-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.recording-timer {
+  align-items: center;
+  background: #fde8e8;
+  border-radius: 999px;
+  color: #c81e1e;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+  padding: 3px 10px;
+}
+
+.rec-dot {
+  animation: pulse 1s infinite alternate;
+  background: #e02424;
+  border-radius: 50%;
+  height: 7px;
+  width: 7px;
+}
+
+@keyframes pulse {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
+.recorder-controls {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.timeline-list {
+  display: grid;
+  gap: 10px;
+}
+
+.timeline-event-item {
+  align-items: flex-start;
+  background: #f7faf8;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.timeline-ts {
+  background: #edf5ef;
+  border-radius: 6px;
+  color: var(--dark-mint);
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.timeline-obs {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.interview-next-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+/* Cover Letter Export Group */
+.export-btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.cl-editor {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.8;
+  margin-top: 10px;
+}
+
+/* AI Action Buttons in Job Detail Dialog */
+.job-ai-actions {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 20px;
+}
+
+.btn-ai-action {
+  align-items: center;
+  background: #edf5ef;
+  border: 1px solid #cfe0d3;
+  border-radius: 10px;
+  color: var(--dark-mint);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 650;
+  gap: 6px;
+  padding: 9px 14px;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.btn-ai-action:hover {
+  background: #e1efe4;
+  border-color: #a9cfb1;
+  transform: translateY(-1px);
+}
+
+/* Topbar Settings Button */
+.settings-trigger-btn {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(23, 64, 47, 0.05);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 650;
+  gap: 6px;
+  padding: 7px 14px;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.settings-trigger-btn:hover {
+  background: #f4f8f4;
+  border-color: #bad3c0;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(23, 64, 47, 0.08);
+}
+
+.settings-trigger-btn .gear-icon {
+  font-size: 14px;
+}
+
+.primary-button {
+  align-items: center;
+  background: var(--dark-mint);
+  border: 0;
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 750;
+  justify-content: center;
+  padding: 10px 22px;
+  text-decoration: none;
+  transition: background 0.15s, transform 0.15s;
+}
+
+.primary-button:hover {
+  background: #113023;
+}
+
+.secondary-button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 650;
+  justify-content: center;
+  padding: 9px 20px;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.secondary-button:hover {
+  background: #f1f6f2;
+  border-color: #bad3c0;
+}
+
+/* Tab Plain SVG icons */
+.tab-svg-icon {
+  display: inline-block;
+  opacity: 0.75;
+  stroke: currentColor;
+  transition: opacity 0.15s;
+  vertical-align: middle;
+}
+
+.nav-tab:hover .tab-svg-icon {
+  opacity: 1;
+}
+
+.nav-tab.active .tab-svg-icon {
+  opacity: 1;
+  stroke: var(--dark-mint);
+}
+
+.gear-svg-icon {
+  display: inline-block;
+  opacity: 0.85;
+  stroke: currentColor;
+  vertical-align: middle;
+}
+
+/* Settings Modal Dialog */
+.settings-dialog {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(20, 50, 36, 0.22);
+  box-sizing: border-box;
+  color: var(--ink);
+  max-height: 90vh;
+  max-width: 480px;
+  overflow-y: auto;
+  padding: 0;
+  position: relative;
+  width: calc(100vw - 32px);
+}
+
+.settings-dialog::backdrop {
+  background: rgba(17, 34, 25, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.settings-dialog-header {
+  align-items: center;
+  background: #f8faf8;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  padding: 18px 22px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.settings-title-wrap {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.settings-icon-badge {
+  align-items: center;
+  background: #eaf2ec;
+  border-radius: 10px;
+  color: var(--dark-mint);
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.settings-dialog-header h3 {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.settings-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+
+.settings-body {
+  padding: 22px;
+}
+
+.password-input-wrap {
+  display: flex;
+  position: relative;
+  width: 100%;
+}
+
+.password-input-wrap .career-input {
+  padding-right: 42px;
+}
+
+.toggle-password-btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  height: 100%;
+  justify-content: center;
+  opacity: 0.65;
+  position: absolute;
+  right: 0;
+  top: 0;
+  transition: opacity 0.15s;
+  width: 40px;
+}
+
+.toggle-password-btn:hover {
+  opacity: 1;
+}
+
+.eye-svg {
+  display: inline-block;
+  stroke: var(--muted);
+  transition: stroke 0.15s;
+}
+
+.toggle-password-btn:hover .eye-svg {
+  stroke: var(--ink);
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin: 6px 0 0;
+}
+
+.settings-dialog-footer {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  margin-top: 22px;
+  padding-top: 16px;
+}
+
+.settings-save-feedback {
+  color: #277943;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settings-footer-actions {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .topbar-brand-group {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    width: 100%;
+  }
+  .topbar-nav {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .career-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+
 

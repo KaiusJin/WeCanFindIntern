@@ -5,151 +5,546 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260826-updated-v11" />
+    <link rel="stylesheet" href="/styles.css?v=20260826-plainsvg-v15" />
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="/">WeCanFindIntern<span>_</span></a>
-      <div class="topbar-note">Verified opportunities · <span id="topbar-updated">Updated recently</span></div>
+      <div class="topbar-brand-group">
+        <a class="brand" href="/">WeCanFindIntern<span>_</span></a>
+        <nav class="topbar-nav" aria-label="Main Navigation">
+          <button class="nav-tab active" data-tab="tab-jobs" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <span>Jobs</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-ats" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
+            <span>ATS Review</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-interview" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+            <span>Interview Coach</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-cover-letter" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            <span>Cover Letter</span>
+          </button>
+        </nav>
+      </div>
+      <div class="topbar-actions">
+        <button id="open-settings" class="settings-trigger-btn" type="button" aria-label="AI Settings">
+          <svg class="gear-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <span>AI Settings</span>
+        </button>
+      </div>
     </header>
 
     <main>
-      <section class="hero">
-        <p class="eyebrow">JOB DISCOVERY / 01</p>
-        <h1>Find work worth starting.</h1>
-        <p class="hero-copy">Search jobs, skills, and locations to find your next move.</p>
-        <form id="search-form" class="searchbar">
-          <label class="search-input">
-            <span aria-hidden="true">⌕</span>
-            <input id="query" name="query" type="search" placeholder="Search jobs, skills, or companies — e.g. Python intern" autocomplete="off" />
-          </label>
-          <label class="search-location">
-            <span aria-hidden="true">⌖</span>
-            <input id="location" type="text" placeholder="Location, e.g. Toronto" autocomplete="off" />
-          </label>
-          <button class="primary-button" type="submit">Search jobs</button>
-        </form>
-        <div class="quick-searches" aria-label="Popular searches">
-          <span>Popular:</span>
-          <button type="button" data-term="Summer 2027">Summer 2027</button>
-          <button type="button" data-term="Fall 2026">Fall 2026</button>
-          <button type="button" data-term="Winter 2027">Winter 2027</button>
-          <button type="button" data-query="Software Engineer Intern">Software Engineer Intern</button>
-          <button type="button" data-query="Data Analyst">Data Analyst</button>
-        </div>
-      </section>
-
-      <section class="workspace">
-        <aside class="filters-panel">
-          <div class="filter-heading">
-            <h2>Filter jobs</h2>
-            <button id="clear-filters" class="text-button" type="button">Clear</button>
+      <!-- TAB 1: JOBS SEARCH -->
+      <div id="tab-jobs" class="tab-pane active">
+        <section class="hero">
+          <p class="eyebrow">JOB DISCOVERY / 01</p>
+          <h1>Find work worth starting.</h1>
+          <p class="hero-copy">Search jobs, skills, and locations to find your next move.</p>
+          <form id="search-form" class="searchbar">
+            <label class="search-input">
+              <span aria-hidden="true">⌕</span>
+              <input id="query" name="query" type="search" placeholder="Search jobs, skills, or companies — e.g. Python intern" autocomplete="off" />
+            </label>
+            <label class="search-location">
+              <span aria-hidden="true">⌖</span>
+              <input id="location" type="text" placeholder="Location, e.g. Toronto" autocomplete="off" />
+            </label>
+            <button class="primary-button" type="submit">Search jobs</button>
+          </form>
+          <div class="quick-searches" aria-label="Popular searches">
+            <span>Popular:</span>
+            <button type="button" data-term="Summer 2027">Summer 2027</button>
+            <button type="button" data-term="Fall 2026">Fall 2026</button>
+            <button type="button" data-term="Winter 2027">Winter 2027</button>
+            <button type="button" data-query="Software Engineer Intern">Software Engineer Intern</button>
+            <button type="button" data-query="Data Analyst">Data Analyst</button>
           </div>
+        </section>
 
-          <label class="field-label" for="recruiting-term">Recruiting season / term</label>
-          <select id="recruiting-term"><option value="">All recruiting seasons</option></select>
+        <section class="workspace">
+          <aside class="filters-panel">
+            <div class="filter-heading">
+              <h2>Filter jobs</h2>
+              <button id="clear-filters" class="text-button" type="button">Clear</button>
+            </div>
 
-          <label class="field-label" for="opportunity-type">Opportunity type</label>
-          <select id="opportunity-type"><option value="">All opportunity types</option></select>
+            <label class="field-label" for="recruiting-term">Recruiting season / term</label>
+            <select id="recruiting-term"><option value="">All recruiting seasons</option></select>
 
-          <label class="field-label" for="country">Country</label>
-          <select id="country"><option value="">All countries</option></select>
+            <label class="field-label" for="opportunity-type">Opportunity type</label>
+            <select id="opportunity-type"><option value="">All opportunity types</option></select>
 
-          <label class="field-label" for="region">State / Province</label>
-          <select id="region"><option value="">All regions</option></select>
+            <label class="field-label" for="country">Country</label>
+            <select id="country"><option value="">All countries</option></select>
 
-          <label class="field-label" for="city">City</label>
-          <select id="city"><option value="">All cities</option></select>
+            <label class="field-label" for="region">State / Province</label>
+            <select id="region"><option value="">All regions</option></select>
 
-          <label class="field-label" for="work-mode">Work mode</label>
-          <select id="work-mode">
-            <option value="">All work modes</option>
-            <option value="remote">Remote</option>
-            <option value="hybrid">Hybrid</option>
-            <option value="in_person">In-person</option>
-          </select>
+            <label class="field-label" for="city">City</label>
+            <select id="city"><option value="">All cities</option></select>
 
-          <label class="field-label" for="schedule-type">Schedule</label>
-          <select id="schedule-type"><option value="">All schedules</option></select>
+            <label class="field-label" for="work-mode">Work mode</label>
+            <select id="work-mode">
+              <option value="">All work modes</option>
+              <option value="remote">Remote</option>
+              <option value="hybrid">Hybrid</option>
+              <option value="in_person">In-person</option>
+            </select>
 
-          <label class="field-label" for="category">Job category</label>
-          <select id="category"><option value="">All categories</option></select>
+            <label class="field-label" for="schedule-type">Schedule</label>
+            <select id="schedule-type"><option value="">All schedules</option></select>
 
-          <label class="field-label" for="skill">Skill</label>
-          <select id="skill"><option value="">All skills</option></select>
+            <label class="field-label" for="category">Job category</label>
+            <select id="category"><option value="">All categories</option></select>
 
-          <label class="checkbox-field">
-            <input id="has-salary" type="checkbox" />
-            <span>Only show jobs with salary</span>
-          </label>
+            <label class="field-label" for="skill">Skill</label>
+            <select id="skill"><option value="">All skills</option></select>
 
-          <div class="salary-filter-group">
-            <label class="field-label">Hourly pay rate ($/hr)</label>
-            <div class="salary-range-inputs">
-              <div class="salary-input-box">
-                <span class="prefix">$</span>
-                <input id="hourly-min" type="number" min="0" max="200" step="1" placeholder="0" aria-label="Minimum hourly rate" />
-                <span class="suffix">/hr</span>
+            <label class="checkbox-field">
+              <input id="has-salary" type="checkbox" />
+              <span>Only show jobs with salary</span>
+            </label>
+
+            <div class="salary-filter-group">
+              <label class="field-label">Hourly pay rate ($/hr)</label>
+              <div class="salary-range-inputs">
+                <div class="salary-input-box">
+                  <span class="prefix">$</span>
+                  <input id="hourly-min" type="number" min="0" max="200" step="1" placeholder="0" aria-label="Minimum hourly rate" />
+                  <span class="suffix">/hr</span>
+                </div>
+                <span class="range-separator">–</span>
+                <div class="salary-input-box">
+                  <span class="prefix">$</span>
+                  <input id="hourly-max" type="number" min="0" max="200" step="1" placeholder="100+" aria-label="Maximum hourly rate" />
+                  <span class="suffix">/hr</span>
+                </div>
               </div>
-              <span class="range-separator">–</span>
-              <div class="salary-input-box">
-                <span class="prefix">$</span>
-                <input id="hourly-max" type="number" min="0" max="200" step="1" placeholder="100+" aria-label="Maximum hourly rate" />
-                <span class="suffix">/hr</span>
+              <div class="dual-slider-wrapper">
+                <div class="slider-track-container">
+                  <div class="slider-track-base"></div>
+                  <div id="slider-track-fill" class="slider-track-fill"></div>
+                  <input id="hourly-slider-min" class="dual-range-slider min-slider" type="range" min="0" max="100" step="1" value="0" aria-label="Minimum hourly pay" />
+                  <input id="hourly-slider-max" class="dual-range-slider max-slider" type="range" min="0" max="100" step="1" value="100" aria-label="Maximum hourly pay" />
+                </div>
+                <div class="slider-ticks">
+                  <span>$0</span>
+                  <span>$25</span>
+                  <span>$50</span>
+                  <span>$75</span>
+                  <span>$100+</span>
+                </div>
               </div>
             </div>
-            <div class="dual-slider-wrapper">
-              <div class="slider-track-container">
-                <div class="slider-track-base"></div>
-                <div id="slider-track-fill" class="slider-track-fill"></div>
-                <input id="hourly-slider-min" class="dual-range-slider min-slider" type="range" min="0" max="100" step="1" value="0" aria-label="Minimum hourly pay" />
-                <input id="hourly-slider-max" class="dual-range-slider max-slider" type="range" min="0" max="100" step="1" value="100" aria-label="Maximum hourly pay" />
-              </div>
-              <div class="slider-ticks">
-                <span>$0</span>
-                <span>$25</span>
-                <span>$50</span>
-                <span>$75</span>
-                <span>$100+</span>
-              </div>
-            </div>
-          </div>
-        </aside>
+          </aside>
 
-        <section class="results-panel" aria-live="polite">
-          <div class="results-toolbar">
-            <div>
-              <p class="eyebrow">OPEN ROLES</p>
-              <h2 id="results-title">Latest jobs</h2>
-            </div>
-            <div class="results-meta">
-              <span id="last-updated-badge" class="last-updated-badge" title="Last automated job sync time">
-                <span class="status-dot"></span>
-                <span id="last-updated-text">Synced recently</span>
-              </span>
+          <section class="results-panel" aria-live="polite">
+            <div class="results-toolbar">
+              <div>
+                <p class="eyebrow">OPEN ROLES</p>
+                <h2 id="results-title">Latest jobs</h2>
+              </div>
+              <div class="results-meta">
+              <span id="last-updated-text" class="last-updated-text" title="Last automated job sync time">Updated recently</span>
+              <span class="meta-dot">·</span>
               <span id="result-status">Loading…</span>
               <button id="refresh" class="icon-button" type="button" title="Refresh">↻</button>
             </div>
-          </div>
-          <div id="error" class="notice error" hidden></div>
-          <div id="job-list" class="job-list"></div>
-          <div id="empty-state" class="empty-state" hidden>
-            <div class="empty-icon">⌁</div>
-            <h3>No matching jobs</h3>
-            <p>Try removing a filter or using a broader search term.</p>
-          </div>
-          <div id="infinite-scroll-sentinel" class="infinite-scroll-sentinel">
-            <div id="loading-indicator" class="loading-indicator" hidden>
-              <div class="spinner"></div>
-              <span>Loading more opportunities…</span>
             </div>
-            <div id="end-of-results" class="end-of-results" hidden>
-              <span>✓ You've reached the end of the results</span>
+            <div id="error" class="notice error" hidden></div>
+            <div id="job-list" class="job-list"></div>
+            <div id="empty-state" class="empty-state" hidden>
+              <div class="empty-icon">⌁</div>
+              <h3>No matching jobs</h3>
+              <p>Try removing a filter or using a broader search term.</p>
+            </div>
+            <div id="infinite-scroll-sentinel" class="infinite-scroll-sentinel">
+              <div id="loading-indicator" class="loading-indicator" hidden>
+                <div class="spinner"></div>
+                <span>Loading more opportunities…</span>
+              </div>
+              <div id="end-of-results" class="end-of-results" hidden>
+                <span>✓ You've reached the end of the results</span>
+              </div>
+            </div>
+          </section>
+        </section>
+      </div>
+
+      <!-- TAB 2: ATS RESUME REVIEW -->
+      <div id="tab-ats" class="tab-pane" hidden>
+        <section class="hero">
+          <p class="eyebrow">ATS RESUME REVIEW / 02</p>
+          <h1>Optimize for the algorithm.</h1>
+          <p class="hero-copy">Instant ATS match scoring, keyword gap detection, and actionable bullet improvements.</p>
+        </section>
+
+        <section class="career-workspace">
+          <div class="career-form-panel">
+            <div class="filter-heading">
+              <h2>Resume & Job Target</h2>
+              <button id="clear-ats" class="text-button" type="button">Reset</button>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="ats-file-input">1. Upload Resume (PDF)</label>
+              <div class="file-dropzone" id="ats-dropzone">
+                <input type="file" id="ats-file-input" accept=".pdf" class="file-input" />
+                <div class="dropzone-content">
+                  <span class="dropzone-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                  </span>
+                  <span class="dropzone-text" id="ats-file-label">Click or drag & drop resume PDF</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="ats-resume-text">Resume Text (Extracted)</label>
+              <textarea id="ats-resume-text" class="career-textarea" rows="6" placeholder="Resume text will appear here automatically when you upload a PDF, or paste text directly..."></textarea>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="ats-jd-text">2. Target Job Description</label>
+              <textarea id="ats-jd-text" class="career-textarea" rows="6" placeholder="Paste target job description or click 'ATS Review' from any job in the search tab..."></textarea>
+            </div>
+
+            <button id="btn-run-ats" class="primary-button career-btn" type="button">
+              <span>Evaluate ATS Match Score ↗</span>
+            </button>
+          </div>
+
+          <div class="career-results-panel">
+            <div class="results-toolbar">
+              <div>
+                <p class="eyebrow">DIAGNOSTIC REPORT</p>
+                <h2>ATS Match Analysis</h2>
+              </div>
+            </div>
+
+            <div id="ats-empty" class="empty-state">
+              <div class="empty-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
+              </div>
+              <h3>Ready for analysis</h3>
+              <p>Upload a resume PDF and target job description to compute your real-time ATS match score and skill gaps.</p>
+            </div>
+
+            <div id="ats-loading" class="loading-state" hidden>
+              <div class="spinner"></div>
+              <span>Analyzing resume against job requirements…</span>
+            </div>
+
+            <div id="ats-result-card" class="career-card" hidden>
+              <div class="score-card-header">
+                <div class="score-badge-circle">
+                  <span class="score-number" id="ats-score-num">0</span>
+                  <span class="score-max">/100</span>
+                </div>
+                <div class="score-meta-text">
+                  <span class="score-level-pill" id="ats-level-pill">Match Level</span>
+                  <p class="score-summary-text" id="ats-summary-text"></p>
+                </div>
+              </div>
+
+              <div class="report-block">
+                <h4>Key Matching Strengths</h4>
+                <div id="ats-strengths-wrap" class="tag-badges-grid"></div>
+              </div>
+
+              <div class="report-block">
+                <h4>Missing Skills & Critical Gaps</h4>
+                <div id="ats-gaps-wrap" class="tag-badges-grid gap-grid"></div>
+              </div>
+
+              <div class="report-block">
+                <h4>Actionable Bullet Improvements</h4>
+                <ul id="ats-suggestions-wrap" class="career-bullet-list"></ul>
+              </div>
             </div>
           </div>
         </section>
-      </section>
+      </div>
+
+      <!-- TAB 3: INTERVIEW COACH -->
+      <div id="tab-interview" class="tab-pane" hidden>
+        <section class="hero">
+          <p class="eyebrow">MOCK INTERVIEW COACH / 03</p>
+          <h1>Master your interview.</h1>
+          <p class="hero-copy">Dynamic question generation, voice interviewer, live video/audio answer recording, and STAR performance feedback.</p>
+        </section>
+
+        <section class="career-workspace">
+          <div class="career-form-panel">
+            <div class="filter-heading">
+              <h2>Interview Setup</h2>
+              <button id="clear-interview" class="text-button" type="button">Reset</button>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="interview-jd-text">Target Job Description</label>
+              <textarea id="interview-jd-text" class="career-textarea" rows="6" placeholder="Paste job description or click 'Practice Interview' on any job card..."></textarea>
+            </div>
+
+            <button id="btn-generate-questions" class="primary-button career-btn" type="button">
+              <span>Generate 3-Question Loop ↗</span>
+            </button>
+          </div>
+
+          <div class="career-results-panel">
+            <div class="results-toolbar">
+              <div>
+                <p class="eyebrow">PRACTICE STAGE</p>
+                <h2 id="interview-stage-title">Mock Interview Arena</h2>
+              </div>
+            </div>
+
+            <div id="interview-empty" class="empty-state">
+              <div class="empty-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+              </div>
+              <h3>Prepare for interview practice</h3>
+              <p>Generate a 3-question loop tailored to your target job to begin round-by-round audio/video practice.</p>
+            </div>
+
+            <div id="interview-loading" class="loading-state" hidden>
+              <div class="spinner"></div>
+              <span id="interview-loading-text">Generating tailored interview questions…</span>
+            </div>
+
+            <!-- Active Question & Recording Card -->
+            <div id="interview-active-card" class="career-card" hidden>
+              <div class="interview-stepper">
+                <button class="step-badge active" data-q="0" type="button">1. Icebreaker</button>
+                <button class="step-badge" data-q="1" type="button">2. Behavioral</button>
+                <button class="step-badge" data-q="2" type="button">3. Situational</button>
+              </div>
+
+              <div class="question-prompt-box">
+                <div class="question-badge" id="interview-q-category">Question 1</div>
+                <h3 id="interview-q-text">Interview question will appear here...</h3>
+                <div class="audio-player-row">
+                  <button id="btn-play-tts" class="secondary-button" type="button">
+                    <span>Read Question Aloud</span>
+                  </button>
+                  <audio id="interview-audio-player" hidden></audio>
+                </div>
+              </div>
+
+              <!-- Answer Input: Camera / Mic / Text -->
+              <div class="answer-recording-container">
+                <div class="recording-view-header">
+                  <h4>Your Response</h4>
+                  <div class="recording-timer" id="recording-timer" hidden>
+                    <span class="rec-dot"></span>
+                    <span id="recording-time-text">00:00</span>
+                  </div>
+                </div>
+
+                <div class="video-preview-wrapper" id="video-preview-wrapper">
+                  <video id="webcam-preview" class="webcam-video" autoplay muted playsinline></video>
+                  <div class="webcam-overlay" id="webcam-overlay">
+                    <span>Camera ready. Click 'Start Recording' when prepared.</span>
+                  </div>
+                </div>
+
+                <div class="recorder-controls">
+                  <button id="btn-start-record" class="primary-button" type="button">Start Video/Audio Recording</button>
+                  <button id="btn-stop-record" class="secondary-button" type="button" hidden>Stop Recording</button>
+                  <button id="btn-toggle-cam" class="text-button" type="button">Toggle Camera</button>
+                </div>
+
+                <div class="field-group" style="margin-top: 16px;">
+                  <label class="field-label" for="interview-answer-text">Or Type / Edit Your Answer Transcript</label>
+                  <textarea id="interview-answer-text" class="career-textarea" rows="4" placeholder="Speak your answer, or type your answer here if camera/microphone is unavailable..."></textarea>
+                </div>
+
+                <button id="btn-analyze-answer" class="primary-button career-btn" type="button">
+                  <span>Analyze Answer Performance ↗</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Analysis Report Card -->
+            <div id="interview-report-card" class="career-card" style="margin-top: 16px;" hidden>
+              <div class="score-card-header">
+                <div class="score-badge-circle">
+                  <span class="score-number" id="interview-score-num">0</span>
+                  <span class="score-max">/100</span>
+                </div>
+                <div class="score-meta-text">
+                  <span class="score-level-pill" id="interview-level-pill">Performance Score</span>
+                  <p class="score-summary-text" id="interview-summary-text"></p>
+                </div>
+              </div>
+
+              <div id="star-feedback-block" class="report-block" hidden>
+                <h4>STAR Method Evaluation</h4>
+                <p id="star-feedback-text" class="detail-description"></p>
+              </div>
+
+              <div class="report-block">
+                <h4>Timeline Analysis</h4>
+                <div id="interview-timeline-wrap" class="timeline-list"></div>
+              </div>
+
+              <div class="report-block">
+                <h4>Improvement Advice</h4>
+                <ul id="interview-advice-wrap" class="career-bullet-list"></ul>
+              </div>
+
+              <div class="interview-next-actions">
+                <button id="btn-next-question" class="primary-button" type="button">Next Question →</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- TAB 4: COVER LETTER GENERATOR -->
+      <div id="tab-cover-letter" class="tab-pane" hidden>
+        <section class="hero">
+          <p class="eyebrow">COVER LETTER GENERATOR / 04</p>
+          <h1>Stand out from the crowd.</h1>
+          <p class="hero-copy">Hyper-personalized cover letters that weave your actual achievements into company requirements.</p>
+        </section>
+
+        <section class="career-workspace">
+          <div class="career-form-panel">
+            <div class="filter-heading">
+              <h2>Candidate & Job Target</h2>
+              <button id="clear-cover-letter" class="text-button" type="button">Reset</button>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="cl-resume-text">Candidate Resume / Achievements</label>
+              <textarea id="cl-resume-text" class="career-textarea" rows="5" placeholder="Candidate skills, background, and key project metrics..."></textarea>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="cl-jd-text">Target Job Description</label>
+              <textarea id="cl-jd-text" class="career-textarea" rows="5" placeholder="Job description details..."></textarea>
+            </div>
+
+            <div class="career-config-grid">
+              <div>
+                <label class="field-label" for="cl-full-name">Full Name</label>
+                <input type="text" id="cl-full-name" class="career-input" placeholder="e.g. Alex Chen" />
+              </div>
+              <div>
+                <label class="field-label" for="cl-email">Email Address</label>
+                <input type="email" id="cl-email" class="career-input" placeholder="e.g. alex@example.com" />
+              </div>
+            </div>
+
+            <div class="career-config-grid">
+              <div>
+                <label class="field-label" for="cl-phone">Phone Number</label>
+                <input type="text" id="cl-phone" class="career-input" placeholder="e.g. +1 (555) 019-2834" />
+              </div>
+              <div>
+                <label class="field-label" for="cl-linkedin">LinkedIn / Portfolio</label>
+                <input type="text" id="cl-linkedin" class="career-input" placeholder="e.g. linkedin.com/in/alex" />
+              </div>
+            </div>
+
+            <button id="btn-generate-cl" class="primary-button career-btn" type="button">
+              <span>Generate Cover Letter ↗</span>
+            </button>
+          </div>
+
+          <div class="career-results-panel">
+            <div class="results-toolbar">
+              <div>
+                <p class="eyebrow">DRAFT PREVIEW</p>
+                <h2>Custom Cover Letter</h2>
+              </div>
+              <div id="cl-export-group" class="export-btn-group" hidden>
+                <button class="secondary-button" id="btn-export-docx" type="button">Word (.docx)</button>
+                <button class="secondary-button" id="btn-export-pdf" type="button">PDF (.pdf)</button>
+                <button class="secondary-button" id="btn-export-tex" type="button">LaTeX (.tex)</button>
+              </div>
+            </div>
+
+            <div id="cl-empty" class="empty-state">
+              <div class="empty-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              </div>
+              <h3>Ready to craft your letter</h3>
+              <p>Fill in your profile and job description to draft a tailored, professional cover letter.</p>
+            </div>
+
+            <div id="cl-loading" class="loading-state" hidden>
+              <div class="spinner"></div>
+              <span>Drafting personalized cover letter…</span>
+            </div>
+
+            <div id="cl-result-card" class="career-card" hidden>
+              <label class="field-label" for="cl-editor-text">Live Editable Letter (Changes update downloads automatically)</label>
+              <textarea id="cl-editor-text" class="career-textarea cl-editor" rows="18"></textarea>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
+
+    <!-- SETTINGS DIALOG (Single unified Model + Key) -->
+    <dialog id="settings-dialog" class="settings-dialog">
+      <div class="settings-dialog-header">
+        <div class="settings-title-wrap">
+          <div class="settings-icon-badge">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          </div>
+          <div>
+            <h3>AI Model & API Key</h3>
+            <p class="settings-subtitle">Select your AI model and key. Saved locally in your browser.</p>
+          </div>
+        </div>
+        <button id="close-settings" class="dialog-close" type="button" aria-label="Close">×</button>
+      </div>
+
+      <div class="settings-body">
+        <div class="field-group">
+          <label class="field-label" for="setting-selected-model">AI Model</label>
+          <select id="setting-selected-model" class="career-select">
+            <optgroup label="Google Gemini">
+              <option value="Gemini:gemini-3.7-flash">Gemini 3.7 Flash (Default / Fast)</option>
+              <option value="Gemini:gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="Gemini:gemini-2.0-flash">Gemini 2.0 Flash</option>
+              <option value="Gemini:gemini-1.5-pro">Gemini 1.5 Pro</option>
+            </optgroup>
+            <optgroup label="OpenAI">
+              <option value="OpenAI:gpt-4o-mini">OpenAI GPT-4o-mini</option>
+              <option value="OpenAI:gpt-4o">OpenAI GPT-4o</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <div class="field-group" style="margin-top: 18px;">
+          <label class="field-label" for="setting-api-key" id="setting-key-label">Gemini API Key</label>
+          <div class="password-input-wrap">
+            <input type="password" id="setting-api-key" class="career-input" placeholder="AIzaSy... (leave blank to use server default)" autocomplete="off" />
+            <button type="button" class="toggle-password-btn" id="toggle-key-visibility" title="Toggle visibility">
+              <svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </button>
+          </div>
+          <p class="field-hint" id="setting-key-hint">Leave blank to use the backend server's default environment key.</p>
+        </div>
+
+        <div class="settings-dialog-footer">
+          <span id="settings-save-feedback" class="settings-save-feedback" hidden>✓ Saved to localStorage!</span>
+          <div class="settings-footer-actions">
+            <button id="btn-cancel-settings" class="secondary-button" type="button">Cancel</button>
+            <button id="btn-save-settings" class="primary-button" type="button">Save Settings</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
 
     <dialog id="job-dialog" class="job-dialog">
       <button id="close-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
@@ -161,6 +556,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script src="/app.js?v=20260826-updated-v11" defer></script>
+    <script src="/app.js?v=20260826-plainsvg-v15" defer></script>
   </body>
 </html>
