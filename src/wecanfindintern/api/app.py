@@ -19,6 +19,7 @@ from wecanfindintern.api.models import (
     JobPage,
 )
 from wecanfindintern.api.routes.career import career_router
+from wecanfindintern.api.routes.tracker import tracker_router
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.db.read_repository import JobReadRepository
@@ -41,6 +42,7 @@ app = FastAPI(
 )
 
 app.include_router(career_router)
+app.include_router(tracker_router)
 
 WEB_DIR = Path(__file__).resolve().parents[3] / "web"
 
