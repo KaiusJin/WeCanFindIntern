@@ -155,6 +155,8 @@ class JobDetail(JobListItem):
 class JobPage(BaseModel):
     schema_version: Literal["job-page.v3"] = "job-page.v3"
     items: list[JobListItem]
+    total_count: int | None = None
+    last_updated_at: datetime | None = None
     next_cursor: str | None
     has_more: bool
 
@@ -177,6 +179,7 @@ class JobFacetsResponse(BaseModel):
     companies: list[FacetCount]
     recruiting_terms: list[FacetCount] = Field(default_factory=list)
     recruiting_seasons: list[FacetCount] = Field(default_factory=list)
+    last_updated_at: datetime | None = None
 
 
 class IngestionRunResponse(BaseModel):

@@ -1,39 +1,33 @@
-const state = { cursor: null, hasMore: false, facets: null, loading: false };
-
-const labels = {
-  remote: "Remote", hybrid: "Hybrid", onsite: "On-site", unknown: "Not specified",
-  internship: "Internship", co_op: "Co-op", new_grad: "New grad", regular: "Full-time",
-  contract: "Contract", temporary: "Temporary", seasonal: "Seasonal", apprenticeship: "Apprenticeship",
-  full_time: "Full-time", part_time: "Part-time", flexible: "Flexible",
-  software_engineering: "Software engineering", data_ai: "Data & AI", cloud_devops: "Cloud & DevOps",
-  cybersecurity: "Cybersecurity", product_design: "Product design", product_management: "Product management",
-  hardware_embedded: "Hardware & embedded", research: "Research", engineering: "Engineering",
-  business_operations: "Business operations", marketing_sales: "Marketing & sales", finance: "Finance",
-};
-const skillLabels = {
-  cpp: "C++", csharp: "C#", dotnet: ".NET", javascript: "JavaScript", typescript: "TypeScript",
-  nodejs: "Node.js", postgresql: "PostgreSQL", mongodb: "MongoDB", power_bi: "Power BI",
-  scikit_learn: "scikit-learn", tensorflow: "TensorFlow", pytorch: "PyTorch", sql: "SQL",
-  aws: "AWS", azure: "Azure", gcp: "GCP", git: "Git", agile: "Agile", jira: "Jira",
-};
+const state = { cursor: null, hasMore: false, loading: false, facets: null, totalCount: 0 };
 
 const $ = (selector) => document.querySelector(selector);
-const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[char]));
-const label = (value) => labels[value] || value || "Not specified";
-const skillLabel = (value) => skillLabels[value] || label(value);
-const workModeLabel = (value) => ({ remote: "Remote", hybrid: "Hybrid", onsite: "On-site", unknown: "Work mode not specified" }[value] || "Work mode not specified");
 
-function setOptions(selector, items, emptyLabel) {
-  const select = $(selector);
+function escapeHtml(text) {
+  return (text || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+
+function label(value) {
+  if (!value) return "Unspecified";
+  return value.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function workModeLabel(value) {
+  const map = { remote: "Remote", hybrid: "Hybrid", in_person: "In-person", onsite: "In-person", unknown: "Work mode not specified" };
+  return map[value] || label(value);
+}
+
+function skillLabel(value) {
+  if (!value) return "";
+  const map = { cplusplus: "C++", csharp: "C#", dotnet: ".NET", nodejs: "Node.js", react: "React", vue: "Vue", javascript: "JavaScript", typescript: "TypeScript" };
+  return map[value.toLowerCase()] || value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function setOptions(elementId, items, placeholder) {
+  const select = $(elementId);
   const current = select.value;
-  select.innerHTML = `<option value="">${emptyLabel}</option>`;
-  for (const item of items || []) {
-    const option = document.createElement("option");
-    option.value = item.value;
-    option.textContent = `${label(item.value)}  ·  ${item.count}`;
-    select.appendChild(option);
-  }
-  if ([...select.options].some((option) => option.value === current)) select.value = current;
+  select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` +
+    (items || []).map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.value)} (${item.count})</option>`).join("");
+  if (items?.some((item) => item.value === current)) select.value = current;
 }
 
 function updateLocationOptions() {
@@ -71,6 +65,40 @@ function readFilters() {
 function formatDate(value) {
   if (!value) return "Date not specified";
   return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "short", day: "numeric" }).format(new Date(value));
+}
+
+function formatRelativeTime(dateValue) {
+  if (!dateValue) return "recently";
+  const date = new Date(dateValue);
+  const now = new Date();
+  const diffSec = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "numeric" }).format(date);
+}
+
+function updateLastUpdatedBadge(lastUpdatedIso) {
+  if (!lastUpdatedIso) return;
+  state.lastUpdated = lastUpdatedIso;
+  const relative = formatRelativeTime(lastUpdatedIso);
+  const full = new Date(lastUpdatedIso).toLocaleString();
+  const badgeText = $("#last-updated-text");
+  if (badgeText) {
+    badgeText.textContent = `Updated ${relative}`;
+    if (badgeText.parentElement) {
+      badgeText.parentElement.title = `Last automated job sync: ${full}`;
+    }
+  }
+  const topbarUpdated = $("#topbar-updated");
+  if (topbarUpdated) {
+    topbarUpdated.textContent = `Updated ${relative}`;
+    topbarUpdated.title = `Last automated job sync: ${full}`;
+  }
 }
 
 function formatSalary(salary) {
@@ -121,13 +149,27 @@ function renderJob(job) {
 async function loadJobs({ append = false } = {}) {
   const list = $("#job-list");
   const error = $("#error");
+  const loadingIndicator = $("#loading-indicator");
+  const endOfResults = $("#end-of-results");
+
   if (state.loading || (append && (!state.hasMore || !state.cursor))) return;
   state.loading = true;
-  $("#load-more").disabled = true;
-  if (!append) { state.cursor = null; list.innerHTML = ""; $("#empty-state").hidden = true; }
-  $("#result-status").textContent = append ? "Loading more…" : "Searching…";
+
+  if (!append) {
+    state.cursor = null;
+    list.innerHTML = "";
+    $("#empty-state").hidden = true;
+    if (loadingIndicator) loadingIndicator.hidden = true;
+    if (endOfResults) endOfResults.hidden = true;
+    $("#result-status").textContent = "Searching…";
+  } else {
+    if (loadingIndicator) loadingIndicator.hidden = false;
+    if (endOfResults) endOfResults.hidden = true;
+  }
+
   const params = readFilters();
   if (append && state.cursor) params.set("cursor", state.cursor);
+
   try {
     const response = await fetch(`/api/v1/jobs?${params}`);
     if (!response.ok) throw new Error(`Search failed (${response.status})`);
@@ -139,10 +181,19 @@ async function loadJobs({ append = false } = {}) {
     list.insertAdjacentHTML("beforeend", newItems.map(renderJob).join(""));
     state.cursor = page.next_cursor;
     state.hasMore = page.has_more;
-    $("#load-more").hidden = !page.has_more;
-    const loadedCount = list.querySelectorAll(".job-card").length;
-    $("#result-status").textContent = loadedCount ? `${loadedCount}${page.has_more ? "+" : ""} results` : "0 results";
+    if (page.last_updated_at) {
+      updateLastUpdatedBadge(page.last_updated_at);
+    }
+    if (!append) {
+      state.totalCount = typeof page.total_count === "number" ? page.total_count : newItems.length;
+    }
+    const total = state.totalCount ?? 0;
+    const formattedCount = total.toLocaleString("en-US");
+    $("#result-status").textContent = total > 0 ? `${formattedCount} result${total === 1 ? "" : "s"}` : "0 results";
     $("#empty-state").hidden = Boolean(list.children.length);
+    if (endOfResults) {
+      endOfResults.hidden = Boolean(page.has_more || !list.children.length);
+    }
     error.hidden = true;
   } catch (requestError) {
     error.textContent = requestError.message;
@@ -150,7 +201,7 @@ async function loadJobs({ append = false } = {}) {
     $("#result-status").textContent = "Load failed";
   } finally {
     state.loading = false;
-    $("#load-more").disabled = false;
+    if (loadingIndicator) loadingIndicator.hidden = true;
   }
 }
 
@@ -165,6 +216,9 @@ async function loadFacets() {
     const response = await fetch("/api/v1/jobs/facets");
     if (!response.ok) throw new Error("facets unavailable");
     state.facets = await response.json();
+    if (state.facets.last_updated_at) {
+      updateLastUpdatedBadge(state.facets.last_updated_at);
+    }
     setOptions("#recruiting-term", state.facets.recruiting_terms, "All recruiting seasons");
     setOptions("#opportunity-type", state.facets.opportunity_types, "All opportunity types");
     setOptions("#schedule-type", state.facets.schedule_types, "All schedules");
@@ -209,8 +263,43 @@ function updateSliderFill() {
   fill.style.width = `${Math.max(0, maxPct - minPct)}%`;
 }
 
+function setupInfiniteScroll() {
+  const sentinel = $("#infinite-scroll-sentinel");
+  if (!sentinel) return;
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      const [entry] = entries;
+      if (entry.isIntersecting && !state.loading && state.hasMore && state.cursor) {
+        loadJobs({ append: true });
+      }
+    },
+    {
+      root: null,
+      rootMargin: "400px", // Trigger when user scrolls within 400px of the sentinel
+      threshold: 0,
+    },
+  );
+
+  observer.observe(sentinel);
+}
+
+function setupBackToTop() {
+  const backToTopBtn = $("#back-to-top");
+  if (!backToTopBtn) return;
+  window.addEventListener(
+    "scroll",
+    () => {
+      backToTopBtn.hidden = window.scrollY < 300;
+    },
+    { passive: true },
+  );
+  backToTopBtn.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+
 $("#search-form").addEventListener("submit", (event) => { event.preventDefault(); loadJobs(); });
-$("#load-more").addEventListener("click", () => loadJobs({ append: true }));
 $("#refresh").addEventListener("click", () => loadJobs());
 $(".filters-panel").addEventListener("change", (event) => {
   if (event.target.id !== "hourly-min" && event.target.id !== "hourly-max" && !event.target.classList.contains("dual-range-slider")) {
@@ -277,8 +366,12 @@ $("#clear-filters").addEventListener("click", () => {
 document.addEventListener("click", (event) => {
   const card = event.target.closest(".job-card");
   if (card) openJob(card.dataset.id);
-  const quick = event.target.closest("[data-query]");
-  if (quick) { $("#query").value = quick.dataset.query; loadJobs(); }
+  const quick = event.target.closest("[data-query], [data-term]");
+  if (quick) {
+    if (quick.dataset.query) $("#query").value = quick.dataset.query;
+    if (quick.dataset.term) $("#recruiting-term").value = quick.dataset.term;
+    loadJobs();
+  }
 });
 $("#close-dialog").addEventListener("click", () => $("#job-dialog").close());
 $("#job-dialog").addEventListener("click", (event) => { if (event.target === $("#job-dialog")) $("#job-dialog").close(); });
@@ -286,3 +379,5 @@ $("#job-dialog").addEventListener("click", (event) => { if (event.target === $("
 updateSliderFill();
 loadFacets();
 loadJobs();
+setupInfiniteScroll();
+setupBackToTop();

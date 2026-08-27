@@ -72,100 +72,122 @@ class JobReadRepository:
         self.pool = pool
 
     async def list_jobs(self, filters: JobListFilters) -> JobPage:
-        predicates = ["j.status = 1"]
-        parameters: list[Any] = []
+        filter_predicates = ["j.status = 1"]
+        filter_parameters: list[Any] = []
+
+        if filters.query:
+            filter_predicates.append("j.search_document @@ websearch_to_tsquery('simple', %s)")
+            filter_parameters.append(filters.query)
+        if filters.country:
+            filter_predicates.append("j.country_code = %s")
+            filter_parameters.append(filters.country)
+        if filters.region:
+            filter_predicates.append("j.region_code = %s")
+            filter_parameters.append(filters.region)
+        if filters.city:
+            filter_predicates.append("lower(j.city) = lower(%s)")
+            filter_parameters.append(filters.city)
+        if filters.company:
+            filter_predicates.append("j.company_normalized = %s")
+            filter_parameters.append(normalize_company(filters.company))
+        if filters.work_mode:
+            filter_predicates.append("j.work_mode = %s")
+            filter_parameters.append(filters.work_mode)
+        if filters.employment_type:
+            filter_predicates.append("j.primary_employment_type = %s")
+            filter_parameters.append(filters.employment_type)
+        if filters.opportunity_type:
+            filter_predicates.append("j.opportunity_type = %s")
+            filter_parameters.append(filters.opportunity_type)
+        if filters.schedule_type:
+            filter_predicates.append("%s = ANY(j.schedule_types)")
+            filter_parameters.append(filters.schedule_type)
+        if filters.category:
+            filter_predicates.append("j.job_category = %s")
+            filter_parameters.append(filters.category)
+        if filters.subcategory:
+            filter_predicates.append("%s = ANY(j.job_subcategories)")
+            filter_parameters.append(filters.subcategory)
+        if filters.skill:
+            filter_predicates.append("%s = ANY(j.skill_tags)")
+            filter_parameters.append(normalize_tag(filters.skill))
+        if filters.season:
+            filter_predicates.append("j.recruiting_season = %s")
+            filter_parameters.append(filters.season)
+        if filters.recruiting_year:
+            filter_predicates.append("j.recruiting_year = %s")
+            filter_parameters.append(filters.recruiting_year)
+        if filters.has_recruiting_term is True:
+            filter_predicates.append("j.recruiting_season IS NOT NULL")
+        elif filters.has_recruiting_term is False:
+            filter_predicates.append("j.recruiting_season IS NULL")
+        if filters.posted_after:
+            filter_predicates.append("j.date_posted >= %s")
+            filter_parameters.append(filters.posted_after)
+        if filters.salary_min is not None:
+            filter_predicates.append("j.salary_max >= %s")
+            filter_parameters.append(filters.salary_min)
+        if filters.hourly_salary_min is not None:
+            filter_predicates.append("coalesce(j.salary_annual_max, j.salary_annual_min) >= %s")
+            filter_parameters.append(filters.hourly_salary_min * 2080)
+        if filters.hourly_salary_max is not None:
+            filter_predicates.append("coalesce(j.salary_annual_min, j.salary_annual_max) <= %s")
+            filter_parameters.append(filters.hourly_salary_max * 2080)
+        if filters.annual_salary_min is not None:
+            filter_predicates.append("coalesce(j.salary_annual_max, j.salary_annual_min) >= %s")
+            filter_parameters.append(filters.annual_salary_min)
+        if filters.annual_salary_max is not None:
+            filter_predicates.append("coalesce(j.salary_annual_min, j.salary_annual_max) <= %s")
+            filter_parameters.append(filters.annual_salary_max)
+        if filters.has_salary is True:
+            filter_predicates.append("coalesce(j.salary_max, j.salary_annual_max) IS NOT NULL")
+        elif filters.has_salary is False:
+            filter_predicates.append("j.salary_max IS NULL AND j.salary_annual_max IS NULL")
+        if filters.currency:
+            filter_predicates.append("j.salary_currency = %s")
+            filter_parameters.append(filters.currency)
+        if filters.source:
+            filter_predicates.append(
+                "EXISTS (SELECT 1 FROM job_sources js WHERE js.job_id = j.id AND js.source = %s)"
+            )
+            filter_parameters.append(filters.source)
+
+        total_count_sql = f"""
+            SELECT count(*) AS total,
+                   (
+                       SELECT GREATEST(
+                           (SELECT max(finished_at) FROM ingestion_runs),
+                           (SELECT max(started_at) FROM ingestion_runs),
+                           (SELECT max(last_seen_at) FROM jobs),
+                           (SELECT max(first_seen_at) FROM jobs),
+                           (SELECT max(last_completed_at) FROM collection_plans)
+                       )
+                   ) AS last_updated_at
+            FROM jobs j
+            WHERE {" AND ".join(filter_predicates)}
+        """
+
+        select_predicates = list(filter_predicates)
+        select_parameters = list(filter_parameters)
 
         if filters.cursor:
             cursor_time, cursor_id = decode_cursor(filters.cursor)
-            predicates.append("(j.published_sort_at, j.id) < (%s, %s)")
-            parameters.extend((cursor_time, cursor_id))
-        if filters.query:
-            predicates.append("j.search_document @@ websearch_to_tsquery('simple', %s)")
-            parameters.append(filters.query)
-        if filters.country:
-            predicates.append("j.country_code = %s")
-            parameters.append(filters.country)
-        if filters.region:
-            predicates.append("j.region_code = %s")
-            parameters.append(filters.region)
-        if filters.city:
-            predicates.append("lower(j.city) = lower(%s)")
-            parameters.append(filters.city)
-        if filters.company:
-            predicates.append("j.company_normalized = %s")
-            parameters.append(normalize_company(filters.company))
-        if filters.work_mode:
-            predicates.append("j.work_mode = %s")
-            parameters.append(filters.work_mode)
-        if filters.employment_type:
-            predicates.append("j.primary_employment_type = %s")
-            parameters.append(filters.employment_type)
-        if filters.opportunity_type:
-            predicates.append("j.opportunity_type = %s")
-            parameters.append(filters.opportunity_type)
-        if filters.schedule_type:
-            predicates.append("%s = ANY(j.schedule_types)")
-            parameters.append(filters.schedule_type)
-        if filters.category:
-            predicates.append("j.job_category = %s")
-            parameters.append(filters.category)
-        if filters.subcategory:
-            predicates.append("%s = ANY(j.job_subcategories)")
-            parameters.append(filters.subcategory)
-        if filters.skill:
-            predicates.append("%s = ANY(j.skill_tags)")
-            parameters.append(normalize_tag(filters.skill))
-        if filters.season:
-            predicates.append("j.recruiting_season = %s")
-            parameters.append(filters.season)
-        if filters.recruiting_year:
-            predicates.append("j.recruiting_year = %s")
-            parameters.append(filters.recruiting_year)
-        if filters.has_recruiting_term is True:
-            predicates.append("j.recruiting_season IS NOT NULL")
-        elif filters.has_recruiting_term is False:
-            predicates.append("j.recruiting_season IS NULL")
-        if filters.posted_after:
-            predicates.append("j.date_posted >= %s")
-            parameters.append(filters.posted_after)
-        if filters.salary_min is not None:
-            predicates.append("j.salary_max >= %s")
-            parameters.append(filters.salary_min)
-        if filters.hourly_salary_min is not None:
-            predicates.append("coalesce(j.salary_annual_max, j.salary_annual_min) >= %s")
-            parameters.append(filters.hourly_salary_min * 2080)
-        if filters.hourly_salary_max is not None:
-            predicates.append("coalesce(j.salary_annual_min, j.salary_annual_max) <= %s")
-            parameters.append(filters.hourly_salary_max * 2080)
-        if filters.annual_salary_min is not None:
-            predicates.append("coalesce(j.salary_annual_max, j.salary_annual_min) >= %s")
-            parameters.append(filters.annual_salary_min)
-        if filters.annual_salary_max is not None:
-            predicates.append("coalesce(j.salary_annual_min, j.salary_annual_max) <= %s")
-            parameters.append(filters.annual_salary_max)
-        if filters.has_salary is True:
-            predicates.append("coalesce(j.salary_max, j.salary_annual_max) IS NOT NULL")
-        elif filters.has_salary is False:
-            predicates.append("j.salary_max IS NULL AND j.salary_annual_max IS NULL")
-        if filters.currency:
-            predicates.append("j.salary_currency = %s")
-            parameters.append(filters.currency)
-        if filters.source:
-            predicates.append(
-                "EXISTS (SELECT 1 FROM job_sources js WHERE js.job_id = j.id AND js.source = %s)"
-            )
-            parameters.append(filters.source)
+            select_predicates.append("(j.published_sort_at, j.id) < (%s, %s)")
+            select_parameters.extend((cursor_time, cursor_id))
 
-        parameters.append(filters.limit + 1)
+        select_parameters.append(filters.limit + 1)
         sql = f"""
             SELECT {JOB_SELECT}
             FROM jobs j
-            WHERE {" AND ".join(predicates)}
+            WHERE {" AND ".join(select_predicates)}
             ORDER BY j.published_sort_at DESC, j.id DESC
             LIMIT %s
         """
         async with self.pool.connection() as connection:
-            rows = await (await connection.execute(sql, parameters)).fetchall()
+            total_count_row = await (await connection.execute(total_count_sql, filter_parameters)).fetchone()
+            total_count = int(total_count_row["total"]) if total_count_row else 0
+            last_updated_at = total_count_row["last_updated_at"] if total_count_row else None
+            rows = await (await connection.execute(sql, select_parameters)).fetchall()
 
         has_more = len(rows) > filters.limit
         page_rows = rows[: filters.limit]
@@ -174,7 +196,7 @@ class JobReadRepository:
         if has_more and page_rows:
             last = page_rows[-1]
             next_cursor = encode_cursor(last["published_sort_at"], last["internal_id"])
-        return JobPage(items=items, next_cursor=next_cursor, has_more=has_more)
+        return JobPage(items=items, total_count=total_count, last_updated_at=last_updated_at, next_cursor=next_cursor, has_more=has_more)
 
     async def get_job(self, public_id: UUID) -> JobDetail | None:
         sql = f"""
@@ -295,17 +317,27 @@ class JobReadRepository:
                                                         'count', count(*)) AS item
                                FROM jobs
                                WHERE status = 1 AND recruiting_season IS NOT NULL AND recruiting_year IS NOT NULL
-                               GROUP BY recruiting_season, recruiting_year) grouped) AS recruiting_terms,
+                                GROUP BY recruiting_season, recruiting_year) grouped) AS recruiting_terms,
                         (SELECT coalesce(jsonb_agg(item ORDER BY (item->>'count')::int DESC,
                                                             item->>'value'), '[]')
                          FROM (SELECT jsonb_build_object('value', recruiting_season,
                                                         'count', count(*)) AS item
                                FROM jobs WHERE status = 1 AND recruiting_season IS NOT NULL
-                               GROUP BY recruiting_season) grouped) AS recruiting_seasons
+                               GROUP BY recruiting_season) grouped) AS recruiting_seasons,
+                        (
+                            SELECT GREATEST(
+                                (SELECT max(finished_at) FROM ingestion_runs),
+                                (SELECT max(started_at) FROM ingestion_runs),
+                                (SELECT max(last_seen_at) FROM jobs),
+                                (SELECT max(first_seen_at) FROM jobs),
+                                (SELECT max(last_completed_at) FROM collection_plans)
+                            )
+                        ) AS last_updated_at
                     """
                 )
             ).fetchone()
         return JobFacetsResponse(
+            last_updated_at=row["last_updated_at"] if row else None,
             **{
                 key: [FacetCount.model_validate(item) for item in row[key]]
                 for key in (

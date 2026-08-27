@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260826-fixed-v7" />
+    <link rel="stylesheet" href="/styles.css?v=20260826-updated-v11" />
   </head>
   <body>
     <header class="topbar">
       <a class="brand" href="/">WeCanFindIntern<span>_</span></a>
-      <div class="topbar-note">Internships & early-career roles</div>
+      <div class="topbar-note">Verified opportunities · <span id="topbar-updated">Updated recently</span></div>
     </header>
 
     <main>
@@ -31,11 +31,11 @@
         </form>
         <div class="quick-searches" aria-label="Popular searches">
           <span>Popular:</span>
-          <button type="button" data-query="Summer 2027">Summer 2027</button>
-          <button type="button" data-query="Fall 2026">Fall 2026</button>
-          <button type="button" data-query="Winter 2027">Winter 2027</button>
-          <button type="button" data-query="software engineer intern">Software Engineer Intern</button>
-          <button type="button" data-query="data analyst">Data Analyst</button>
+          <button type="button" data-term="Summer 2027">Summer 2027</button>
+          <button type="button" data-term="Fall 2026">Fall 2026</button>
+          <button type="button" data-term="Winter 2027">Winter 2027</button>
+          <button type="button" data-query="Software Engineer Intern">Software Engineer Intern</button>
+          <button type="button" data-query="Data Analyst">Data Analyst</button>
         </div>
       </section>
 
@@ -55,7 +55,7 @@
           <label class="field-label" for="country">Country</label>
           <select id="country"><option value="">All countries</option></select>
 
-          <label class="field-label" for="region">State / province</label>
+          <label class="field-label" for="region">State / Province</label>
           <select id="region"><option value="">All regions</option></select>
 
           <label class="field-label" for="city">City</label>
@@ -66,8 +66,7 @@
             <option value="">All work modes</option>
             <option value="remote">Remote</option>
             <option value="hybrid">Hybrid</option>
-            <option value="onsite">On-site</option>
-            <option value="unknown">Work mode not specified</option>
+            <option value="in_person">In-person</option>
           </select>
 
           <label class="field-label" for="schedule-type">Schedule</label>
@@ -124,6 +123,10 @@
               <h2 id="results-title">Latest jobs</h2>
             </div>
             <div class="results-meta">
+              <span id="last-updated-badge" class="last-updated-badge" title="Last automated job sync time">
+                <span class="status-dot"></span>
+                <span id="last-updated-text">Synced recently</span>
+              </span>
               <span id="result-status">Loading…</span>
               <button id="refresh" class="icon-button" type="button" title="Refresh">↻</button>
             </div>
@@ -135,7 +138,15 @@
             <h3>No matching jobs</h3>
             <p>Try removing a filter or using a broader search term.</p>
           </div>
-          <button id="load-more" class="load-more" type="button" hidden>Load more jobs</button>
+          <div id="infinite-scroll-sentinel" class="infinite-scroll-sentinel">
+            <div id="loading-indicator" class="loading-indicator" hidden>
+              <div class="spinner"></div>
+              <span>Loading more opportunities…</span>
+            </div>
+            <div id="end-of-results" class="end-of-results" hidden>
+              <span>✓ You've reached the end of the results</span>
+            </div>
+          </div>
         </section>
       </section>
     </main>
@@ -145,6 +156,11 @@
       <div id="job-detail"></div>
     </dialog>
 
-    <script src="/app.js?v=20260826-fixed-v7" defer></script>
+    <button id="back-to-top" class="back-to-top" type="button" aria-label="Back to top" title="Back to top" hidden>
+      <span class="arrow">↑</span>
+      <span class="text">Top</span>
+    </button>
+
+    <script src="/app.js?v=20260826-updated-v11" defer></script>
   </body>
 </html>

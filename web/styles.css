@@ -458,6 +458,30 @@ main {
   font-size: 12px;
 }
 
+.last-updated-badge {
+  align-items: center;
+  background: #edf5ef;
+  border: 1px solid #d7e6da;
+  border-radius: 999px;
+  color: #3b6149;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 650;
+  gap: 6px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.status-dot {
+  background: #22c55e;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+  display: inline-block;
+  height: 6px;
+  width: 6px;
+}
+
+
 .icon-button {
   background: transparent;
   border: 0;
@@ -591,19 +615,49 @@ main {
   white-space: nowrap;
 }
 
-.load-more {
-  background: transparent;
-  border: 1px solid var(--dark-mint);
-  border-radius: 10px;
-  color: var(--dark-mint);
-  display: block;
-  font-weight: 700;
-  margin: 20px auto 0;
-  padding: 11px 20px;
+/* Infinite Scroll Sentinel & Indicators */
+.infinite-scroll-sentinel {
+  min-height: 48px;
+  padding: 30px 0 20px;
+  text-align: center;
 }
 
-.load-more[hidden] {
+.loading-indicator {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 10px;
+  justify-content: center;
+}
+
+.loading-indicator[hidden],
+.end-of-results[hidden] {
   display: none !important;
+}
+
+.spinner {
+  animation: spin 0.7s linear infinite;
+  border: 2px solid #dce6de;
+  border-radius: 50%;
+  border-top-color: var(--dark-mint);
+  height: 16px;
+  width: 16px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.end-of-results {
+  color: #8da392;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 10px 0;
 }
 
 /* Empty State & Error */
@@ -761,3 +815,45 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+/* Floating Back To Top Button */
+.back-to-top {
+  align-items: center;
+  background: var(--dark-mint);
+  border: 0;
+  border-radius: 999px;
+  bottom: 28px;
+  box-shadow: 0 8px 25px rgba(20, 50, 36, 0.28);
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 6px;
+  padding: 10px 16px;
+  position: fixed;
+  right: 28px;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s, box-shadow 0.2s;
+  z-index: 99;
+}
+
+.back-to-top:hover {
+  background: #143527;
+  box-shadow: 0 12px 32px rgba(20, 50, 36, 0.38);
+  transform: translateY(-3px) scale(1.03);
+}
+
+.back-to-top:active {
+  transform: translateY(0);
+}
+
+.back-to-top .arrow {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.back-to-top[hidden] {
+  display: none !important;
+}
+
