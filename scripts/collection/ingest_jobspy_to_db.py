@@ -8,7 +8,7 @@ import asyncio
 from collections import Counter
 from datetime import UTC, datetime
 
-from _cli import add_query_arguments, query_from_args
+from wecanfindintern.ingestion.jobspy_cli import add_query_arguments, query_from_args
 
 from wecanfindintern.config import Settings
 from wecanfindintern.db.ingestion_repository import JobIngestionRepository

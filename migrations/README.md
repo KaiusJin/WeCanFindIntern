@@ -3,7 +3,7 @@
 目标数据库为 PostgreSQL 16 或更高版本。
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/migrate.py
+PYTHONPATH=src .venv/bin/python scripts/maintenance/migrate.py
 ```
 
 也可以使用 `psql`：

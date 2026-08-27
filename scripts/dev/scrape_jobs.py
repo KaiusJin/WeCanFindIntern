@@ -9,7 +9,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from _cli import add_query_arguments, query_from_args
+from wecanfindintern.ingestion.jobspy_cli import add_query_arguments, query_from_args
 
 from wecanfindintern.ingestion.jobspy_adapter import scrape_and_normalize
 
