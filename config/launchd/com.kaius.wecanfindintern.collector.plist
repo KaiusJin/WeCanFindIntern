@@ -14,11 +14,18 @@
   <key>WorkingDirectory</key>
   <string>/Users/kaius/Project/WeCanFIndIntern</string>
 
-  <key>StartInterval</key>
-  <integer>14400</integer>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
 
   <key>RunAtLoad</key>
-  <false/>
+  <true/>
 
   <key>ProcessType</key>
   <string>Background</string>
