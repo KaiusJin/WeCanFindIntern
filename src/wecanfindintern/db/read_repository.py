@@ -19,6 +19,7 @@ from wecanfindintern.api.models import (
     JobPage,
     JobSourceResponse,
     LocationResponse,
+    RecruitingTermResponse,
     SalaryResponse,
     decode_cursor,
     encode_cursor,
@@ -56,6 +57,8 @@ JOB_SELECT = """
     j.salary_source,
     j.salary_annual_min,
     j.salary_annual_max,
+    j.recruiting_season,
+    j.recruiting_year,
     j.skill_tags,
     j.display_tags,
     j.source_count,
@@ -112,15 +115,34 @@ class JobReadRepository:
         if filters.skill:
             predicates.append("%s = ANY(j.skill_tags)")
             parameters.append(normalize_tag(filters.skill))
+        if filters.season:
+            predicates.append("j.recruiting_season = %s")
+            parameters.append(filters.season)
+        if filters.recruiting_year:
+            predicates.append("j.recruiting_year = %s")
+            parameters.append(filters.recruiting_year)
+        if filters.has_recruiting_term is True:
+            predicates.append("j.recruiting_season IS NOT NULL")
+        elif filters.has_recruiting_term is False:
+            predicates.append("j.recruiting_season IS NULL")
         if filters.posted_after:
             predicates.append("j.date_posted >= %s")
             parameters.append(filters.posted_after)
         if filters.salary_min is not None:
             predicates.append("j.salary_max >= %s")
             parameters.append(filters.salary_min)
+        if filters.hourly_salary_min is not None:
+            predicates.append("coalesce(j.salary_annual_max, j.salary_annual_min) >= %s")
+            parameters.append(filters.hourly_salary_min * 2080)
+        if filters.hourly_salary_max is not None:
+            predicates.append("coalesce(j.salary_annual_min, j.salary_annual_max) <= %s")
+            parameters.append(filters.hourly_salary_max * 2080)
         if filters.annual_salary_min is not None:
-            predicates.append("j.salary_annual_max >= %s")
+            predicates.append("coalesce(j.salary_annual_max, j.salary_annual_min) >= %s")
             parameters.append(filters.annual_salary_min)
+        if filters.annual_salary_max is not None:
+            predicates.append("coalesce(j.salary_annual_min, j.salary_annual_max) <= %s")
+            parameters.append(filters.annual_salary_max)
         if filters.has_salary is True:
             predicates.append("coalesce(j.salary_max, j.salary_annual_max) IS NOT NULL")
         elif filters.has_salary is False:
@@ -266,7 +288,20 @@ class JobReadRepository:
                          FROM (SELECT jsonb_build_object('value', company_name,
                                                         'count', count(*)) AS item
                                FROM jobs WHERE status = 1 AND company_name IS NOT NULL
-                               GROUP BY company_name LIMIT 100) grouped) AS companies
+                               GROUP BY company_name LIMIT 100) grouped) AS companies,
+                        (SELECT coalesce(jsonb_agg(item ORDER BY (item->>'count')::int DESC,
+                                                            item->>'value'), '[]')
+                         FROM (SELECT jsonb_build_object('value', concat(initcap(recruiting_season), ' ', recruiting_year),
+                                                        'count', count(*)) AS item
+                               FROM jobs
+                               WHERE status = 1 AND recruiting_season IS NOT NULL AND recruiting_year IS NOT NULL
+                               GROUP BY recruiting_season, recruiting_year) grouped) AS recruiting_terms,
+                        (SELECT coalesce(jsonb_agg(item ORDER BY (item->>'count')::int DESC,
+                                                            item->>'value'), '[]')
+                         FROM (SELECT jsonb_build_object('value', recruiting_season,
+                                                        'count', count(*)) AS item
+                               FROM jobs WHERE status = 1 AND recruiting_season IS NOT NULL
+                               GROUP BY recruiting_season) grouped) AS recruiting_seasons
                     """
                 )
             ).fetchone()
@@ -283,6 +318,8 @@ class JobReadRepository:
                     "regions",
                     "cities",
                     "companies",
+                    "recruiting_terms",
+                    "recruiting_seasons",
                 )
             }
         )
@@ -407,6 +444,13 @@ def job_list_item(row: dict[str, Any]) -> JobListItem:
             annualized_minimum=row["salary_annual_min"],
             annualized_maximum=row["salary_annual_max"],
         )
+    recruiting_term = None
+    if row["recruiting_season"] is not None and row["recruiting_year"] is not None:
+        recruiting_term = RecruitingTermResponse(
+            season=row["recruiting_season"],
+            year=row["recruiting_year"],
+            display_name=f"{row['recruiting_season'].title()} {row['recruiting_year']}",
+        )
     return JobListItem(
         id=row["public_id"],
         title=row["title"],
@@ -433,6 +477,7 @@ def job_list_item(row: dict[str, Any]) -> JobListItem:
         date_posted=row["date_posted"],
         published_at=row["published_sort_at"],
         salary=salary,
+        recruiting_term=recruiting_term,
         skill_tags=row["skill_tags"] or [],
         display_tags=row["display_tags"] or [],
         source_count=row["source_count"],

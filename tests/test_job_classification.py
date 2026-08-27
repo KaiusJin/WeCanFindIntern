@@ -9,6 +9,7 @@ from wecanfindintern.domain.classification import (
     classify_job,
 )
 from wecanfindintern.domain.jobs import annualize_salary, parse_location
+from wecanfindintern.domain.salary import extract_salary_from_description
 
 
 def test_coop_is_separate_from_full_time_schedule() -> None:
@@ -85,6 +86,33 @@ def test_salary_annualization() -> None:
     assert annualize_salary(Decimal("5000"), "monthly") == Decimal("60000.00")
     assert annualize_salary(Decimal("80000"), "yearly") == Decimal("80000.00")
     assert annualize_salary(Decimal("100"), "unknown") is None
+
+
+def test_bare_pay_range_preserves_hourly_decimals() -> None:
+    result = extract_salary_from_description(
+        "Applications are open. Pay Range: $14.5 - $30.51",
+        country_code="US",
+    )
+    assert result is not None
+    assert result.interval == "hourly"
+    assert result.minimum == Decimal("14.5")
+    assert result.maximum == Decimal("30.51")
+    assert result.currency == "USD"
+
+
+def test_salary_parser_skips_postal_code_before_pay_range() -> None:
+    result = extract_salary_from_description(
+        """
+        Job Location Postal Code: 77058-2900
+        The US base salary range for this position is
+        $20.00 - $45.00
+        """,
+        country_code="US",
+    )
+    assert result is not None
+    assert result.interval == "hourly"
+    assert result.minimum == Decimal("20.00")
+    assert result.maximum == Decimal("45.00")
 
 
 def test_canadian_location_uses_consistent_region_code() -> None:

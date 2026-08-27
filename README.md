@@ -95,7 +95,9 @@ PYTHONPATH=src .venv/bin/python scripts/seed_collection_plans.py
 PYTHONPATH=src .venv/bin/python scripts/run_collection_campaign.py
 ```
 
-campaign 严格按“全部采集 → 全量去重 → 全量正则薪资 → DeepSeek 薪资”的顺序执行。
+campaign 严格按“全部采集 → 全量去重 → 全量正则薪资 → DeepSeek 薪资 →
+全量正则招聘季节 → DeepSeek 招聘季节”的顺序执行。招聘季节会统一为
+`Winter/Spring/Summer/Fall + 年份`，并按标题与 JD 内容哈希持久化，内容不变时不会重复调用模型。
 采集结果若无法确认属于美国或加拿大，会在数据库写入前被排除。
 
 ### macOS 定时采集

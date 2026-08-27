@@ -40,7 +40,9 @@ def expand_collection_catalog(raw: Any) -> list[dict[str, Any]]:
                             "linkedin_fetch_description": defaults.get(
                                 "linkedin_fetch_description", True
                             ),
-                            "enforce_annual_salary": True,
+                            # WeCanFindIntern preserves the provider interval and performs
+                            # its own validated annualization after deduplication.
+                            "enforce_annual_salary": False,
                             "verbose": defaults.get("verbose", 1),
                         },
                         "interval_seconds": defaults.get("interval_seconds", 14_400),

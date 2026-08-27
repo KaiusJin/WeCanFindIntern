@@ -1,6 +1,6 @@
 # WeCanFindIntern 项目任务拆分与当前状态
 
-更新时间：2026-08-25  
+更新时间：2026-08-26
 状态口径：以当前工作区文件和本地可运行验证为准。
 
 ## 一、项目当前目标
@@ -29,9 +29,9 @@ JobSpy 多来源抓取
 | 4. 数据标准化 | 将 DataFrame 转换为稳定的 `NormalizedJob`，处理空值、日期、URL、薪资、技能等字段 | `jobspy_adapter.py` | 已完成 |
 | 5. 业务岗位模型 | 已有 `CanonicalJobInput`、公司、地点、薪资和岗位字段模型 | `src/wecanfindintern/domain/jobs.py` | 已完成 |
 | 6. 岗位分类 | 支持机会类型、工时、岗位大类、子类、技能标签、要求标签和展示标签 | `src/wecanfindintern/domain/classification.py` | 已完成 |
-| 7. 地点/薪资规范化 | 支持国家、省州/地区、城市三级地点；优先采用来源薪资，其次正则，最后使用 DeepSeek JSON 回退；统一年化并在页面换算为时薪 | `domain/jobs.py`、`domain/salary.py`、`domain/salary_llm.py` | 已完成 |
+| 7. 地点/薪资/招聘季节规范化 | 支持国家、省州/地区、城市三级地点；薪资与招聘季节均采用全量正则优先、DeepSeek JSON 约束回退并按岗位内容哈希持久化 | `domain/salary*.py`、`domain/recruiting_term*.py` | 已完成 |
 | 8. 去重和幂等设计 | 已实现来源指纹、URL/公司/地点/JD 候选去重、事务和 advisory lock | `deduplication.py`、`db/ingestion_repository.py` | 已实现，需真实规模验收 |
-| 9. 数据库层 | 已有迁移、连接池、写入仓库、读取仓库和自动采集相关表设计 | `migrations/0001–0006`、`src/wecanfindintern/db/` | 已实现，需环境验收 |
+| 9. 数据库层 | 已有迁移、连接池、写入仓库、读取仓库和自动采集相关表设计 | `migrations/0001–0008`、`src/wecanfindintern/db/` | 已实现并完成本地迁移 |
 | 10. 调度系统 | 已实现 collection plan、4 小时间隔、租约、offset、断点、重试和 exhausted 状态 | `scheduler/`、`config/collection_plans.json` | 已实现，需故障演练 |
 | 11. 数据 API | 已实现职位列表、详情、筛选、游标分页、Facets、采集运行状态和采集计划接口 | `src/wecanfindintern/api/app.py`、`docs/DATA_API.md` | 已实现 |
 | 12. API 契约 | 已有 `job.v3`、`job-page.v3`、`job-facets.v2` schema 和契约检查脚本 | `schemas/`、`scripts/verify_data_api_contract.py` | 已完成 |
@@ -42,7 +42,7 @@ JobSpy 多来源抓取
 
 ### 已在当前环境确认的结果
 
-- 最新薪资改动按要求未运行自动化测试；改动前基线为 `17 passed`。
+- 最新薪资周期一致性改动已完成 12 项针对性测试和 JavaScript/Python 语法检查。
 - 本轮已完成 Python/JavaScript 语法检查和 `git diff --check`。
 - 当前已有 Indeed 原始采集产物：1 个 CSV 和 1 个标准化 JSONL 文件。
 - 当前标准化 JSONL 样本为 5 条记录。
@@ -50,9 +50,14 @@ JobSpy 多来源抓取
 - 最近一次 staged campaign 完成 18 个来源查询，采集 482 条唯一来源记录；统一去重后新增 379、合并 28、已有 75。
 - 薪资严格在全量去重后执行：全量正则完成后新增 95 条，再由 DeepSeek 新增 72 条。
 - 后续采集范围已收紧为美国和加拿大的 Computer Science / Software、Data Science、Machine Learning / AI，共 19 个关键词、38 个国家关键词计划和 76 个来源查询。
+- 最新完整采集阶段获得 1,795 条唯一来源记录；统一去重后新增 1,459、合并 157、已有 179。
+- 招聘季节已完成全量回填：1,869 个活跃岗位全部检查，502 个具有标准化季节，未检查和 pending generation 均为 0。
+- 招聘季节支持完整名称、Autumn/Fall 归一、常见缩写、两位/撇号年份、学期夹词和紧凑 term code；冲突表达不强制猜测。
+- 每次招聘季节 DeepSeek 调用先生成持久化 UUID，并保存输入片段、模型、JSON 输出和 token 用量；页面只显示标准化 `Season Year`。
 - 每个岗位使用数据库内部自增 `jobs.id` 持久化派生结果；再次抓到相同来源岗位且 JD 未变化时复用已保存薪资，不重复调用 LLM。
 - 加拿大省/地区和美国州统一映射为标准两位代码，并清洗常见错误，例如 `Ontraio → ON`。
 - BMO 的 `$61,600–$113,900` 年薪已识别，并在页面换算为 `CAD $29.62–$54.76/hour`。
+- 已修复 JobSpy 强制年化造成的周期错配：42 条异常薪资由正则恢复，最终全库复查为 0 条未解决；包括 `$14.50–$30.51/hour` 和 `$24–$29/hour` 样例。
 - 本地首页和岗位 API 已启动在 `http://127.0.0.1:8000`，HTTP 检查返回 200。
 - 任务拆分、数据契约、迁移文件和运行脚本相对齐全，已经不是单纯的原型目录。
 
@@ -126,7 +131,7 @@ JobSpy 多来源抓取
 
 ## 六、当前结论
 
-项目已经完成多来源岗位采集后端和职位搜索浏览 MVP，并加入正则 + DeepSeek JSON 约束的混合薪资提取。当前可本地演示，但还不能称为生产稳定版本。下一阶段重点是扩大真实来源覆盖、提高数据质量、验证故障恢复并补充监控告警。
+项目已经完成多来源岗位采集后端和职位搜索浏览 MVP，并加入正则 + DeepSeek JSON 约束的薪资与招聘季节混合提取。当前可本地演示，但还不能称为生产稳定版本。下一阶段重点是扩大真实来源覆盖、提高数据质量、验证故障恢复并补充监控告警。
 
 ## 七、关键文件
 

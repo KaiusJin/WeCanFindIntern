@@ -50,6 +50,7 @@ function readFilters() {
   if (query) params.set("query", query);
   if (location) params.set("city", location);
   const mappings = {
+    "recruiting-term": "recruiting_term",
     country: "country", region: "region", city: "city", "work-mode": "work_mode",
     "opportunity-type": "opportunity_type", "schedule-type": "schedule_type",
     category: "category", skill: "skill",
@@ -59,8 +60,10 @@ function readFilters() {
     if (value) params.set(param, value);
   }
   if ($("#has-salary").checked) params.set("has_salary", "true");
-  const salary = $("#annual-salary").value;
-  if (salary) params.set("annual_salary_min", salary);
+  const hourlyMin = $("#hourly-min").value.trim();
+  if (hourlyMin && Number(hourlyMin) > 0) params.set("hourly_salary_min", hourlyMin);
+  const hourlyMax = $("#hourly-max").value.trim();
+  if (hourlyMax && Number(hourlyMax) > 0) params.set("hourly_salary_max", hourlyMax);
   params.set("limit", "20");
   return params;
 }
@@ -72,6 +75,14 @@ function formatDate(value) {
 
 function formatSalary(salary) {
   if (!salary || (salary.minimum == null && salary.maximum == null && salary.annualized_minimum == null && salary.annualized_maximum == null)) return "Salary not disclosed";
+  const rawValues = [salary.minimum, salary.maximum].filter((value) => value != null).map(Number);
+  if (rawValues.some((value) => !Number.isFinite(value) || value < 0)) return "Salary not disclosed";
+  const intervalLimits = {
+    hourly: [5, 500], daily: [40, 5000], weekly: [100, 25000],
+    monthly: [500, 100000], yearly: [5000, 2000000],
+  };
+  const limits = intervalLimits[salary.interval];
+  if (limits && rawValues.some((value) => value < limits[0] || value > limits[1])) return "Salary not disclosed";
   const hourlyMinimum = salary.interval === "hourly"
     ? salary.minimum
     : (salary.annualized_minimum == null ? null : Number(salary.annualized_minimum) / 2080);
@@ -89,6 +100,7 @@ function formatSalary(salary) {
 
 function renderJob(job) {
   const tags = [...new Set([...(job.skill_tags || []).slice(0, 4), job.job_category].filter(Boolean))];
+  const recruitingTerm = job.recruiting_term?.display_name;
   return `<article class="job-card" data-id="${job.id}" tabindex="0">
     <div class="job-card-main">
       <div class="company-mark">${escapeHtml((job.company_name || "?").slice(0, 1).toUpperCase())}</div>
@@ -100,7 +112,7 @@ function renderJob(job) {
       <div class="job-date">${formatDate(job.date_posted || job.published_at)}</div>
     </div>
     <div class="job-card-footer">
-      <div class="job-tags"><span class="tag accent">${escapeHtml(label(job.opportunity_type))}</span>${tags.map((tag) => `<span class="tag">${escapeHtml(job.skill_tags?.includes(tag) ? skillLabel(tag) : label(tag))}</span>`).join("")}</div>
+      <div class="job-tags"><span class="tag accent">${escapeHtml(label(job.opportunity_type))}</span>${recruitingTerm ? `<span class="tag term-tag">${escapeHtml(recruitingTerm)}</span>` : ""}${tags.map((tag) => `<span class="tag">${escapeHtml(job.skill_tags?.includes(tag) ? skillLabel(tag) : label(tag))}</span>`).join("")}</div>
       <span class="salary">${escapeHtml(formatSalary(job.salary))}</span>
     </div>
   </article>`;
@@ -142,11 +154,18 @@ async function loadJobs({ append = false } = {}) {
   }
 }
 
+let debounceTimer = null;
+function debouncedLoadJobs(waitMs = 300) {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => loadJobs(), waitMs);
+}
+
 async function loadFacets() {
   try {
     const response = await fetch("/api/v1/jobs/facets");
     if (!response.ok) throw new Error("facets unavailable");
     state.facets = await response.json();
+    setOptions("#recruiting-term", state.facets.recruiting_terms, "All recruiting seasons");
     setOptions("#opportunity-type", state.facets.opportunity_types, "All opportunity types");
     setOptions("#schedule-type", state.facets.schedule_types, "All schedules");
     setOptions("#category", state.facets.job_categories, "All categories");
@@ -169,7 +188,7 @@ async function openJob(jobId) {
     detail.innerHTML = `<p class="eyebrow">${escapeHtml(label(job.opportunity_type))} · ${escapeHtml(workModeLabel(job.work_mode))}</p>
       <h2>${escapeHtml(job.title)}</h2><p class="detail-company">${escapeHtml(job.company_name || "Company not specified")}</p>
       <p class="detail-location">${escapeHtml(job.location?.display_name || "Location not specified")} · ${formatDate(job.date_posted)}</p>
-      <div class="detail-grid"><div><span>Salary</span><strong>${escapeHtml(formatSalary(job.salary))}</strong></div><div><span>Skills</span><strong>${escapeHtml(((job.skills?.length ? job.skills : job.skill_tags) || []).slice(0, 8).map(skillLabel).join(", ") || "Skills not specified")}</strong></div></div>
+      <div class="detail-grid"><div><span>Salary</span><strong>${escapeHtml(formatSalary(job.salary))}</strong></div><div><span>Recruiting term</span><strong>${escapeHtml(job.recruiting_term?.display_name || "Term not specified")}</strong></div><div><span>Skills</span><strong>${escapeHtml(((job.skills?.length ? job.skills : job.skill_tags) || []).slice(0, 8).map(skillLabel).join(", ") || "Skills not specified")}</strong></div></div>
       <div class="detail-description">${job.description ? escapeHtml(job.description).replace(/\n/g, "<br />") : "No detailed description is available for this job."}</div>
       <div class="detail-actions">${job.sources?.map((source) => `<a class="primary-button" href="${escapeHtml(source.direct_url || source.url)}" target="_blank" rel="noreferrer">View original job ↗</a>`).join("") || ""}</div>`;
   } catch (requestError) {
@@ -177,12 +196,82 @@ async function openJob(jobId) {
   }
 }
 
+function updateSliderFill() {
+  const minSlider = $("#hourly-slider-min");
+  const maxSlider = $("#hourly-slider-max");
+  const fill = $("#slider-track-fill");
+  if (!minSlider || !maxSlider || !fill) return;
+  const minVal = Number(minSlider.value);
+  const maxVal = Number(maxSlider.value);
+  const minPct = (minVal / 100) * 100;
+  const maxPct = (maxVal / 100) * 100;
+  fill.style.left = `${minPct}%`;
+  fill.style.width = `${Math.max(0, maxPct - minPct)}%`;
+}
+
 $("#search-form").addEventListener("submit", (event) => { event.preventDefault(); loadJobs(); });
 $("#load-more").addEventListener("click", () => loadJobs({ append: true }));
 $("#refresh").addEventListener("click", () => loadJobs());
+$(".filters-panel").addEventListener("change", (event) => {
+  if (event.target.id !== "hourly-min" && event.target.id !== "hourly-max" && !event.target.classList.contains("dual-range-slider")) {
+    loadJobs();
+  }
+});
+$("#hourly-slider-min").addEventListener("input", (event) => {
+  let minVal = Number(event.target.value);
+  const maxVal = Number($("#hourly-slider-max").value);
+  if (minVal > maxVal) {
+    minVal = maxVal;
+    event.target.value = minVal;
+  }
+  $("#hourly-min").value = minVal > 0 ? minVal : "";
+  updateSliderFill();
+  debouncedLoadJobs(200);
+});
+$("#hourly-slider-max").addEventListener("input", (event) => {
+  let maxVal = Number(event.target.value);
+  const minVal = Number($("#hourly-slider-min").value);
+  if (maxVal < minVal) {
+    maxVal = minVal;
+    event.target.value = maxVal;
+  }
+  $("#hourly-max").value = maxVal < 100 ? maxVal : "";
+  updateSliderFill();
+  debouncedLoadJobs(200);
+});
+$("#hourly-min").addEventListener("input", (event) => {
+  const val = Number(event.target.value);
+  const maxSliderVal = Number($("#hourly-slider-max").value);
+  if (!isNaN(val) && val >= 0) {
+    const clamped = Math.min(val, maxSliderVal, 100);
+    $("#hourly-slider-min").value = clamped;
+  } else {
+    $("#hourly-slider-min").value = 0;
+  }
+  updateSliderFill();
+  debouncedLoadJobs(300);
+});
+$("#hourly-max").addEventListener("input", (event) => {
+  const val = Number(event.target.value);
+  const minSliderVal = Number($("#hourly-slider-min").value);
+  if (!isNaN(val) && val > 0) {
+    const clamped = Math.max(minSliderVal, Math.min(val, 100));
+    $("#hourly-slider-max").value = clamped;
+  } else if (!event.target.value.trim()) {
+    $("#hourly-slider-max").value = 100;
+  }
+  updateSliderFill();
+  debouncedLoadJobs(300);
+});
 $("#clear-filters").addEventListener("click", () => {
   $("#search-form").reset(); $("#location").value = "";
-  ["#country", "#region", "#city", "#work-mode", "#opportunity-type", "#schedule-type", "#category", "#skill"].forEach((id) => { $(id).value = ""; });
+  ["#recruiting-term", "#country", "#region", "#city", "#work-mode", "#opportunity-type", "#schedule-type", "#category", "#skill"].forEach((id) => { $(id).value = ""; });
+  $("#has-salary").checked = false;
+  $("#hourly-min").value = "";
+  $("#hourly-max").value = "";
+  $("#hourly-slider-min").value = 0;
+  $("#hourly-slider-max").value = 100;
+  updateSliderFill();
   loadJobs();
 });
 document.addEventListener("click", (event) => {
@@ -194,5 +283,6 @@ document.addEventListener("click", (event) => {
 $("#close-dialog").addEventListener("click", () => $("#job-dialog").close());
 $("#job-dialog").addEventListener("click", (event) => { if (event.target === $("#job-dialog")) $("#job-dialog").close(); });
 
+updateSliderFill();
 loadFacets();
 loadJobs();

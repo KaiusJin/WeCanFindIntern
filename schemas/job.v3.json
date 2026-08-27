@@ -182,6 +182,35 @@
       "title": "LocationResponse",
       "type": "object"
     },
+    "RecruitingTermResponse": {
+      "properties": {
+        "season": {
+          "enum": [
+            "winter",
+            "spring",
+            "summer",
+            "fall"
+          ],
+          "title": "Season",
+          "type": "string"
+        },
+        "year": {
+          "title": "Year",
+          "type": "integer"
+        },
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "season",
+        "year",
+        "display_name"
+      ],
+      "title": "RecruitingTermResponse",
+      "type": "object"
+    },
     "SalaryResponse": {
       "properties": {
         "interval": {
@@ -385,6 +414,16 @@
         }
       ]
     },
+    "recruiting_term": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecruitingTermResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "skill_tags": {
       "items": {
         "type": "string"
@@ -527,6 +566,7 @@
     "date_posted",
     "published_at",
     "salary",
+    "recruiting_term",
     "skill_tags",
     "display_tags",
     "source_count",

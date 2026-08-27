@@ -72,20 +72,20 @@ def extract_salary_from_description(
         return None
     candidates: list[tuple[int, ParsedSalary]] = []
     for window in _candidate_windows(description):
-        interval = _detect_interval(window)
-        if not interval:
-            continue
         if _EXCLUDED_SIGNAL.search(window) and not _SALARY_SIGNAL.search(window):
             continue
 
-        range_match = _RANGE_PATTERN.search(window)
-        if range_match:
+        found_valid_range = False
+        for range_match in _RANGE_PATTERN.finditer(window):
             minimum = _amount(range_match.group("minimum"), range_match.group("min_k"))
             maximum = _amount(range_match.group("maximum"), range_match.group("max_k"))
             if (range_match.group("min_k") or range_match.group("max_k")) and minimum < 1000:
                 minimum *= 1000
             if (range_match.group("min_k") or range_match.group("max_k")) and maximum < 1000:
                 maximum *= 1000
+            interval = _detect_interval(window) or _infer_interval(minimum, maximum)
+            if interval is None:
+                continue
             currency = _detect_currency(
                 " ".join(
                     filter(
@@ -103,12 +103,20 @@ def extract_salary_from_description(
             parsed = _validated(interval, minimum, maximum, currency)
             if parsed:
                 score = 3 + int(bool(_SALARY_SIGNAL.search(window)))
+                score += int(
+                    bool(range_match.group("prefix1") or range_match.group("prefix2"))
+                )
                 candidates.append((score, parsed))
-                continue
+                found_valid_range = True
+        if found_valid_range:
+            continue
 
         single_match = _SINGLE_PATTERN.search(window)
         if single_match and _SALARY_SIGNAL.search(window):
             amount = _amount(single_match.group("amount"), single_match.group("amount_k"))
+            interval = _detect_interval(window) or _infer_interval(amount, None)
+            if interval is None:
+                continue
             currency = _detect_currency(
                 " ".join(
                     filter(
@@ -179,6 +187,26 @@ def _detect_interval(text: str) -> str | None:
     for interval, pattern in _PERIOD_PATTERNS:
         if pattern.search(text):
             return interval
+    return None
+
+
+def _infer_interval(
+    minimum: Decimal | None,
+    maximum: Decimal | None,
+) -> str | None:
+    """Infer only unambiguous bare hourly/yearly amounts.
+
+    Some US postings say only ``Pay Range: $14.50 - $30.51``. Values in a
+    plausible hourly band are treated as hourly; values in an annual band are
+    treated as yearly. Ambiguous daily/monthly-sized values remain unresolved
+    for the DeepSeek pass.
+    """
+
+    values = [value for value in (minimum, maximum) if value is not None]
+    if values and all(Decimal("5") <= value <= Decimal("350") for value in values):
+        return "hourly"
+    if values and all(Decimal("5000") <= value <= Decimal("2000000") for value in values):
+        return "yearly"
     return None
 
 

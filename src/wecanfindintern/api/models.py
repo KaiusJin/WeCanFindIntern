@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class JobListFilters(BaseModel):
@@ -26,10 +26,17 @@ class JobListFilters(BaseModel):
     category: str | None = Field(default=None, max_length=60)
     subcategory: str | None = Field(default=None, max_length=60)
     skill: str | None = Field(default=None, max_length=80)
+    season: Literal["winter", "spring", "summer", "fall"] | None = None
+    recruiting_year: int | None = Field(default=None, ge=2020, le=2099)
+    recruiting_term: str | None = Field(default=None, max_length=40)
+    has_recruiting_term: bool | None = None
     source: str | None = Field(default=None, max_length=40)
     posted_after: date | None = None
     salary_min: Decimal | None = Field(default=None, ge=0)
     annual_salary_min: Decimal | None = Field(default=None, ge=0)
+    annual_salary_max: Decimal | None = Field(default=None, ge=0)
+    hourly_salary_min: Decimal | None = Field(default=None, ge=0)
+    hourly_salary_max: Decimal | None = Field(default=None, ge=0)
     has_salary: bool | None = None
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     cursor: str | None = Field(default=None, max_length=256)
@@ -40,6 +47,34 @@ class JobListFilters(BaseModel):
     def uppercase_codes(cls, value: str | None) -> str | None:
         return value.upper() if value else None
 
+    @field_validator("season", mode="before")
+    @classmethod
+    def normalize_season(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        v = value.strip().lower()
+        aliases = {"winter": "winter", "spring": "spring", "summer": "summer", "fall": "fall", "autumn": "fall"}
+        return aliases.get(v, v)
+
+    @model_validator(mode="after")
+    def populate_from_recruiting_term(self) -> JobListFilters:
+        if self.recruiting_term and (self.season is None or self.recruiting_year is None):
+            parts = self.recruiting_term.replace("_", " ").split()
+            if len(parts) == 2:
+                s_cand, y_cand = parts[0].lower(), parts[1]
+                if s_cand in ("winter", "spring", "summer", "fall", "autumn"):
+                    season_val = "fall" if s_cand == "autumn" else s_cand
+                    try:
+                        year_val = int(y_cand)
+                        if 2020 <= year_val <= 2099:
+                            if self.season is None:
+                                self.season = season_val  # type: ignore
+                            if self.recruiting_year is None:
+                                self.recruiting_year = year_val
+                    except ValueError:
+                        pass
+        return self
+
 
 class SalaryResponse(BaseModel):
     interval: str | None
@@ -49,6 +84,12 @@ class SalaryResponse(BaseModel):
     source: str | None
     annualized_minimum: Decimal | None
     annualized_maximum: Decimal | None
+
+
+class RecruitingTermResponse(BaseModel):
+    season: Literal["winter", "spring", "summer", "fall"]
+    year: int
+    display_name: str
 
 
 class LocationResponse(BaseModel):
@@ -80,6 +121,7 @@ class JobListItem(BaseModel):
     date_posted: date | None
     published_at: datetime
     salary: SalaryResponse | None
+    recruiting_term: RecruitingTermResponse | None
     skill_tags: list[str]
     display_tags: list[str]
     source_count: int
@@ -133,6 +175,8 @@ class JobFacetsResponse(BaseModel):
     regions: list[FacetCount]
     cities: list[FacetCount]
     companies: list[FacetCount]
+    recruiting_terms: list[FacetCount] = Field(default_factory=list)
+    recruiting_seasons: list[FacetCount] = Field(default_factory=list)
 
 
 class IngestionRunResponse(BaseModel):

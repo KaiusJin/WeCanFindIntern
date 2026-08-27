@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260826-fixed-v7" />
   </head>
   <body>
     <header class="topbar">
@@ -31,9 +31,11 @@
         </form>
         <div class="quick-searches" aria-label="Popular searches">
           <span>Popular:</span>
+          <button type="button" data-query="Summer 2027">Summer 2027</button>
+          <button type="button" data-query="Fall 2026">Fall 2026</button>
+          <button type="button" data-query="Winter 2027">Winter 2027</button>
           <button type="button" data-query="software engineer intern">Software Engineer Intern</button>
           <button type="button" data-query="data analyst">Data Analyst</button>
-          <button type="button" data-query="product designer">Product Designer</button>
         </div>
       </section>
 
@@ -43,6 +45,12 @@
             <h2>Filter jobs</h2>
             <button id="clear-filters" class="text-button" type="button">Clear</button>
           </div>
+
+          <label class="field-label" for="recruiting-term">Recruiting season / term</label>
+          <select id="recruiting-term"><option value="">All recruiting seasons</option></select>
+
+          <label class="field-label" for="opportunity-type">Opportunity type</label>
+          <select id="opportunity-type"><option value="">All opportunity types</option></select>
 
           <label class="field-label" for="country">Country</label>
           <select id="country"><option value="">All countries</option></select>
@@ -62,9 +70,6 @@
             <option value="unknown">Work mode not specified</option>
           </select>
 
-          <label class="field-label" for="opportunity-type">Opportunity type</label>
-          <select id="opportunity-type"><option value="">All opportunity types</option></select>
-
           <label class="field-label" for="schedule-type">Schedule</label>
           <select id="schedule-type"><option value="">All schedules</option></select>
 
@@ -79,8 +84,37 @@
             <span>Only show jobs with salary</span>
           </label>
 
-          <label class="field-label" for="annual-salary">Minimum annual salary</label>
-          <div class="salary-input"><span>$</span><input id="annual-salary" type="number" min="0" step="5000" placeholder="e.g. 50000" /><span>CAD</span></div>
+          <div class="salary-filter-group">
+            <label class="field-label">Hourly pay rate ($/hr)</label>
+            <div class="salary-range-inputs">
+              <div class="salary-input-box">
+                <span class="prefix">$</span>
+                <input id="hourly-min" type="number" min="0" max="200" step="1" placeholder="0" aria-label="Minimum hourly rate" />
+                <span class="suffix">/hr</span>
+              </div>
+              <span class="range-separator">–</span>
+              <div class="salary-input-box">
+                <span class="prefix">$</span>
+                <input id="hourly-max" type="number" min="0" max="200" step="1" placeholder="100+" aria-label="Maximum hourly rate" />
+                <span class="suffix">/hr</span>
+              </div>
+            </div>
+            <div class="dual-slider-wrapper">
+              <div class="slider-track-container">
+                <div class="slider-track-base"></div>
+                <div id="slider-track-fill" class="slider-track-fill"></div>
+                <input id="hourly-slider-min" class="dual-range-slider min-slider" type="range" min="0" max="100" step="1" value="0" aria-label="Minimum hourly pay" />
+                <input id="hourly-slider-max" class="dual-range-slider max-slider" type="range" min="0" max="100" step="1" value="100" aria-label="Maximum hourly pay" />
+              </div>
+              <div class="slider-ticks">
+                <span>$0</span>
+                <span>$25</span>
+                <span>$50</span>
+                <span>$75</span>
+                <span>$100+</span>
+              </div>
+            </div>
+          </div>
         </aside>
 
         <section class="results-panel" aria-live="polite">
@@ -111,6 +145,6 @@
       <div id="job-detail"></div>
     </dialog>
 
-    <script src="/app.js" defer></script>
+    <script src="/app.js?v=20260826-fixed-v7" defer></script>
   </body>
 </html>

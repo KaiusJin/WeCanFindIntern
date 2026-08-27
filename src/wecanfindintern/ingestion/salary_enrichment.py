@@ -13,7 +13,7 @@ from wecanfindintern.domain.jobs import (
     default_salary_currency,
     to_decimal,
 )
-from wecanfindintern.domain.salary import extract_salary_from_description
+from wecanfindintern.domain.salary import extract_salary_from_description, validated_salary
 from wecanfindintern.domain.salary_llm import extract_salary_with_deepseek
 from wecanfindintern.ingestion.jobspy_adapter import NormalizedJob
 
@@ -121,15 +121,32 @@ def _structured_salary(
             or (source_salary.minimum is None and source_salary.maximum is None)
         ):
             continue
+        # JobSpy's description fallback is not provider-structured salary. In
+        # annual-enforcement mode it can return annualized amounts while leaving
+        # interval="hourly", so always re-parse the original JD ourselves.
+        if (source_salary.source or "").casefold() in {
+            "description",
+            "job_description",
+        }:
+            continue
         minimum = to_decimal(source_salary.minimum)
         maximum = to_decimal(source_salary.maximum)
-        return SalaryRange(
+        validated = validated_salary(
             interval=source_salary.interval,
             minimum=minimum,
             maximum=maximum,
             currency=(source_salary.currency or default_salary_currency(country_code)).upper(),
             source=source_salary.source or "provider",
-            annualized_minimum=annualize_salary(minimum, source_salary.interval),
-            annualized_maximum=annualize_salary(maximum, source_salary.interval),
+        )
+        if validated is None:
+            continue
+        return SalaryRange(
+            interval=validated.interval,
+            minimum=validated.minimum,
+            maximum=validated.maximum,
+            currency=validated.currency,
+            source=validated.source,
+            annualized_minimum=annualize_salary(validated.minimum, validated.interval),
+            annualized_maximum=annualize_salary(validated.maximum, validated.interval),
         )
     return None

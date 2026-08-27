@@ -19,6 +19,7 @@ from wecanfindintern.domain.jobs import canonical_job_from_jobspy, parse_locatio
 from wecanfindintern.ingestion.jobspy_adapter import JobSpyQuery, NormalizedJob
 from wecanfindintern.ingestion.collection_catalog import expand_collection_catalog
 from wecanfindintern.ingestion.location_query import resolve_query_location
+from wecanfindintern.ingestion.recruiting_term_enrichment import enrich_recruiting_terms
 from wecanfindintern.ingestion.salary_enrichment import enrich_missing_salaries
 from wecanfindintern.scheduler.runner import scrape_checked
 
@@ -149,6 +150,15 @@ async def run(config_path: Path, batch_size: int) -> None:
         print(
             "salary stages complete: "
             f"source={salary.structured}, regex={salary.regex}, deepseek={salary.llm}"
+        )
+        term = await enrich_recruiting_terms(
+            repository,
+            [job.source_fingerprint for job in normalized_jobs],
+        )
+        print(
+            "recruiting term stages complete: "
+            f"regex={term.regex}, deepseek={term.llm}, not_found={term.not_found}, "
+            f"cached={term.skipped_cached}, failed={term.failed}"
         )
         await repository.finish_run(
             run_record.internal_id,

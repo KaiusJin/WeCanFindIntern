@@ -15,6 +15,7 @@ from wecanfindintern.db.ingestion_repository import JobIngestionRepository
 from wecanfindintern.db.pool import Database
 from wecanfindintern.domain.jobs import canonical_job_from_jobspy
 from wecanfindintern.ingestion.salary_enrichment import enrich_missing_salaries
+from wecanfindintern.ingestion.recruiting_term_enrichment import enrich_recruiting_terms
 from wecanfindintern.ingestion.jobspy_adapter import scrape_and_normalize
 
 
@@ -51,6 +52,10 @@ async def persist(query, normalized_jobs, scraped_at: datetime, batch_size: int)
                 )
             )
         salary_stats = await enrich_missing_salaries(repository, normalized_jobs)
+        term_stats = await enrich_recruiting_terms(
+            repository,
+            [job.source_fingerprint for job in normalized_jobs],
+        )
         await repository.finish_run(run.internal_id)
     except Exception as error:
         await repository.finish_run(
@@ -73,6 +78,12 @@ async def persist(query, normalized_jobs, scraped_at: datetime, batch_size: int)
         "薪资处理: "
         f"source={salary_stats.structured}, regex={salary_stats.regex}, "
         f"deepseek={salary_stats.llm}"
+    )
+    print(
+        "招聘季节处理: "
+        f"regex={term_stats.regex}, deepseek={term_stats.llm}, "
+        f"not_found={term_stats.not_found}, cached={term_stats.skipped_cached}, "
+        f"failed={term_stats.failed}"
     )
 
 
