@@ -73,21 +73,29 @@ async def enrich_missing_salaries(
 
     # DeepSeek sees only unique jobs that remain salary-less after the regex pass.
     candidates = await repository.salary_enrichment_candidates(fingerprints)
-    for candidate in candidates:
-        extracted = await asyncio.to_thread(
-            extract_salary_with_deepseek,
-            candidate.description,
-            country_code=candidate.country_code,
-            title=candidate.title,
-        )
-        if extracted is None:
-            continue
-        if await repository.persist_enriched_salary(
-            job_id=candidate.job_id,
-            description_hash=candidate.description_hash,
-            salary=_salary_range(extracted),
-        ):
-            llm_count += 1
+    if candidates:
+        salary_semaphore = asyncio.Semaphore(5)
+        salary_lock = asyncio.Lock()
+
+        async def _enrich_single_salary(candidate) -> None:
+            nonlocal llm_count
+            async with salary_semaphore:
+                extracted = await asyncio.to_thread(
+                    extract_salary_with_deepseek,
+                    candidate.description,
+                    country_code=candidate.country_code,
+                    title=candidate.title,
+                )
+                if extracted is not None:
+                    if await repository.persist_enriched_salary(
+                        job_id=candidate.job_id,
+                        description_hash=candidate.description_hash,
+                        salary=_salary_range(extracted),
+                    ):
+                        async with salary_lock:
+                            llm_count += 1
+
+        await asyncio.gather(*[_enrich_single_salary(c) for c in candidates])
 
     return SalaryEnrichmentStats(
         structured=structured_count,

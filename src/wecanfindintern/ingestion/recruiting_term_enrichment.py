@@ -79,44 +79,51 @@ async def enrich_recruiting_terms(
 
     model = os.getenv("DEEPSEEK_TERM_MODEL", "deepseek-chat")
     total_unresolved = len(unresolved)
-    for index, (candidate, input_hash, context) in enumerate(unresolved, start=1):
-        generation_id = await repository.start_recruiting_term_generation(
-            job_id=candidate.job_id,
-            input_hash=input_hash,
-            input_context=context,
-            model=model,
-        )
-        call = await asyncio.to_thread(extract_recruiting_term_with_deepseek, context)
-        await repository.finish_recruiting_term_generation(
-            generation_id,
-            response_json=call.response_json,
-            prompt_tokens=call.prompt_tokens,
-            completion_tokens=call.completion_tokens,
-            error_type=call.error_type,
-        )
-        if call.error_type is not None:
-            failed_count += 1
-            if index % 25 == 0 or index == total_unresolved:
-                print(
-                    f"recruiting term DeepSeek progress: {index}/{total_unresolved}, "
-                    f"matched={llm_count}, failed={failed_count}"
-                )
-            continue
-        if await repository.persist_recruiting_term(
-            job_id=candidate.job_id,
-            input_hash=input_hash,
-            term=call.extraction,
-            model=call.model,
-        ):
-            if call.extraction is None:
-                not_found_count += 1
-            else:
-                llm_count += 1
-        if index % 25 == 0 or index == total_unresolved:
-            print(
-                f"recruiting term DeepSeek progress: {index}/{total_unresolved}, "
-                f"matched={llm_count}, failed={failed_count}"
+    semaphore = asyncio.Semaphore(5)
+    lock = asyncio.Lock()
+    processed_count = 0
+
+    async def _process_candidate(candidate, input_hash: str, context: str) -> None:
+        nonlocal llm_count, not_found_count, failed_count, processed_count
+        async with semaphore:
+            generation_id = await repository.start_recruiting_term_generation(
+                job_id=candidate.job_id,
+                input_hash=input_hash,
+                input_context=context,
+                model=model,
             )
+            call = await asyncio.to_thread(extract_recruiting_term_with_deepseek, context)
+            await repository.finish_recruiting_term_generation(
+                generation_id,
+                response_json=call.response_json,
+                prompt_tokens=call.prompt_tokens,
+                completion_tokens=call.completion_tokens,
+                error_type=call.error_type,
+            )
+            async with lock:
+                processed_count += 1
+                cur_idx = processed_count
+                if call.error_type is not None:
+                    failed_count += 1
+                else:
+                    if await repository.persist_recruiting_term(
+                        job_id=candidate.job_id,
+                        input_hash=input_hash,
+                        term=call.extraction,
+                        model=call.model,
+                    ):
+                        if call.extraction is None:
+                            not_found_count += 1
+                        else:
+                            llm_count += 1
+                if cur_idx % 10 == 0 or cur_idx == total_unresolved:
+                    print(
+                        f"recruiting term DeepSeek progress: {cur_idx}/{total_unresolved}, "
+                        f"matched={llm_count}, failed={failed_count}",
+                        flush=True,
+                    )
+
+    await asyncio.gather(*[_process_candidate(c, h, ctx) for c, h, ctx in unresolved])
 
     return RecruitingTermEnrichmentStats(
         regex=regex_count,
