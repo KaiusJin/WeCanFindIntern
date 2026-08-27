@@ -98,6 +98,28 @@ PYTHONPATH=src .venv/bin/python scripts/run_collection_campaign.py
 campaign 严格按“全部采集 → 全量去重 → 全量正则薪资 → DeepSeek 薪资”的顺序执行。
 采集结果若无法确认属于美国或加拿大，会在数据库写入前被排除。
 
+### macOS 定时采集
+
+仓库提供 `launchd` 配置，默认每 4 小时运行一次完整 campaign。采集程序自身持有
+单实例锁，因此定时任务与手动执行不会重叠。任务会从 `.env` 加载数据库与 DeepSeek
+配置，日志写入 `logs/collector.log` 和 `logs/collector-error.log`。
+
+```bash
+mkdir -p logs ~/Library/LaunchAgents
+cp config/launchd/com.kaius.wecanfindintern.collector.plist \
+  ~/Library/LaunchAgents/com.kaius.wecanfindintern.collector.plist
+launchctl bootstrap gui/$(id -u) \
+  ~/Library/LaunchAgents/com.kaius.wecanfindintern.collector.plist
+```
+
+查看状态和日志：
+
+```bash
+launchctl print gui/$(id -u)/com.kaius.wecanfindintern.collector
+tail -f logs/collector.log
+tail -f logs/collector-error.log
+```
+
 公开岗位格式为 `job.v3`。JSON Schema 位于 `schemas/job.v3.json`、
 `schemas/job-page.v3.json` 和 `schemas/job-facets.v2.json`，可通过以下命令重新生成：
 

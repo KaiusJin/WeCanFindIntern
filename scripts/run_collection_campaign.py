@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fcntl
 import json
 from collections import Counter
 from datetime import UTC, datetime
@@ -191,10 +192,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path("config/collection_plans.json"))
     parser.add_argument("--batch-size", type=int, default=250)
+    parser.add_argument(
+        "--lock-file",
+        type=Path,
+        default=Path(".runtime/collection-campaign.lock"),
+        help="Process lock shared by manual and scheduled campaign runs",
+    )
     args = parser.parse_args()
     if not 1 <= args.batch_size <= 500:
         parser.error("--batch-size must be between 1 and 500")
-    asyncio.run(run(args.config, args.batch_size))
+    args.lock_file.parent.mkdir(parents=True, exist_ok=True)
+    with args.lock_file.open("a+", encoding="utf-8") as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f"campaign already running; lock is held at {args.lock_file}")
+            return
+        asyncio.run(run(args.config, args.batch_size))
 
 
 if __name__ == "__main__":

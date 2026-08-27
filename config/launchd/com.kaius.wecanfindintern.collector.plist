@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.kaius.wecanfindintern.collector</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/kaius/Project/WeCanFIndIntern/scripts/run_collection_campaign_launchd.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/kaius/Project/WeCanFIndIntern</string>
+
+  <key>StartInterval</key>
+  <integer>14400</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/kaius/Project/WeCanFIndIntern/logs/collector.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/kaius/Project/WeCanFIndIntern/logs/collector-error.log</string>
+</dict>
+</plist>
