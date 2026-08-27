@@ -439,6 +439,31 @@
       "title": "Items",
       "type": "array"
     },
+    "total_count": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Total Count"
+    },
+    "last_updated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Updated At"
+    },
     "next_cursor": {
       "anyOf": [
         {

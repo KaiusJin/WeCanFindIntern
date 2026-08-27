@@ -3,7 +3,17 @@ const trackerState = {
   applications: [],
   stats: {},
   trackedJobIds: new Set(),
+  trackedJobs: new Map(),
+  selectedIds: new Set(),
+  attentionItems: [],
+  analytics: null,
   loading: false,
+  page: 1,
+  pageSize: 50,
+  total: 0,
+  totalPages: 0,
+  view: localStorage.getItem("wecan_tracker_view") || "list",
+  requestVersion: 0,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -11,6 +21,83 @@ const $$ = (selector) => document.querySelectorAll(selector);
 
 function escapeHtml(text) {
   return (text || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+
+function renderMarkdown(rawText) {
+  if (!rawText) return "";
+  let text = String(rawText).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  text = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, _lang, code) => `<pre class="md-code-block"><code>${code.trim()}</code></pre>`);
+  text = text.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>');
+  text = text.replace(/^[ \t]*([-*_][ \t]*){3,}$/gm, '<hr class="md-hr" />');
+  text = text.replace(/^[ \t]*######[ \t]+([^\n]+)$/gm, '<h6 class="md-h6">$1</h6>');
+  text = text.replace(/^[ \t]*#####[ \t]+([^\n]+)$/gm, '<h5 class="md-h5">$1</h5>');
+  text = text.replace(/^[ \t]*####[ \t]+([^\n]+)$/gm, '<h4 class="md-h4">$1</h4>');
+  text = text.replace(/^[ \t]*###[ \t]+([^\n]+)$/gm, '<h3 class="md-h3">$1</h3>');
+  text = text.replace(/^[ \t]*##[ \t]+([^\n]+)$/gm, '<h2 class="md-h2">$1</h2>');
+  text = text.replace(/^[ \t]*#[ \t]+([^\n]+)$/gm, '<h1 class="md-h1">$1</h1>');
+  text = text.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
+  text = text.replace(/___([^_]+)___/g, "<strong><em>$1</em></strong>");
+  text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  text = text.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+  text = text.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+  text = text.replace(/_([^_\n]+)_/g, "<em>$1</em>");
+  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer" class="md-link">$1 ↗</a>');
+
+  const lines = text.split("\n");
+  const output = [];
+  let inUl = false;
+  let inOl = false;
+  let currentParagraph = [];
+
+  const flushParagraph = () => {
+    if (currentParagraph.length > 0) {
+      output.push(`<p class="md-p">${currentParagraph.join("<br />")}</p>`);
+      currentParagraph = [];
+    }
+  };
+
+  const closeLists = () => {
+    if (inUl) { output.push("</ul>"); inUl = false; }
+    if (inOl) { output.push("</ol>"); inOl = false; }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      closeLists();
+      continue;
+    }
+    if (/^<(h[1-6]|hr|pre)/.test(trimmed)) {
+      flushParagraph();
+      closeLists();
+      output.push(trimmed);
+      continue;
+    }
+    const ulMatch = trimmed.match(/^[\*\-\+]\s+(.*)$/);
+    if (ulMatch) {
+      flushParagraph();
+      if (inOl) { output.push("</ol>"); inOl = false; }
+      if (!inUl) { output.push('<ul class="md-ul">'); inUl = true; }
+      output.push(`<li class="md-li">${ulMatch[1]}</li>`);
+      continue;
+    }
+    const olMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+    if (olMatch) {
+      flushParagraph();
+      if (inUl) { output.push("</ul>"); inUl = false; }
+      if (!inOl) { output.push('<ol class="md-ol">'); inOl = true; }
+      output.push(`<li class="md-li">${olMatch[2]}</li>`);
+      continue;
+    }
+    closeLists();
+    currentParagraph.push(trimmed);
+  }
+  flushParagraph();
+  closeLists();
+  return output.join("\n");
 }
 
 function label(value) {
@@ -260,11 +347,17 @@ async function openJob(jobId) {
       jd: fullJd,
     };
 
+    const skillsText = ((job.skills?.length ? job.skills : job.skill_tags) || []).slice(0, 15).map(skillLabel).filter(Boolean).join(", ") || "Skills not specified";
+
     detail.innerHTML = `<p class="eyebrow">${escapeHtml(label(job.opportunity_type))} · ${escapeHtml(workModeLabel(job.work_mode))}</p>
       <h2>${escapeHtml(job.title)}</h2><p class="detail-company">${escapeHtml(job.company_name || "Company not specified")}</p>
       <p class="detail-location">${escapeHtml(job.location?.display_name || "Location not specified")} · ${formatDate(job.date_posted)}</p>
-      <div class="detail-grid"><div><span>Salary</span><strong>${escapeHtml(formatSalary(job.salary))}</strong></div><div><span>Recruiting term</span><strong>${escapeHtml(job.recruiting_term?.display_name || "Term not specified")}</strong></div><div><span>Skills</span><strong>${escapeHtml(((job.skills?.length ? job.skills : job.skill_tags) || []).slice(0, 8).map(skillLabel).join(", ") || "Skills not specified")}</strong></div></div>
-      <div class="detail-description">${job.description ? escapeHtml(job.description).replace(/\n/g, "<br />") : "No detailed description is available for this job."}</div>
+      <div class="detail-grid">
+        <div><span>Salary</span><strong>${escapeHtml(formatSalary(job.salary))}</strong></div>
+        <div><span>Recruiting term</span><strong>${escapeHtml(job.recruiting_term?.display_name || "Term not specified")}</strong></div>
+        <div class="detail-grid-full"><span>Skills</span><strong>${escapeHtml(skillsText)}</strong></div>
+      </div>
+      <div class="detail-description">${job.description ? renderMarkdown(job.description) : "<p>No detailed description is available for this job.</p>"}</div>
       <div class="job-ai-actions">
         <button class="btn-ai-action" type="button" data-ai-target="tab-ats">ATS Review ↗</button>
         <button class="btn-ai-action" type="button" data-ai-target="tab-interview">Mock Interview ↗</button>
@@ -977,6 +1070,8 @@ document.addEventListener("click", (event) => {
 // APPLICATION TRACKER CONTROLLER (LOCAL POSTGRESQL PERSISTENCE)
 // =========================================================
 
+/* Legacy card-only tracker retained in history; replaced by the scalable workspace below.
+
 async function fetchTrackerData() {
   trackerState.loading = true;
   try {
@@ -1069,7 +1164,7 @@ function renderTrackerBoard() {
               <option value="applied" ${app.stage === "applied" ? "selected" : ""}>Applied</option>
               <option value="interview" ${app.stage === "interview" ? "selected" : ""}>Interview</option>
               <option value="offer" ${app.stage === "offer" ? "selected" : ""}>Offer</option>
-              <option value="rejected" ${app.stage === "rejected" ? "selected" : ""}>Rejected</option>
+              <option value="rejected" ${app.stage === "rejected" ? "selected" : ""}>Refused</option>
             </select>
           </div>
 
@@ -1329,6 +1424,507 @@ $("#tracker-notes-dialog")?.addEventListener("click", (e) => {
   if (e.target === $("#tracker-notes-dialog")) $("#tracker-notes-dialog")?.close();
 });
 
+*/
+
+// =========================================================
+// SCALABLE APPLICATION TRACKER WORKSPACE
+// =========================================================
+
+const TRACKER_FILTER_KEY = "wecan_tracker_filters_v2";
+const trackerStageLabels = {
+  interested: "Interested",
+  applied: "Applied",
+  interview: "Interviewing",
+  offer: "Offers",
+  rejected: "Refused",
+};
+
+function trackerFiltersFromControls() {
+  const [sort, direction] = ($("#tracker-sort")?.value || "updated:desc").split(":");
+  return {
+    query: $("#tracker-query")?.value.trim() || "",
+    stage: trackerState.stageFilter || "",
+    work_mode: "",
+    priority: "",
+    archived: "all",
+    date_from: "",
+    date_to: "",
+    sort,
+    direction,
+  };
+}
+
+function buildTrackerParams() {
+  const filters = trackerFiltersFromControls();
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => value && params.set(key, value));
+  params.set("page", String(trackerState.page));
+  params.set("page_size", String(trackerState.pageSize));
+  return params;
+}
+
+function syncTrackerFilterState() {
+  const filters = trackerFiltersFromControls();
+  localStorage.setItem(TRACKER_FILTER_KEY, JSON.stringify({ query: filters.query, stage: filters.stage, sort: filters.sort, direction: filters.direction }));
+  const url = new URL(window.location.href);
+  ["tq", "tstage", "tmode", "tpriority", "tarchive", "tfrom", "tto", "tsort"].forEach((key) => url.searchParams.delete(key));
+  if (filters.query) url.searchParams.set("tq", filters.query);
+  if (filters.stage) url.searchParams.set("tstage", filters.stage);
+  if (`${filters.sort}:${filters.direction}` !== "updated:desc") url.searchParams.set("tsort", `${filters.sort}:${filters.direction}`);
+  history.replaceState({}, "", url);
+  const exportParams = new URLSearchParams();
+  if (filters.query) exportParams.set("query", filters.query);
+  if (filters.stage) exportParams.set("stage", filters.stage);
+  const exportLink = $("#tracker-export");
+  if (exportLink) exportLink.href = `/api/v1/tracker/export.csv?${exportParams}`;
+}
+
+function restoreTrackerFilters() {
+  let stored = {};
+  try { stored = JSON.parse(localStorage.getItem(TRACKER_FILTER_KEY) || "{}"); } catch (_) { stored = {}; }
+  const url = new URL(window.location.href);
+  trackerState.stageFilter = url.searchParams.get("tstage") ?? stored.stage ?? "";
+  if ($("#tracker-query")) $("#tracker-query").value = url.searchParams.get("tq") ?? stored.query ?? "";
+  if ($("#tracker-sort")) $("#tracker-sort").value = url.searchParams.get("tsort") ?? `${stored.sort || "updated"}:${stored.direction || "desc"}`;
+}
+
+async function fetchTrackerData({ keepSelection = false } = {}) {
+  const requestVersion = ++trackerState.requestVersion;
+  trackerState.loading = true;
+  $("#tracker-result-count").textContent = "Loading…";
+  try {
+    syncTrackerFilterState();
+    const params = buildTrackerParams();
+    const [listRes, bookmarksRes] = await Promise.all([
+      fetch(`/api/v1/tracker?${params}`),
+      fetch("/api/v1/tracker/bookmarks"),
+    ]);
+    if (!listRes.ok) throw new Error("Failed to load applications");
+    const data = await listRes.json();
+    if (requestVersion !== trackerState.requestVersion) return;
+    trackerState.applications = data.items || [];
+    trackerState.stats = data.stats || {};
+    trackerState.total = data.total || 0;
+    trackerState.totalPages = data.total_pages || 0;
+    if (bookmarksRes.ok) {
+      const bookmarks = await bookmarksRes.json();
+      trackerState.trackedJobs = new Map(bookmarks.map((item) => [item.job_id, item]));
+      trackerState.trackedJobIds = new Set(trackerState.trackedJobs.keys());
+    }
+    if (!keepSelection) trackerState.selectedIds.clear();
+    renderTrackerStats();
+    renderTrackerList();
+    renderTrackerPagination();
+    updateBookmarkButtons();
+  } catch (error) {
+    $("#tracker-result-count").textContent = error.message;
+    console.error("Tracker fetch error:", error);
+  } finally {
+    if (requestVersion === trackerState.requestVersion) trackerState.loading = false;
+  }
+}
+
+function renderTrackerStats() {
+  const s = trackerState.stats;
+  const values = {
+    "#stat-total": s.total,
+    "#stat-interested": s.interested_count,
+    "#stat-applied": s.applied_count,
+    "#stat-interview": s.interview_count,
+    "#stat-offer": s.offer_count,
+    "#stat-rejected": s.rejected_count,
+  };
+  Object.entries(values).forEach(([selector, value]) => { if ($(selector)) $(selector).textContent = Number(value || 0).toLocaleString(); });
+  if ($("#stat-rate")) $("#stat-rate").textContent = `${s.response_rate_percent || 0}%`;
+
+  const currentStage = trackerState.stageFilter || "";
+  $$(".tracker-stat-card[data-stat-stage]").forEach((card) => {
+    card.classList.toggle("active", (card.dataset.statStage ?? "") === currentStage);
+  });
+}
+
+function trackerDate(value, fallback = "—") {
+  if (!value) return fallback;
+  const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
+  return Number.isNaN(date.getTime()) ? fallback : new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function stageBadge(stage) {
+  return `<span class="tracker-stage-badge stage-${escapeHtml(stage)}">${escapeHtml(trackerStageLabels[stage] || label(stage))}</span>`;
+}
+
+const trackerSourceLabels = {
+  wecanfindintern: "WecanFindIntern",
+  linkedin: "LinkedIn",
+  indeed: "Indeed",
+  waterloo_work: "WaterlooWork",
+  other: "Other",
+};
+
+function renderTrackerList() {
+  const body = $("#tracker-table-body");
+  if (!body) return;
+  const items = trackerState.applications;
+  $("#tracker-empty").hidden = Boolean(items.length);
+  const titleMap = {
+    "": "All applications",
+    interested: "Interested",
+    applied: "Applied",
+    interview: "Interviewing",
+    offer: "Offers",
+    rejected: "Refused",
+  };
+  $("#tracker-results-title").textContent = titleMap[trackerState.stageFilter] || "All applications";
+  $("#tracker-result-count").textContent = `${trackerState.total.toLocaleString()} record${trackerState.total === 1 ? "" : "s"}`;
+  body.innerHTML = items.map((app) => {
+    const nextAction = app.next_step || (app.follow_up_at ? `Follow up ${trackerDate(app.follow_up_at)}` : "Add next action");
+    const priority = app.priority === "high" ? `<span class="priority-mark" title="High priority">●</span>` : "";
+    return `<tr class="tracker-row" data-app-id="${app.id}">
+      <td class="select-col"><input class="tracker-row-check" data-app-id="${app.id}" type="checkbox" aria-label="Select ${escapeHtml(app.title)}" ${trackerState.selectedIds.has(app.id) ? "checked" : ""} /></td>
+      <td><div class="tracker-role-cell"><strong>${priority}${escapeHtml(app.company_name)}</strong><span>${escapeHtml(app.title)}</span><small>${escapeHtml(trackerSourceLabels[app.source] || "Other")}</small></div></td>
+      <td><select class="tracker-inline-stage stage-${escapeHtml(app.stage)}" data-app-id="${app.id}" aria-label="Change stage for ${escapeHtml(app.title)}"><option value="interested" ${app.stage === "interested" ? "selected" : ""}>Interested</option><option value="applied" ${app.stage === "applied" ? "selected" : ""}>Applied</option><option value="interview" ${app.stage === "interview" ? "selected" : ""}>Interview</option><option value="offer" ${app.stage === "offer" ? "selected" : ""}>Offer</option><option value="rejected" ${app.stage === "rejected" ? "selected" : ""}>Refused</option></select></td>
+      <td><div class="tracker-muted-cell"><span>${escapeHtml(app.location_text || "Unspecified")}</span><small>${escapeHtml(workModeLabel(app.work_mode))}</small></div></td>
+      <td><input class="tracker-inline-date" data-app-id="${app.id}" type="date" value="${toDateInput(app.applied_at)}" aria-label="Applied date for ${escapeHtml(app.title)}" /></td>
+      <td><button class="tracker-next-action" data-app-id="${app.id}" type="button">${escapeHtml(nextAction)}</button></td>
+      <td><span title="${escapeHtml(new Date(app.updated_at).toLocaleString())}">${escapeHtml(formatRelativeTime(app.updated_at))}</span></td>
+      <td><button class="tracker-row-menu" data-app-id="${app.id}" type="button" aria-label="Open application">›</button></td>
+    </tr>`;
+  }).join("");
+  updateBulkBar();
+}
+
+function renderTrackerBoard() {
+  const grouped = { interested: [], applied: [], interview: [], offer: [], rejected: [] };
+  trackerState.applications.forEach((app) => grouped[app.stage]?.push(app));
+  Object.entries(grouped).forEach(([stage, items]) => {
+    const list = $(`#cards-${stage}`);
+    if (!list) return;
+    if (!items.length) { list.innerHTML = `<div class="kanban-empty-hint">No applications on this page</div>`; return; }
+    list.innerHTML = items.slice(0, 20).map((app) => `<article class="tracker-card compact-tracker-card" data-app-id="${app.id}" tabindex="0">
+      <div><span class="tracker-card-company">${escapeHtml(app.company_name)}</span><h4 class="tracker-card-title">${escapeHtml(app.title)}</h4></div>
+      <div class="tracker-card-meta"><span>${escapeHtml(app.location_text || "Unspecified")}</span>${app.priority === "high" ? `<span class="priority-label">High priority</span>` : ""}</div>
+      <div class="compact-card-footer"><span>${escapeHtml(app.next_step || trackerDate(app.follow_up_at, "No next action"))}</span><button type="button" data-app-id="${app.id}" aria-label="Open details">›</button></div>
+    </article>`).join("");
+  });
+}
+
+function renderTrackerPagination() {
+  const start = trackerState.total ? (trackerState.page - 1) * trackerState.pageSize + 1 : 0;
+  const end = Math.min(trackerState.page * trackerState.pageSize, trackerState.total);
+  $("#tracker-page-summary").textContent = `${start}–${end} of ${trackerState.total.toLocaleString()}`;
+  $("#tracker-page-prev").disabled = trackerState.page <= 1;
+  $("#tracker-page-next").disabled = trackerState.page >= trackerState.totalPages;
+  $("#tracker-select-page").checked = trackerState.applications.length > 0 && trackerState.applications.every((app) => trackerState.selectedIds.has(app.id));
+}
+
+function updateBulkBar() {
+  const count = trackerState.selectedIds.size;
+  $("#tracker-bulk-bar").hidden = count === 0;
+  $("#tracker-selected-count").textContent = count.toLocaleString();
+}
+
+function setTrackerView(view) {
+  trackerState.view = view;
+  localStorage.setItem("wecan_tracker_view", view);
+  $$("[data-tracker-view]").forEach((button) => button.classList.toggle("active", button.dataset.trackerView === view));
+  ["list", "board", "analytics"].forEach((name) => { $(`#tracker-${name}-view`).hidden = name !== view; });
+  if (view === "analytics") loadTrackerAnalytics();
+}
+
+async function loadTrackerAttention({ show = true } = {}) {
+  const panel = $("#attention-panel");
+  if (show) panel.hidden = false;
+  const response = await fetch("/api/v1/tracker/needs-attention?limit=30");
+  if (!response.ok) return;
+  const data = await response.json();
+  trackerState.attentionItems = data.items || [];
+  $("#attention-list").innerHTML = trackerState.attentionItems.length ? trackerState.attentionItems.map((item) => `<button class="attention-item attention-${escapeHtml(item.reason_type)}" data-app-id="${item.application.id}" type="button"><span class="attention-dot"></span><span><strong>${escapeHtml(item.application.company_name)} · ${escapeHtml(item.application.title)}</strong><small>${escapeHtml(item.reason)}${item.due_at ? ` · ${trackerDate(item.due_at)}` : ""}</small></span><span>›</span></button>`).join("") : `<p class="attention-clear">Everything is up to date.</p>`;
+}
+
+function analyticsBars(title, items, labelKey = "label") {
+  const max = Math.max(1, ...items.map((item) => item.count));
+  return `<section class="analytics-card"><h3>${escapeHtml(title)}</h3><div class="analytics-bars">${items.length ? items.map((item) => `<div class="analytics-bar-row"><span>${escapeHtml(item[labelKey] || label(item.stage))}</span><div><i style="width:${Math.max(4, item.count / max * 100)}%"></i></div><strong>${item.count}</strong></div>`).join("") : `<p class="tracker-view-note">Not enough data yet.</p>`}</div></section>`;
+}
+
+async function loadTrackerAnalytics() {
+  const root = $("#tracker-analytics");
+  if (!root) return;
+  root.innerHTML = `<div class="loading-state"><div class="spinner"></div><span>Building your insights…</span></div>`;
+  const response = await fetch("/api/v1/tracker/analytics");
+  if (!response.ok) { root.innerHTML = `<div class="notice error">Could not load insights.</div>`; return; }
+  const data = await response.json();
+  trackerState.analytics = data;
+  root.innerHTML = `<section class="analytics-card analytics-highlight"><span>Average response time</span><strong>${data.average_days_to_response == null ? "—" : `${data.average_days_to_response} days`}</strong><p>From application to the first recorded outcome.</p></section><section class="analytics-card conversion-card"><h3>Conversion health</h3><div><span>Application → interview</span><strong>${data.application_to_interview_percent}%</strong></div><div><span>Interview → offer</span><strong>${data.interview_to_offer_percent}%</strong></div></section>${analyticsBars("Pipeline mix", data.stages, "stage")}${analyticsBars("Applications by week", data.weekly_applications.map((item) => ({ label: trackerDate(item.week_start), count: item.count })))}${analyticsBars("Top companies", data.top_companies)}${analyticsBars("Top locations", data.top_locations)}${analyticsBars("Application sources", data.top_sources)}${analyticsBars("Role categories", data.top_categories)}`;
+}
+
+function toDateInput(value) { return value ? String(value).slice(0, 10) : ""; }
+function toDateTimeInput(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function syncTrackerLinkActions() {
+  const url = $("#drawer-url").value.trim();
+  $("#drawer-copy-job").disabled = !url;
+  $("#drawer-open-job").href = url || "#";
+  $("#drawer-open-job").hidden = !url;
+}
+
+async function openTrackerDrawer(appId) {
+  let app = trackerState.applications.find((item) => item.id === appId);
+  if (!app) {
+    const response = await fetch(`/api/v1/tracker/${appId}`);
+    if (!response.ok) return;
+    app = await response.json();
+  }
+  $("#drawer-app-id").value = app.id;
+  $("#drawer-title").textContent = app.title;
+  $("#drawer-company").textContent = `${app.company_name} · ${app.location_text || "Location unspecified"}`;
+  const isPlatformJob = app.origin_type === "platform_bookmark";
+  $("#drawer-origin-notice").textContent = isPlatformJob
+    ? "Bookmarked from WecanFindIntern · Job information is synced from the platform and is read-only."
+    : "External application · You can edit both the job information and tracking fields.";
+  $("#drawer-origin-notice").classList.toggle("platform-origin", isPlatformJob);
+  const fields = {
+    "#drawer-stage": app.stage, "#drawer-priority": app.priority || "normal",
+    "#drawer-applied-at": toDateInput(app.applied_at),
+    "#drawer-follow-up": toDateTimeInput(app.follow_up_at), "#drawer-source": app.source || "other",
+    "#drawer-url": app.job_url || "", "#drawer-jd-input": app.job_description || "",
+  };
+  Object.entries(fields).forEach(([selector, value]) => { $(selector).value = value; });
+  $("#drawer-jd-readonly").innerHTML = app.job_description ? renderMarkdown(app.job_description) : "<p>No job description is available.</p>";
+  $("#drawer-jd-readonly").hidden = !isPlatformJob;
+  $("#drawer-jd-input").hidden = isPlatformJob;
+  $$("#tracker-detail-drawer .job-content-field input, #tracker-detail-drawer .job-content-field select, #tracker-detail-drawer .job-content-field textarea").forEach((field) => {
+    field.disabled = isPlatformJob;
+  });
+  $("#tracker-detail-drawer").dataset.originType = app.origin_type;
+  syncTrackerLinkActions();
+  $("#tracker-detail-drawer").classList.add("open");
+  $("#tracker-detail-drawer").setAttribute("aria-hidden", "false");
+  $("#tracker-drawer-backdrop").hidden = false;
+  document.body.classList.add("modal-open");
+  await loadTrackerTimeline(app.id);
+}
+
+function closeTrackerDrawer() {
+  $("#tracker-detail-drawer").classList.remove("open");
+  $("#tracker-detail-drawer").setAttribute("aria-hidden", "true");
+  $("#tracker-drawer-backdrop").hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+async function saveTrackerDrawer() {
+  const appId = $("#drawer-app-id").value;
+  if (!appId) return;
+  const dateIso = (selector) => $(selector).value ? new Date(`${$(selector).value}T12:00:00`).toISOString() : null;
+  const dateTimeIso = (selector) => $(selector).value ? new Date($(selector).value).toISOString() : null;
+  const payload = {
+    stage: $("#drawer-stage").value, priority: $("#drawer-priority").value,
+    applied_at: dateIso("#drawer-applied-at"),
+    follow_up_at: dateTimeIso("#drawer-follow-up"),
+  };
+  if ($("#tracker-detail-drawer").dataset.originType === "custom") {
+    Object.assign(payload, {
+      job_description: $("#drawer-jd-input").value.trim() || null,
+      source: $("#drawer-source").value,
+      job_url: $("#drawer-url").value.trim() || null,
+    });
+  }
+  const response = await fetch(`/api/v1/tracker/${appId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) { alert("Could not save this application."); return; }
+  const saved = await response.json();
+  $("#drawer-title").textContent = saved.title;
+  $("#drawer-company").textContent = `${saved.company_name} · ${saved.location_text || "Location unspecified"}`;
+  $("#drawer-save-status").hidden = false;
+  setTimeout(() => { $("#drawer-save-status").hidden = true; }, 1600);
+  await fetchTrackerData({ keepSelection: true });
+  await loadTrackerTimeline(appId);
+}
+
+async function loadTrackerTimeline(appId) {
+  const root = $("#tracker-timeline");
+  root.innerHTML = `<p class="tracker-view-note">Loading progress…</p>`;
+  const response = await fetch(`/api/v1/tracker/${appId}/events`);
+  if (!response.ok) {
+    root.innerHTML = `<p class="tracker-view-note">Progress is temporarily unavailable.</p>`;
+    return;
+  }
+  const events = await response.json();
+  root.innerHTML = events.length
+    ? events.map((event) => `<article class="timeline-item"><span class="timeline-marker event-${escapeHtml(event.event_type)}"></span><div><strong>${escapeHtml(event.title)}</strong>${event.details ? `<p>${escapeHtml(event.details)}</p>` : ""}<time>${trackerDate(event.occurred_at)} · ${escapeHtml(formatRelativeTime(event.occurred_at))}</time></div></article>`).join("")
+    : `<p class="tracker-view-note">No progress recorded yet.</p>`;
+}
+
+async function bulkUpdateTracker(payload) {
+  const ids = [...trackerState.selectedIds];
+  if (!ids.length) return;
+  const response = await fetch("/api/v1/tracker/bulk", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, ...payload }) });
+  if (!response.ok) { alert("Bulk update failed."); return; }
+  trackerState.selectedIds.clear();
+  await fetchTrackerData();
+}
+
+function showTrackerUndo(message, undoAction) {
+  let toast = $("#tracker-undo-toast");
+  if (!toast) {
+    document.body.insertAdjacentHTML("beforeend", `<div id="tracker-undo-toast" class="tracker-undo-toast" hidden><span></span><button type="button">Undo</button></div>`);
+    toast = $("#tracker-undo-toast");
+  }
+  clearTimeout(trackerState.undoTimer);
+  toast.querySelector("span").textContent = message;
+  const button = toast.querySelector("button");
+  button.onclick = async () => { toast.hidden = true; await undoAction(); };
+  toast.hidden = false;
+  trackerState.undoTimer = setTimeout(() => { toast.hidden = true; }, 6000);
+}
+
+async function deleteTrackedApplication(appId) {
+  if (!confirm("Delete this application and its activity permanently?")) return;
+  const response = await fetch(`/api/v1/tracker/${appId}`, { method: "DELETE" });
+  if (!response.ok) { alert("Delete failed."); return; }
+  closeTrackerDrawer();
+  await fetchTrackerData();
+}
+
+function updateBookmarkButtons() {
+  $$(".job-bookmark-btn").forEach((btn) => {
+    const saved = trackerState.trackedJobIds.has(btn.dataset.jobId);
+    btn.classList.toggle("saved", saved);
+    btn.title = saved ? "Tracked in workspace" : "Track this job";
+    btn.setAttribute("aria-pressed", String(saved));
+    btn.innerHTML = saved
+      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`
+      : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+  });
+}
+
+async function toggleBookmarkJob(jobId) {
+  const existing = trackerState.trackedJobs.get(jobId);
+  if (existing) {
+    switchTab("tab-tracker");
+    openTrackerDrawer(existing.application_id);
+    return;
+  }
+  const buttons = $$(`.job-bookmark-btn[data-job-id="${jobId}"]`);
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    const response = await fetch(`/api/v1/tracker/bookmarks/${jobId}`, { method: "PUT" });
+    if (!response.ok) throw new Error("Could not add this job to your tracker.");
+    const application = await response.json();
+    const trackedState = { job_id: jobId, application_id: application.id, stage: application.stage };
+    trackerState.trackedJobs.set(jobId, trackedState);
+    trackerState.trackedJobIds.add(jobId);
+    updateBookmarkButtons();
+    await fetchTrackerData();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    buttons.forEach((button) => { button.disabled = false; });
+  }
+}
+
+let trackerSearchTimer;
+function trackerFiltersChanged() {
+  trackerState.page = 1;
+  clearTimeout(trackerSearchTimer);
+  trackerSearchTimer = setTimeout(() => fetchTrackerData(), 250);
+}
+
+restoreTrackerFilters();
+
+$("#tracker-query")?.addEventListener("input", trackerFiltersChanged);
+$("#tracker-sort")?.addEventListener("change", trackerFiltersChanged);
+$$(".tracker-stat-card[data-stat-stage]").forEach((card) => {
+  card.addEventListener("click", () => {
+    trackerState.stageFilter = card.dataset.statStage ?? "";
+    trackerState.page = 1;
+    trackerFiltersChanged();
+  });
+});
+$("#tracker-page-prev")?.addEventListener("click", () => { if (trackerState.page > 1) { trackerState.page--; fetchTrackerData(); } });
+$("#tracker-page-next")?.addEventListener("click", () => { if (trackerState.page < trackerState.totalPages) { trackerState.page++; fetchTrackerData(); } });
+$("#tracker-page-size")?.addEventListener("change", (event) => { trackerState.pageSize = Number(event.target.value); trackerState.page = 1; fetchTrackerData(); });
+
+$("#tracker-table-body")?.addEventListener("click", (event) => {
+  const check = event.target.closest(".tracker-row-check");
+  if (check) { check.checked ? trackerState.selectedIds.add(check.dataset.appId) : trackerState.selectedIds.delete(check.dataset.appId); updateBulkBar(); renderTrackerPagination(); return; }
+  if (event.target.closest("select,input")) return;
+  const target = event.target.closest("[data-app-id]");
+  if (target) openTrackerDrawer(target.dataset.appId);
+});
+$("#tracker-table-body")?.addEventListener("change", async (event) => {
+  const stage = event.target.closest(".tracker-inline-stage");
+  const appliedDate = event.target.closest(".tracker-inline-date");
+  if (!stage && !appliedDate) return;
+  const appId = (stage || appliedDate).dataset.appId;
+  const payload = stage
+    ? { stage: stage.value }
+    : { applied_at: appliedDate.value ? new Date(`${appliedDate.value}T12:00:00`).toISOString() : null };
+  const response = await fetch(`/api/v1/tracker/${appId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) { alert("Inline update failed."); await fetchTrackerData({ keepSelection: true }); return; }
+  await fetchTrackerData({ keepSelection: true });
+});
+$("#tracker-board-view")?.addEventListener("click", (event) => { const target = event.target.closest("[data-app-id]"); if (target) openTrackerDrawer(target.dataset.appId); });
+$("#attention-list")?.addEventListener("click", (event) => { const target = event.target.closest("[data-app-id]"); if (target) openTrackerDrawer(target.dataset.appId); });
+$("#tracker-select-page")?.addEventListener("change", (event) => { trackerState.applications.forEach((app) => event.target.checked ? trackerState.selectedIds.add(app.id) : trackerState.selectedIds.delete(app.id)); renderTrackerList(); renderTrackerPagination(); });
+$("#tracker-clear-selection")?.addEventListener("click", () => { trackerState.selectedIds.clear(); renderTrackerList(); renderTrackerPagination(); });
+$("#tracker-bulk-stage")?.addEventListener("change", (event) => { if (event.target.value) bulkUpdateTracker({ stage: event.target.value }); event.target.value = ""; });
+$("#tracker-bulk-priority")?.addEventListener("change", (event) => { if (event.target.value) bulkUpdateTracker({ priority: event.target.value }); event.target.value = ""; });
+$("#tracker-bulk-delete")?.addEventListener("click", async () => {
+  const ids = [...trackerState.selectedIds]; if (!ids.length || !confirm(`Delete ${ids.length} applications permanently?`)) return;
+  const response = await fetch("/api/v1/tracker/bulk", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+  if (response.ok) { trackerState.selectedIds.clear(); fetchTrackerData(); }
+});
+
+$("#close-tracker-drawer")?.addEventListener("click", closeTrackerDrawer);
+$("#tracker-drawer-backdrop")?.addEventListener("click", closeTrackerDrawer);
+$("#save-tracker-drawer")?.addEventListener("click", saveTrackerDrawer);
+$("#drawer-url")?.addEventListener("input", syncTrackerLinkActions);
+$("#drawer-copy-job")?.addEventListener("click", async (event) => {
+  const url = $("#drawer-url").value.trim();
+  if (!url) { event.target.textContent = "No link"; setTimeout(() => { event.target.textContent = "Copy"; }, 1200); return; }
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url);
+    else throw new Error("Clipboard API unavailable");
+    event.target.textContent = "Copied";
+  } catch (_) {
+    const fallback = document.createElement("textarea");
+    fallback.value = url; fallback.style.position = "fixed"; fallback.style.opacity = "0";
+    document.body.appendChild(fallback); fallback.select();
+    const copied = document.execCommand("copy"); fallback.remove();
+    event.target.textContent = copied ? "Copied" : "Copy failed";
+  }
+  setTimeout(() => { event.target.textContent = "Copy"; }, 1200);
+});
+$("#btn-delete-tracked-app")?.addEventListener("click", () => { const id = $("#drawer-app-id").value; if (id) deleteTrackedApplication(id); });
+async function bulkUpdateTrackerForIds(ids, payload) {
+  const response = await fetch("/api/v1/tracker/bulk", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, ...payload }) });
+  if (response.ok) await fetchTrackerData();
+}
+$("#btn-open-custom-job")?.addEventListener("click", () => { $("#custom-job-form").reset(); $("#custom-job-error").hidden = true; $("#custom-job-dialog")?.showModal(); syncDialogScrollLock(); });
+$("#close-custom-job-dialog")?.addEventListener("click", () => $("#custom-job-dialog")?.close());
+$("#btn-cancel-custom-job")?.addEventListener("click", () => $("#custom-job-dialog")?.close());
+$("#custom-job-dialog")?.addEventListener("click", (event) => { if (event.target === $("#custom-job-dialog")) $("#custom-job-dialog")?.close(); });
+$("#custom-job-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = {
+    company_name: $("#custom-company").value.trim(), title: $("#custom-title").value.trim(),
+    location_text: $("#custom-location").value.trim() || null, work_mode: $("#custom-work-mode").value || null,
+    stage: $("#custom-stage").value, salary_text: $("#custom-salary").value.trim() || null,
+    priority: $("#custom-priority").value, source: $("#custom-source").value,
+    applied_at: $("#custom-applied-at").value ? new Date(`${$("#custom-applied-at").value}T12:00:00`).toISOString() : null,
+    follow_up_at: $("#custom-follow-up").value ? new Date($("#custom-follow-up").value).toISOString() : null,
+    next_step: $("#custom-next-step").value.trim() || null, job_url: $("#custom-url").value.trim() || null,
+    job_description: $("#custom-job-description").value.trim() || null,
+  };
+  const response = await fetch("/api/v1/tracker", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) { const box = $("#custom-job-error"); box.textContent = "Could not save this application."; box.hidden = false; return; }
+  $("#custom-job-dialog")?.close(); await fetchTrackerData();
+});
+
 // =========================================================
 // SEARCH AND FILTER EVENT LISTENERS
 // =========================================================
@@ -1427,5 +2023,3 @@ loadJobs();
 fetchTrackerData();
 setupInfiniteScroll();
 setupBackToTop();
-
-

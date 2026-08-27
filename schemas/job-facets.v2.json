@@ -88,6 +88,33 @@
       },
       "title": "Companies",
       "type": "array"
+    },
+    "recruiting_terms": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Recruiting Terms",
+      "type": "array"
+    },
+    "recruiting_seasons": {
+      "items": {
+        "$ref": "#/$defs/FacetCount"
+      },
+      "title": "Recruiting Seasons",
+      "type": "array"
+    },
+    "last_updated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Updated At"
     }
   },
   "required": [

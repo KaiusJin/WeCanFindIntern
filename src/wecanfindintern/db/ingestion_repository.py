@@ -21,7 +21,11 @@ from wecanfindintern.deduplication import (
     DedupeAction,
     choose_duplicate,
 )
-from wecanfindintern.domain.jobs import CanonicalJobInput, SalaryRange
+from wecanfindintern.domain.jobs import (
+    CanonicalJobInput,
+    SalaryRange,
+    normalize_canonical_job_description,
+)
 from wecanfindintern.domain.recruiting_term import RecruitingTerm
 
 
@@ -461,9 +465,10 @@ class JobIngestionRepository:
             )
         ).fetchone()
         if existing:
+            persisted_incoming = normalize_canonical_job_description(incoming)
             await self._refresh_existing_source(
                 connection,
-                incoming=incoming,
+                incoming=persisted_incoming,
                 source_id=existing["id"],
                 job_id=existing["job_id"],
                 payload_hash=payload_hash,
@@ -475,18 +480,21 @@ class JobIngestionRepository:
 
         candidates = await self._find_candidates(connection, incoming)
         decision = choose_duplicate(incoming, candidates)
+        persisted_incoming = normalize_canonical_job_description(incoming)
         if decision.action is DedupeAction.MERGE and decision.candidate_job_id:
             job_id = decision.candidate_job_id
             outcome = IngestionOutcome.MERGED
-            await self._refresh_canonical_job(connection, job_id, incoming, scraped_at)
+            await self._refresh_canonical_job(
+                connection, job_id, persisted_incoming, scraped_at
+            )
         else:
-            job_id = await self._insert_job(connection, incoming, scraped_at)
+            job_id = await self._insert_job(connection, persisted_incoming, scraped_at)
             outcome = IngestionOutcome.CREATED
 
         source_id = await self._insert_source(
             connection,
             job_id=job_id,
-            incoming=incoming,
+            incoming=persisted_incoming,
             fingerprint=fingerprint,
             payload_hash=payload_hash,
             scraped_at=scraped_at,
@@ -497,7 +505,7 @@ class JobIngestionRepository:
             source_id=source_id,
             fingerprint=fingerprint,
             payload_hash=payload_hash,
-            payload=incoming.source.payload,
+            payload=persisted_incoming.source.payload,
             scraped_at=scraped_at,
         )
         await connection.execute(

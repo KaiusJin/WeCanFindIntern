@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260826-tightspacing-v19" />
+    <link rel="stylesheet" href="/styles.css?v=20260827-skills-layout-v2" />
   </head>
   <body>
     <header class="topbar">
@@ -97,7 +97,7 @@
               <option value="">All work modes</option>
               <option value="remote">Remote</option>
               <option value="hybrid">Hybrid</option>
-              <option value="in_person">In-person</option>
+              <option value="onsite">In-person</option>
             </select>
 
             <label class="field-label" for="schedule-type">Schedule</label>
@@ -498,114 +498,59 @@
 
       <!-- TAB 5: APPLICATION TRACKER -->
       <div id="tab-tracker" class="tab-pane" hidden>
-        <section class="hero">
-          <p class="eyebrow">APPLICATION PIPELINE / 05</p>
-          <h1>Manage your opportunities.</h1>
-          <p class="hero-copy">Track every application, stage progression, and interview notes stored in your local database.</p>
+        <section class="hero tracker-hero">
+          <div>
+            <p class="eyebrow">APPLICATION WORKSPACE / 05</p>
+            <h1>Your search, under control.</h1>
+            <p class="hero-copy">Find what needs attention, move applications forward, and learn from every search.</p>
+          </div>
+          <div class="tracker-hero-actions">
+            <a id="tracker-export" class="secondary-button" href="/api/v1/tracker/export.csv">Export CSV</a>
+            <button id="btn-open-custom-job" class="primary-button tracker-add-btn" type="button">+ Add application</button>
+          </div>
         </section>
 
         <section class="tracker-dashboard">
-          <!-- Stats Bar -->
-          <div class="tracker-stats-bar">
-            <div class="tracker-stats-row">
-              <div class="tracker-stat-item">
-                <span class="stat-label">Total Tracked</span>
-                <span class="stat-val" id="stat-total">0</span>
-              </div>
-              <div class="tracker-stat-divider"></div>
-              <div class="tracker-stat-item">
-                <span class="stat-label">Interested</span>
-                <span class="stat-val" id="stat-interested">0</span>
-              </div>
-              <div class="tracker-stat-divider"></div>
-              <div class="tracker-stat-item">
-                <span class="stat-label">Applied</span>
-                <span class="stat-val" id="stat-applied">0</span>
-              </div>
-              <div class="tracker-stat-divider"></div>
-              <div class="tracker-stat-item">
-                <span class="stat-label">Interviewing</span>
-                <span class="stat-val stat-interview" id="stat-interview">0</span>
-              </div>
-              <div class="tracker-stat-divider"></div>
-              <div class="tracker-stat-item">
-                <span class="stat-label">Offers</span>
-                <span class="stat-val stat-offer" id="stat-offer">0</span>
-              </div>
-              <div class="tracker-stat-divider"></div>
-              <div class="tracker-stat-item">
-                <span class="stat-label">Response Rate</span>
-                <span class="stat-val" id="stat-rate">0%</span>
-              </div>
+          <div class="tracker-stats-grid" aria-label="Application summary">
+            <button class="tracker-stat-card active" data-stat-stage="" type="button"><span>Total</span><strong id="stat-total">0</strong></button>
+            <button class="tracker-stat-card" data-stat-stage="interested" type="button"><span>Interested</span><strong id="stat-interested">0</strong></button>
+            <button class="tracker-stat-card" data-stat-stage="applied" type="button"><span>Applied</span><strong id="stat-applied">0</strong></button>
+            <button class="tracker-stat-card stat-blue" data-stat-stage="interview" type="button"><span>Interviewing</span><strong id="stat-interview">0</strong></button>
+            <button class="tracker-stat-card stat-green" data-stat-stage="offer" type="button"><span>Offers</span><strong id="stat-offer">0</strong></button>
+            <button class="tracker-stat-card" data-stat-stage="rejected" type="button"><span>Refused</span><strong id="stat-rejected">0</strong></button>
+            <div class="tracker-stat-card"><span>Response rate</span><strong id="stat-rate">0%</strong></div>
+          </div>
+
+          <div class="tracker-control-panel">
+            <label class="tracker-search"><span aria-hidden="true">⌕</span><input id="tracker-query" type="search" placeholder="Search company, role, location, notes…" autocomplete="off" /></label>
+          </div>
+
+          <div class="tracker-workspace-head">
+            <div>
+              <h2 id="tracker-results-title">All applications</h2>
+              <span id="tracker-result-count" class="tracker-result-count">Loading…</span>
             </div>
-            <div class="tracker-stat-actions">
-              <button id="btn-open-custom-job" class="primary-button tracker-add-btn" type="button">
-                <span>+ Add Custom Job</span>
-              </button>
+            <div class="tracker-head-actions">
+              <select id="tracker-sort" aria-label="Sort applications"><option value="updated:desc">Recently updated</option><option value="applied:desc">Newest applied</option><option value="priority:asc">Priority</option><option value="company:asc">Company A–Z</option></select>
             </div>
           </div>
 
-          <!-- Kanban Board -->
-          <div class="tracker-kanban-board">
-            <!-- Stage 1: Interested -->
-            <div class="kanban-column" data-stage="interested">
-              <div class="kanban-column-header">
-                <div class="column-title-wrap">
-                  <span class="stage-dot stage-dot-interested"></span>
-                  <h3>Interested</h3>
-                </div>
-                <span class="column-count" id="count-interested">0</span>
-              </div>
-              <div class="kanban-cards-list" id="cards-interested"></div>
+          <div id="tracker-list-view" class="tracker-view-pane">
+            <div id="tracker-bulk-bar" class="tracker-bulk-bar" hidden>
+              <strong><span id="tracker-selected-count">0</span> selected</strong>
+              <select id="tracker-bulk-stage" aria-label="Bulk change stage"><option value="">Move to…</option><option value="interested">Interested</option><option value="applied">Applied</option><option value="interview">Interview</option><option value="offer">Offer</option><option value="rejected">Refused</option></select>
+              <select id="tracker-bulk-priority" aria-label="Bulk change priority"><option value="">Set priority…</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select>
+              <button id="tracker-bulk-delete" class="bulk-btn bulk-btn-delete" type="button">Delete</button>
+              <button id="tracker-clear-selection" class="bulk-btn bulk-btn-clear" type="button">Clear</button>
             </div>
-
-            <!-- Stage 2: Applied -->
-            <div class="kanban-column" data-stage="applied">
-              <div class="kanban-column-header">
-                <div class="column-title-wrap">
-                  <span class="stage-dot stage-dot-applied"></span>
-                  <h3>Applied</h3>
-                </div>
-                <span class="column-count" id="count-applied">0</span>
-              </div>
-              <div class="kanban-cards-list" id="cards-applied"></div>
+            <div class="tracker-table-wrap">
+              <table class="tracker-table">
+                <thead><tr><th class="select-col"><input id="tracker-select-page" type="checkbox" aria-label="Select page" /></th><th>Company / role</th><th>Stage</th><th>Location</th><th>Applied</th><th>Next action</th><th>Updated</th><th></th></tr></thead>
+                <tbody id="tracker-table-body"></tbody>
+              </table>
+              <div id="tracker-empty" class="empty-state" hidden><div class="empty-icon">⌁</div><h3>No applications found</h3><p>Try a broader search or add your first opportunity.</p></div>
             </div>
-
-            <!-- Stage 3: Interview -->
-            <div class="kanban-column" data-stage="interview">
-              <div class="kanban-column-header">
-                <div class="column-title-wrap">
-                  <span class="stage-dot stage-dot-interview"></span>
-                  <h3>Interview</h3>
-                </div>
-                <span class="column-count" id="count-interview">0</span>
-              </div>
-              <div class="kanban-cards-list" id="cards-interview"></div>
-            </div>
-
-            <!-- Stage 4: Offer -->
-            <div class="kanban-column" data-stage="offer">
-              <div class="kanban-column-header">
-                <div class="column-title-wrap">
-                  <span class="stage-dot stage-dot-offer"></span>
-                  <h3>Offer</h3>
-                </div>
-                <span class="column-count" id="count-offer">0</span>
-              </div>
-              <div class="kanban-cards-list" id="cards-offer"></div>
-            </div>
-
-            <!-- Stage 5: Rejected -->
-            <div class="kanban-column" data-stage="rejected">
-              <div class="kanban-column-header">
-                <div class="column-title-wrap">
-                  <span class="stage-dot stage-dot-rejected"></span>
-                  <h3>Rejected</h3>
-                </div>
-                <span class="column-count" id="count-rejected">0</span>
-              </div>
-              <div class="kanban-cards-list" id="cards-rejected"></div>
-            </div>
+            <div class="tracker-pagination"><span id="tracker-page-summary"></span><div><button id="tracker-page-prev" class="secondary-button compact-button" type="button">Previous</button><button id="tracker-page-next" class="secondary-button compact-button" type="button">Next</button></div><label>Rows <select id="tracker-page-size"><option>25</option><option selected>50</option><option>100</option></select></label></div>
           </div>
         </section>
       </div>
@@ -655,12 +600,38 @@
               <option value="applied">Applied (Submitted)</option>
               <option value="interview">Interview (In Progress)</option>
               <option value="offer">Offer (Received)</option>
-              <option value="rejected">Rejected (Archived)</option>
+              <option value="rejected">Refused</option>
             </select>
           </div>
           <div class="field-group">
             <label class="field-label" for="custom-salary">Salary / Pay Rate</label>
             <input type="text" id="custom-salary" class="career-input" placeholder="e.g. $45/hr or $90,000/yr" />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="custom-priority">Priority</label>
+            <select id="custom-priority" class="career-select"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="custom-source">Source</label>
+            <select id="custom-source" class="career-select">
+              <option value="wecanfindintern">WecanFindIntern</option>
+              <option value="linkedin">LinkedIn</option>
+              <option value="indeed">Indeed</option>
+              <option value="waterloo_work">WaterlooWork</option>
+              <option value="other" selected>Other</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="custom-applied-at">Applied date</label>
+            <input type="date" id="custom-applied-at" class="career-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="custom-follow-up">Follow-up reminder</label>
+            <input type="datetime-local" id="custom-follow-up" class="career-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="custom-next-step">Next action</label>
+            <input type="text" id="custom-next-step" class="career-input" placeholder="Send recruiter a follow-up" />
           </div>
         </div>
         <div class="field-group" style="margin-top: 14px;">
@@ -668,8 +639,8 @@
           <input type="url" id="custom-url" class="career-input" placeholder="https://careers.company.com/job/..." />
         </div>
         <div class="field-group" style="margin-top: 14px;">
-          <label class="field-label" for="custom-notes">Notes / Referrals / Details</label>
-          <textarea id="custom-notes" class="career-textarea" rows="3" placeholder="Referred by Alex; Deadline next Friday; recruiter contact..."></textarea>
+          <label class="field-label" for="custom-job-description">Job description</label>
+          <textarea id="custom-job-description" class="career-textarea" rows="7" placeholder="Paste the full job description here..."></textarea>
         </div>
 
         <div class="settings-dialog-footer">
@@ -682,48 +653,42 @@
       </form>
     </dialog>
 
-    <!-- EDIT APPLICATION NOTE & STAGE DIALOG -->
-    <dialog id="tracker-notes-dialog" class="settings-dialog">
-      <div class="settings-dialog-header">
-        <div class="settings-title-wrap">
-          <div class="settings-icon-badge">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-          </div>
-          <div>
-            <h3 id="notes-dialog-job-title">Job Notes</h3>
-            <p class="settings-subtitle" id="notes-dialog-company">Update notes, interview feedback, and application stage.</p>
-          </div>
-        </div>
-        <button id="close-tracker-notes-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
+    <div id="tracker-drawer-backdrop" class="tracker-drawer-backdrop" hidden></div>
+    <aside id="tracker-detail-drawer" class="tracker-detail-drawer" aria-hidden="true" aria-label="Application details">
+      <div class="tracker-drawer-head">
+        <div><p class="eyebrow">TRACKER DETAILS</p><h2 id="drawer-title">Application</h2><p id="drawer-company" class="drawer-company"></p></div>
+        <button id="close-tracker-drawer" class="dialog-close" type="button" aria-label="Close">×</button>
       </div>
-
-      <div class="settings-body">
-        <input type="hidden" id="notes-dialog-app-id" />
-        <div class="field-group">
-          <label class="field-label" for="notes-dialog-stage">Application Stage</label>
-          <select id="notes-dialog-stage" class="career-select">
-            <option value="interested">Interested</option>
-            <option value="applied">Applied</option>
-            <option value="interview">Interview</option>
-            <option value="offer">Offer</option>
-            <option value="rejected">Rejected</option>
-          </select>
-        </div>
-
-        <div class="field-group" style="margin-top: 14px;">
-          <label class="field-label" for="notes-dialog-text">Personal Notes & Interview Rounds</label>
-          <textarea id="notes-dialog-text" class="career-textarea" rows="6" placeholder="Log recruiter phone call date, questions asked in technical screen, salary expectations, next steps..."></textarea>
-        </div>
-
-        <div class="settings-dialog-footer" style="justify-content: space-between;">
-          <button id="btn-delete-tracked-app" class="secondary-button delete-app-btn" type="button">Delete from Pipeline</button>
-          <div class="settings-footer-actions">
-            <button id="btn-cancel-tracker-notes" class="secondary-button" type="button">Cancel</button>
-            <button id="btn-save-tracker-notes" class="primary-button" type="button">Save Changes</button>
+      <div class="tracker-drawer-body">
+        <input id="drawer-app-id" type="hidden" />
+        <div id="drawer-origin-notice" class="tracker-origin-notice"></div>
+        <h3 class="tracker-detail-section-title">Job information</h3>
+        <div class="tracker-job-information">
+          <div class="field-group job-content-field tracker-detail-span">
+            <span class="field-label">Job description</span>
+            <div id="drawer-jd-readonly" class="tracker-jd-copy"></div>
+            <textarea id="drawer-jd-input" class="career-textarea" rows="14" placeholder="Paste the full job description here..."></textarea>
+          </div>
+          <div class="tracker-drawer-grid tracker-source-link-grid">
+          <label class="field-group job-content-field"><span class="field-label">Source</span><select id="drawer-source" class="career-select"><option value="wecanfindintern">WecanFindIntern</option><option value="linkedin">LinkedIn</option><option value="indeed">Indeed</option><option value="waterloo_work">WaterlooWork</option><option value="other">Other</option></select></label>
+          <div class="field-group job-content-field"><span class="field-label">Link</span><div class="tracker-link-row"><input id="drawer-url" class="career-input" type="url" /><button id="drawer-copy-job" class="secondary-button" type="button">Copy</button><a id="drawer-open-job" class="secondary-button" href="#" target="_blank" rel="noreferrer">Open ↗</a></div></div>
           </div>
         </div>
+        <h3 class="tracker-detail-section-title">Application tracking</h3>
+        <div class="tracker-drawer-grid tracker-status-grid">
+          <label class="field-group"><span class="field-label">Stage</span><select id="drawer-stage" class="career-select"><option value="interested">Interested</option><option value="applied">Applied</option><option value="interview">Interview</option><option value="offer">Offer</option><option value="rejected">Refused</option></select></label>
+          <label class="field-group"><span class="field-label">Priority</span><select id="drawer-priority" class="career-select"><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
+          <label class="field-group"><span class="field-label">Applied date</span><input id="drawer-applied-at" class="career-input" type="date" /></label>
+          <label class="field-group"><span class="field-label">Follow-up reminder</span><input id="drawer-follow-up" class="career-input" type="datetime-local" /></label>
+        </div>
+        <div class="drawer-save-row"><span id="drawer-save-status" class="settings-save-feedback" hidden>Saved</span><button id="save-tracker-drawer" class="primary-button" type="button">Save changes</button></div>
+        <section class="timeline-section">
+          <div class="timeline-head"><p class="eyebrow">APPLICATION PROGRESS</p><h3>Application timeline</h3></div>
+          <div id="tracker-timeline" class="tracker-timeline"></div>
+        </section>
       </div>
-    </dialog>
+      <div class="tracker-drawer-footer"><button id="btn-delete-tracked-app" class="text-button danger-text" type="button">Delete permanently</button></div>
+    </aside>
 
     <!-- SETTINGS DIALOG (Single unified Model + Key) -->
     <dialog id="settings-dialog" class="settings-dialog">
@@ -793,6 +758,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script src="/app.js?v=20260826-applylink-v22" defer></script>
+    <script src="/app.js?v=20260827-skills-layout-v2" defer></script>
   </body>
 </html>

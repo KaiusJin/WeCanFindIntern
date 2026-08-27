@@ -389,6 +389,38 @@ def normalize_text(value: str | None) -> str:
     return " ".join(text.split())
 
 
+def normalize_job_description(value: str | None) -> str | None:
+    """Collapse blank lines to one newline while preserving JD line structure."""
+
+    if not value:
+        return None
+    normalized = unicodedata.normalize("NFKC", value)
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    lines = (
+        re.sub(r"[^\S\n]+", " ", line, flags=re.UNICODE).strip()
+        for line in normalized.split("\n")
+    )
+    normalized = "\n".join(line for line in lines if line)
+    return normalized or None
+
+
+def normalize_canonical_job_description(job: CanonicalJobInput) -> CanonicalJobInput:
+    """Normalize the winning canonical JD after deduplication has completed."""
+
+    description = normalize_job_description(job.description)
+    description_hash = hash_text(description) if description else None
+    if description == job.description and description_hash == job.dedupe.description_hash:
+        return job
+    return job.model_copy(
+        update={
+            "description": description,
+            "dedupe": job.dedupe.model_copy(
+                update={"description_hash": description_hash}
+            ),
+        }
+    )
+
+
 def normalize_company(value: str | None) -> str:
     normalized = normalize_text(value)
     previous = None
@@ -549,7 +581,10 @@ def infer_work_mode_from_text(description: str | None) -> WorkMode | None:
         return None
     if "hybrid" in text:
         return WorkMode.HYBRID
-    if any(token in text for token in ("fully remote", "100 remote", "work remotely", "remote position")):
+    if any(
+        token in text
+        for token in ("fully remote", "100 remote", "work remotely", "remote position")
+    ):
         return WorkMode.REMOTE
     if any(token in text for token in ("on site", "onsite", "in person", "work at our")):
         return WorkMode.ONSITE
