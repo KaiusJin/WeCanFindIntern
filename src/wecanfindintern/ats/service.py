@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
 
 from wecanfindintern.ats.models import AtsReviewResponse
 from wecanfindintern.llm.client import (

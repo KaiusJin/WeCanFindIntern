@@ -398,11 +398,14 @@ def classify_opportunity(
     combined: str,
     employment: set[str],
 ) -> OpportunityType:
-    if contains_any(title, ("co op", "coop")):
+    if "co_op" in employment or contains_any(title, ("co op", "coop")):
         return OpportunityType.CO_OP
     if contains_any(title, ("intern", "internship", "summer student", "student placement")):
         return OpportunityType.INTERNSHIP
-    if contains_any(title, ("new grad", "new graduate", "graduate program", "early career")):
+    if "new_grad" in employment or contains_any(
+        title,
+        ("new grad", "new graduate", "graduate program", "early career"),
+    ):
         return OpportunityType.NEW_GRAD
     if contains_any(combined, ("apprentice", "apprenticeship")):
         return OpportunityType.APPRENTICESHIP

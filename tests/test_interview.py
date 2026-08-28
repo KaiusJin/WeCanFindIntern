@@ -1,11 +1,8 @@
 """Unit tests for Mock Interview coaching module."""
 
 from wecanfindintern.interview.models import (
-    InterviewAnalyzeResponse,
     InterviewQuestionItem,
-    InterviewQuestionsRequest,
     InterviewQuestionsResponse,
-    TimelineEvent,
 )
 from wecanfindintern.interview.service import generate_interview_questions
 from wecanfindintern.interview.tts import generate_tts_audio

@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from wecanfindintern.ats.models import AtsReviewRequest, AtsReviewResponse
-from wecanfindintern.ats.pdf import extract_text_from_pdf
 from wecanfindintern.ats.service import generate_ats_review
+from wecanfindintern.profile.security import extract_text_pdf_plain
 
 ats_router = APIRouter(prefix="/api/v1/ats", tags=["ATS Resume Review"])
 
@@ -18,10 +18,12 @@ async def extract_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     try:
         content = await file.read()
-        text = extract_text_from_pdf(content)
+        text = extract_text_pdf_plain(file.filename, file.content_type, content)
         return {"ok": True, "text": text, "filename": file.filename}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="PDF extraction failed.") from exc
 
 
 @ats_router.post("/review", response_model=AtsReviewResponse)

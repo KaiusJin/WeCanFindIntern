@@ -1,8 +1,8 @@
 """Unit tests for ATS resume evaluation module."""
 
-from wecanfindintern.ats.models import AtsReviewRequest, AtsReviewResponse
+from wecanfindintern.ats.models import AtsReviewResponse
 from wecanfindintern.ats.service import match_level
-from wecanfindintern.llm.client import clean_json_text, resolve_api_key
+from wecanfindintern.llm.client import clean_json_text
 
 
 def test_clean_json_text():

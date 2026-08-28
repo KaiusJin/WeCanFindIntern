@@ -337,6 +337,7 @@ class JobIngestionRepository:
         sources: list[str],
         query: dict[str, Any],
         collection_plan_id: int | None = None,
+        provider: str = "jobspy",
     ) -> IngestionRun:
         async with self.pool.connection() as connection:
             row = await (
@@ -345,10 +346,10 @@ class JobIngestionRepository:
                     INSERT INTO ingestion_runs (
                         provider, sources, query, collection_plan_id
                     )
-                    VALUES ('jobspy', %s, %s, %s)
+                    VALUES (%s, %s, %s, %s)
                     RETURNING id, public_id
                     """,
-                    (sources, Jsonb(query), collection_plan_id),
+                    (provider, sources, Jsonb(query), collection_plan_id),
                 )
             ).fetchone()
         return IngestionRun(internal_id=row["id"], public_id=row["public_id"])
