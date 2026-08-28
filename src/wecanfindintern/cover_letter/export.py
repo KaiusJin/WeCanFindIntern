@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
@@ -26,12 +27,12 @@ def export_docx(body_text: str, user_info: UserProfile) -> bytes:
     # Header: Candidate Name
     if user_info.full_name:
         p_name = doc.add_paragraph()
-        p_name.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_name.alignment = WD_ALIGN_PARAGRAPH.LEFT
         r_name = p_name.add_run(user_info.full_name)
         r_name.bold = True
         r_name.font.size = Pt(16)
         r_name.font.name = "Calibri"
-        r_name.font.color.rgb = RGBColor(23, 64, 47)
+        r_name.font.color.rgb = RGBColor(0, 0, 0)
 
         # Contact Info Line
         contact_parts = [
@@ -43,11 +44,11 @@ def export_docx(body_text: str, user_info: UserProfile) -> bytes:
         contact_str = "  ·  ".join([p for p in contact_parts if p])
         if contact_str:
             p_contact = doc.add_paragraph()
-            p_contact.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_contact.alignment = WD_ALIGN_PARAGRAPH.LEFT
             r_contact = p_contact.add_run(contact_str)
             r_contact.font.size = Pt(10)
             r_contact.font.name = "Calibri"
-            r_contact.font.color.rgb = RGBColor(100, 116, 105)
+            r_contact.font.color.rgb = RGBColor(0, 0, 0)
             p_contact.paragraph_format.space_after = Pt(18)
 
     # Letter Body Paragraphs
@@ -77,9 +78,9 @@ class StyledPDF(FPDF):
 
     def header(self):
         if self.user_info.full_name:
-            self.set_font("Helvetica", "B", 15)
-            self.set_text_color(23, 64, 47)
-            self.cell(0, 8, self.user_info.full_name, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+            self.set_font("Helvetica", "B", 16)
+            self.set_text_color(0, 0, 0)
+            self.cell(0, 8, self.user_info.full_name, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
             contact_parts = [
                 self.user_info.email,
@@ -90,15 +91,15 @@ class StyledPDF(FPDF):
             contact_str = " | ".join([p for p in contact_parts if p])
             if contact_str:
                 self.set_font("Helvetica", "", 9)
-                self.set_text_color(100, 116, 105)
-                self.cell(0, 5, contact_str, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+                self.set_text_color(0, 0, 0)
+                self.cell(0, 5, contact_str, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 self.ln(6)
 
 
 def export_pdf(body_text: str, user_info: UserProfile) -> bytes:
     """Create a styled PDF document."""
     pdf = StyledPDF(user_info)
-    pdf.set_font("Helvetica", "", 10.5)
+    pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(40, 50, 60)
 
     # Body
