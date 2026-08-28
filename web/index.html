@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260828-noborder-v19" />
+    <link rel="stylesheet" href="/styles.css?v=20260828-waterlooworks-mvp" />
   </head>
   <body>
     <header class="topbar">
@@ -15,6 +15,10 @@
           <button class="nav-tab active" data-tab="tab-jobs" type="button">
             <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             <span>Jobs</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-waterlooworks" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 2v4M16 2v4M3 9h18"></path><path d="m9 14 2 2 4-4"></path></svg>
+            <span>WaterlooWorks</span>
           </button>
           <button class="nav-tab" data-tab="tab-ats" type="button">
             <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
@@ -181,6 +185,84 @@
               </div>
             </div>
           </section>
+        </section>
+      </div>
+
+      <!-- WATERLOOWORKS LOCAL IMPORT -->
+      <div id="tab-waterlooworks" class="tab-pane" hidden>
+        <section class="hero ww-hero">
+          <p class="eyebrow">WATERLOOWORKS IMPORT</p>
+          <h1>Bring your WaterlooWorks jobs home.</h1>
+          <p class="hero-copy">Sign in yourself through a dedicated Chrome profile. WeCanFindIntern reads the five job boards locally and stores them in a separate WaterlooWorks library. Job IDs are used for deduplication.</p>
+        </section>
+
+        <section class="ww-workspace">
+          <article class="ww-connection-card">
+            <div class="ww-card-heading">
+              <div>
+                <p class="eyebrow">LOCAL CONNECTION</p>
+                <h2>WaterlooWorks session</h2>
+              </div>
+              <span id="ww-status-pill" class="ww-status-pill idle"><i></i><span>Not connected</span></span>
+            </div>
+            <div class="ww-status-body">
+              <div id="ww-status-icon" class="ww-status-icon">W</div>
+              <div>
+                <strong id="ww-status-title">Ready to connect</strong>
+                <p id="ww-status-message">Open a dedicated Chrome window to begin. Your password and MFA never enter WeCanFindIntern.</p>
+              </div>
+            </div>
+            <div class="ww-actions">
+              <button id="ww-launch" class="primary-button" type="button">Log into WaterlooWorks ↗</button>
+              <button id="ww-collect" class="secondary-button" type="button" disabled>Import all job boards</button>
+              <button id="ww-view-jobs" class="text-button" type="button" hidden>View imported jobs →</button>
+            </div>
+            <p id="ww-action-error" class="notice error" hidden></p>
+          </article>
+
+          <aside class="ww-side-panel">
+            <div class="ww-side-heading"><p class="eyebrow">INCLUDED BOARDS</p><span>5 sources</span></div>
+            <div class="ww-board-list">
+              <div data-ww-board="full_cycle"><span>01</span><p><strong>Co-op: Full-Cycle</strong><small>/co-op/full/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
+              <div data-ww-board="employer_student_direct"><span>02</span><p><strong>Employer-Student Direct</strong><small>/co-op/direct/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
+              <div data-ww-board="graduating"><span>03</span><p><strong>Graduating jobs</strong><small>/graduating/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
+              <div data-ww-board="contract"><span>04</span><p><strong>Contract jobs</strong><small>/contract/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
+              <div data-ww-board="campus"><span>05</span><p><strong>Campus jobs</strong><small>/campus/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
+            </div>
+          </aside>
+
+          <div class="ww-run-card">
+            <div class="ww-card-heading">
+              <div><p class="eyebrow">LATEST IMPORT</p><h2>Run summary</h2></div>
+              <span id="ww-finished-at" class="muted-copy">No import yet</span>
+            </div>
+            <div class="ww-stat-grid">
+              <div><span>Unique jobs</span><strong id="ww-unique-count">0</strong></div>
+              <div><span>Postings succeeded</span><strong id="ww-posting-success-count">0</strong></div>
+              <div><span>Postings failed</span><strong id="ww-posting-failed-count">0</strong></div>
+              <div><span>Boards failed</span><strong id="ww-board-failed-count">0</strong></div>
+            </div>
+          </div>
+
+          <div id="ww-jobs-card" class="ww-jobs-card">
+            <div class="ww-card-heading">
+              <div><p class="eyebrow">SEPARATE LIBRARY</p><h2>WaterlooWorks jobs</h2></div>
+              <span id="ww-jobs-total" class="muted-copy">0 jobs</span>
+            </div>
+            <div class="ww-job-filters">
+              <input id="ww-job-query" type="search" placeholder="Search title, organization, or description" />
+              <select id="ww-job-board">
+                <option value="">All boards</option>
+                <option value="full_cycle">Co-op: Full-Cycle</option>
+                <option value="employer_student_direct">Employer-Student Direct</option>
+                <option value="graduating">Graduating jobs</option>
+                <option value="contract">Contract jobs</option>
+                <option value="campus">Campus jobs</option>
+              </select>
+              <button id="ww-job-search" class="secondary-button" type="button">Search</button>
+            </div>
+            <div id="ww-job-list" class="ww-job-list"><p class="muted-copy">No WaterlooWorks jobs stored yet.</p></div>
+          </div>
         </section>
       </div>
 
@@ -472,8 +554,8 @@
               <textarea id="cl-jd-text" class="career-textarea" rows="6" placeholder="Paste the target job description and requirements here…"></textarea>
             </div>
 
-            <div class="profile-divider cl-optional-divider"><span>Additional Details</span></div>
-            <div class="cl-optional-section">
+            <div class="profile-divider cl-additional-divider"><span>Additional Details</span></div>
+            <div class="cl-additional-section">
               <p class="muted-copy">Add job or company details to make the letter more specific.</p>
               <div class="career-config-grid">
                 <div><label class="field-label" for="cl-job-title">Job Title</label><input type="text" id="cl-job-title" class="career-input" placeholder="e.g. Software Engineering Intern" /></div>
@@ -809,6 +891,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script src="/app.js?v=20260828-noborder-v19" defer></script>
+    <script src="/app.js?v=20260828-waterlooworks-mvp" defer></script>
   </body>
 </html>

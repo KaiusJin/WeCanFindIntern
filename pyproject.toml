@@ -12,6 +12,7 @@ dependencies = [
   "fpdf2>=2.8",
   "google-generativeai>=0.8",
   "gTTS>=2.5",
+  "httpx>=0.27,<1.0",
   "openai>=2.0,<3.0",
   "psycopg[binary,pool]>=3.2,<4.0",
   "pypdf>=6.0",
@@ -19,6 +20,7 @@ dependencies = [
   "python-jobspy==1.1.82",
   "python-multipart>=0.0.20",
   "uvicorn>=0.35,<1.0",
+  "websockets>=13,<16",
 ]
 
 [tool.setuptools.packages.find]

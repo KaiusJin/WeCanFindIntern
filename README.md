@@ -148,6 +148,21 @@ PYTHONPATH=src .venv/bin/uvicorn wecanfindintern.api.app:app --reload
 国家/地区/城市、工作模式、机会类型、工时、职位方向、技能和薪资筛选；职位卡片可打开
 详情并跳转到原始职位链接。
 
+### 导入 WaterlooWorks 岗位
+
+页面中的 `WaterlooWorks` 区域可以启动一个独立的本地 Chrome profile。用户自行完成
+Waterloo SSO 和 MFA 后，页面会检测已登录的岗位列表，并依次导入 Full-Cycle、
+Employer-Student Direct、Graduating、Contract 和 Campus 五个 job boards。每个 board
+会先打开对应 URL、点击 `All Jobs`，再等待结果 table。每个 board 分别显示发现、成功和
+失败数量；某个 board 无法访问时会标记失败并继续下一个。
+
+WaterlooWorks 岗位只使用 Job ID 去重；已有 ID 会直接跳过内容检查，并独立保存在
+`~/.wecanfindintern/waterlooworks.sqlite3`，不会与 Indeed、LinkedIn 等公共岗位混合或
+交叉去重。密码、MFA 和浏览器会话不会写入数据库。
+
+独立 profile 默认保存在 `~/.wecanfindintern/chrome-waterlooworks`。如果 Chrome 不在系统
+默认位置，可以通过 `WATERLOOWORKS_CHROME_BINARY` 指定 Chrome 可执行文件。
+
 ## 运行测试
 
 ```bash

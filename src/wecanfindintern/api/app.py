@@ -23,9 +23,11 @@ from wecanfindintern.api.routes.cover_letter import cover_letter_router
 from wecanfindintern.api.routes.interview import interview_router
 from wecanfindintern.api.routes.profile import profile_router
 from wecanfindintern.api.routes.tracker import tracker_router
+from wecanfindintern.api.routes.waterlooworks import waterlooworks_router
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.db.read_repository import JobReadRepository
+from wecanfindintern.waterlooworks import WaterlooWorksService
 
 
 @asynccontextmanager
@@ -34,7 +36,9 @@ async def lifespan(app: FastAPI):
     database = Database(settings)
     await database.open()
     app.state.database = database
+    app.state.waterlooworks = WaterlooWorksService()
     yield
+    await app.state.waterlooworks.close()
     await database.close()
 
 
@@ -49,6 +53,7 @@ app.include_router(interview_router)
 app.include_router(cover_letter_router)
 app.include_router(tracker_router)
 app.include_router(profile_router)
+app.include_router(waterlooworks_router)
 
 WEB_DIR = Path(__file__).resolve().parents[3] / "web"
 
