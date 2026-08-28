@@ -18,7 +18,10 @@ from wecanfindintern.api.models import (
     JobListFilters,
     JobPage,
 )
-from wecanfindintern.api.routes.career import career_router
+from wecanfindintern.api.routes.ats import ats_router
+from wecanfindintern.api.routes.cover_letter import cover_letter_router
+from wecanfindintern.api.routes.interview import interview_router
+from wecanfindintern.api.routes.profile import profile_router
 from wecanfindintern.api.routes.tracker import tracker_router
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
@@ -41,8 +44,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.include_router(career_router)
+app.include_router(ats_router)
+app.include_router(interview_router)
+app.include_router(cover_letter_router)
 app.include_router(tracker_router)
+app.include_router(profile_router)
 
 WEB_DIR = Path(__file__).resolve().parents[3] / "web"
 

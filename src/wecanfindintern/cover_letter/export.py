@@ -1,4 +1,4 @@
-"""Export utilities for Cover Letter generation (DOCX, PDF, LaTeX)."""
+"""Export utilities for Cover Letter generation (DOCX, PDF)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from docx.shared import Inches, Pt, RGBColor
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
-from wecanfindintern.career_ai.models import UserProfile
+from wecanfindintern.cover_letter.models import UserProfile
 
 
 def export_docx(body_text: str, user_info: UserProfile) -> bytes:
@@ -31,7 +31,7 @@ def export_docx(body_text: str, user_info: UserProfile) -> bytes:
         r_name.bold = True
         r_name.font.size = Pt(16)
         r_name.font.name = "Calibri"
-        r_name.font.color.rgb = RGBColor(23, 64, 47)  # WeCanFindIntern dark-mint
+        r_name.font.color.rgb = RGBColor(23, 64, 47)
 
         # Contact Info Line
         contact_parts = [
@@ -99,8 +99,9 @@ def export_pdf(body_text: str, user_info: UserProfile) -> bytes:
     """Create a styled PDF document."""
     pdf = StyledPDF(user_info)
     pdf.set_font("Helvetica", "", 10.5)
-    pdf.set_text_color(30, 41, 59)
+    pdf.set_text_color(40, 50, 60)
 
+    # Body
     for para in body_text.split("\n\n"):
         clean_p = para.strip().replace("\u2013", "-").replace("\u2014", "--").replace("\u2019", "'")
         if not clean_p:
@@ -109,62 +110,3 @@ def export_pdf(body_text: str, user_info: UserProfile) -> bytes:
         pdf.ln(3)
 
     return bytes(pdf.output())
-
-
-def export_latex(body_text: str, user_info: UserProfile, date_str: str = "[Date]") -> str:
-    """Create a LaTeX source code (.tex) document."""
-    # Sanitize LaTeX special characters
-    def sanitize(text: str) -> str:
-        replacements = {
-            "\\": "\\textbackslash{}",
-            "&": "\\&",
-            "%": "\\%",
-            "$": "\\$",
-            "#": "\\#",
-            "_": "\\_",
-            "{": "\\{",
-            "}": "\\}",
-            "~": "\\textasciitilde{}",
-            "^": "\\textasciicircum{}",
-        }
-        for k, v in replacements.items():
-            text = text.replace(k, v)
-        return text
-
-    name = sanitize(user_info.full_name or "Applicant")
-    email = sanitize(user_info.email)
-    phone = sanitize(user_info.phone)
-    linkedin = sanitize(user_info.linkedin)
-    address = sanitize(user_info.address)
-
-    body_escaped = "\n\n".join(
-        [f"{sanitize(p.strip())}" for p in body_text.split("\n\n") if p.strip()]
-    )
-
-    return f"""\\documentclass[11pt,a4paper]{{article}}
-\\usepackage[utf8]{{inputenc}}
-\\usepackage[margin=1in]{{geometry}}
-\\usepackage{{hyperref}}
-\\usepackage{{parskip}}
-
-\\hypersetup{{
-    colorlinks=true,
-    linkcolor=teal,
-    urlcolor=teal
-}}
-
-\\begin{{document}}
-
-\\begin{{center}}
-    {{\\LARGE \\textbf{{{name}}}}} \\\\[4pt]
-    {email} {f'$\\cdot$ {phone}' if phone else ''} {f'$\\cdot$ {linkedin}' if linkedin else ''} {f'$\\cdot$ {address}' if address else ''}
-\\end{{center}}
-
-\\vspace{{1em}}
-\\hrule
-\\vspace{{1.5em}}
-
-{body_escaped}
-
-\\end{{document}}
-"""
