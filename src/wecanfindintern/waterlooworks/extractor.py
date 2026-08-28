@@ -281,7 +281,6 @@ def normalize_waterlooworks_job(raw: dict[str, Any]) -> NormalizedJob:
         employment_types=employment_types,
         is_remote=is_remote,
         job_function=_text(raw.get("division")) or None,
-        listing_type=f"waterlooworks:{board}" if board else "waterlooworks",
         description=_description(raw.get("fullJdText")),
         company=CompanyDetails(addresses=_text(location.get("address")) or None),
         work_from_home_type=workplace or None,

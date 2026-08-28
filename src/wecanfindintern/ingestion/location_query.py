@@ -6,7 +6,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-
 REGION_NAMES = {
     "CA": {
         "AB": "Alberta", "BC": "British Columbia", "MB": "Manitoba",
@@ -75,7 +74,10 @@ def provider_location(value: str | dict[str, Any], source: str) -> str:
         else None
     )
     if source == "indeed":
-        return ", ".join(item for item in (location.city, location.region_code) if item) or country_name
+        return (
+            ", ".join(item for item in (location.city, location.region_code) if item)
+            or country_name
+        )
     return ", ".join(item for item in (location.city, region_name, country_name) if item)
 
 

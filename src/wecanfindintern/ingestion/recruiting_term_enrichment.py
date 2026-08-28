@@ -7,7 +7,7 @@ import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from wecanfindintern.db.ingestion_repository import JobIngestionRepository
+from wecanfindintern.db.repositories.recruiting_term import RecruitingTermRepository
 from wecanfindintern.domain.recruiting_term import (
     extract_recruiting_term_regex,
     recruiting_term_input_hash,
@@ -29,7 +29,7 @@ class RecruitingTermEnrichmentStats:
 
 
 async def enrich_recruiting_terms(
-    repository: JobIngestionRepository,
+    repository: RecruitingTermRepository,
     source_fingerprints: Iterable[str] | None = None,
     *,
     allow_llm: bool = True,

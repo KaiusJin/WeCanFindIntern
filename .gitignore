@@ -9,5 +9,6 @@ __pycache__/
 .env
 .runtime/
 logs/
+.uvicorn.log
 data/raw/*
 !data/raw/.gitkeep

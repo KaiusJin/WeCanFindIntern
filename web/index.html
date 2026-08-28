@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260828-waterlooworks-mvp" />
+    <link rel="stylesheet" href="/styles.css?v=20260828-fix-v22" />
   </head>
   <body>
     <header class="topbar">
@@ -671,7 +671,7 @@
           </div>
 
           <div class="tracker-control-panel">
-            <label class="tracker-search"><span aria-hidden="true">⌕</span><input id="tracker-query" type="search" placeholder="Search company, role, location, notes…" autocomplete="off" /></label>
+            <label class="tracker-search"><span aria-hidden="true">⌕</span><input id="tracker-query" type="search" placeholder="Search company, role, or location…" autocomplete="off" /></label>
           </div>
 
           <div class="tracker-workspace-head">
@@ -738,7 +738,7 @@
             <select id="custom-work-mode" class="career-select">
               <option value="hybrid">Hybrid</option>
               <option value="remote">Remote</option>
-              <option value="in_person">In-person</option>
+              <option value="onsite">In-person</option>
             </select>
           </div>
           <div class="field-group">
@@ -808,6 +808,7 @@
           <div class="tracker-drawer-grid tracker-source-link-grid">
           <label class="field-group job-content-field"><span class="field-label">Source</span><select id="drawer-source" class="career-select"><option value="wecanfindintern">WecanFindIntern</option><option value="linkedin">LinkedIn</option><option value="indeed">Indeed</option><option value="waterloo_work">WaterlooWork</option><option value="other">Other</option></select></label>
           <div class="field-group job-content-field"><span class="field-label">Link</span><div class="tracker-link-row"><input id="drawer-url" class="career-input" type="url" /><button id="drawer-copy-job" class="secondary-button" type="button">Copy</button><a id="drawer-open-job" class="secondary-button" href="#" target="_blank" rel="noreferrer">Open ↗</a></div></div>
+          <label class="field-group job-content-field"><span class="field-label">Salary / Pay Rate</span><span id="drawer-salary" class="tracker-cell-text">Not specified</span></label>
           </div>
         </div>
         <h3 class="tracker-detail-section-title">Application tracking</h3>
@@ -891,6 +892,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script src="/app.js?v=20260828-waterlooworks-mvp" defer></script>
+    <script type="module" src="/modules/main.js?v=20260828-fix-v23"></script>
   </body>
 </html>

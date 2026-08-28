@@ -1,4 +1,4 @@
-"""Transactional, idempotent ingestion with indexed dedupe candidate lookup."""
+"""Transactional, idempotent job ingestion with indexed dedupe candidate lookup."""
 
 from __future__ import annotations
 
@@ -23,10 +23,8 @@ from wecanfindintern.deduplication import (
 )
 from wecanfindintern.domain.jobs import (
     CanonicalJobInput,
-    SalaryRange,
     normalize_canonical_job_description,
 )
-from wecanfindintern.domain.recruiting_term import RecruitingTerm
 
 
 class IngestionOutcome(StrEnum):
@@ -41,302 +39,17 @@ class IngestionRun:
     public_id: UUID
 
 
-@dataclass(frozen=True, slots=True)
-class SalaryEnrichmentCandidate:
-    job_id: int
-    title: str
-    description: str
-    description_hash: str
-    country_code: str | None
-    source_fingerprints: list[str]
-
-
-@dataclass(frozen=True, slots=True)
-class RecruitingTermCandidate:
-    job_id: int
-    title: str
-    description: str | None
-    checked_input_hash: str | None
-
-
 class JobIngestionRepository:
     """Write path optimized for bounded batches, not one connection per row."""
 
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self.pool = pool
 
-    async def persisted_salaries_by_source(
-        self,
-        source_fingerprints: Iterable[str],
-    ) -> dict[str, tuple[int, str | None, SalaryRange]]:
-        """Return job-ID-owned salary results for previously seen source jobs."""
-
-        fingerprints = sorted(set(source_fingerprints))
-        if not fingerprints:
-            return {}
-        binary_fingerprints = [bytes.fromhex(value) for value in fingerprints]
-        async with self.pool.connection() as connection:
-            rows = await (
-                await connection.execute(
-                    """
-                    SELECT encode(js.source_fingerprint, 'hex') AS source_fingerprint,
-                           j.id AS job_id, encode(j.description_hash, 'hex') AS description_hash,
-                           j.salary_interval, j.salary_min, j.salary_max, j.salary_currency,
-                           j.salary_source, j.salary_annual_min, j.salary_annual_max
-                    FROM job_sources js
-                    JOIN jobs j ON j.id = js.job_id
-                    WHERE js.source_fingerprint = ANY(%s::bytea[])
-                      AND j.salary_interval IS NOT NULL
-                      AND (j.salary_min IS NOT NULL OR j.salary_max IS NOT NULL)
-                    """,
-                    (binary_fingerprints,),
-                )
-            ).fetchall()
-        return {
-            row["source_fingerprint"]: (
-                row["job_id"],
-                row["description_hash"],
-                SalaryRange(
-                    interval=row["salary_interval"],
-                    minimum=row["salary_min"],
-                    maximum=row["salary_max"],
-                    currency=row["salary_currency"],
-                    source=row["salary_source"],
-                    annualized_minimum=row["salary_annual_min"],
-                    annualized_maximum=row["salary_annual_max"],
-                ),
-            )
-            for row in rows
-        }
-
-    async def salary_enrichment_candidates(
-        self,
-        source_fingerprints: Iterable[str],
-    ) -> list[SalaryEnrichmentCandidate]:
-        """Resolve deduplicated jobs that still need LLM salary enrichment."""
-
-        fingerprints = sorted(set(source_fingerprints))
-        if not fingerprints:
-            return []
-        binary_fingerprints = [bytes.fromhex(value) for value in fingerprints]
-        async with self.pool.connection() as connection:
-            rows = await (
-                await connection.execute(
-                    """
-                    SELECT j.id, j.title, j.description,
-                           encode(j.description_hash, 'hex') AS description_hash,
-                           j.country_code,
-                           array_agg(encode(js.source_fingerprint, 'hex'))
-                               AS source_fingerprints
-                    FROM job_sources js
-                    JOIN jobs j ON j.id = js.job_id
-                    WHERE js.source_fingerprint = ANY(%s::bytea[])
-                      AND j.description IS NOT NULL
-                      AND j.description_hash IS NOT NULL
-                      AND j.salary_interval IS NULL
-                      AND j.salary_min IS NULL
-                      AND j.salary_max IS NULL
-                    GROUP BY j.id
-                    ORDER BY j.id
-                    """,
-                    (binary_fingerprints,),
-                )
-            ).fetchall()
-        return [
-            SalaryEnrichmentCandidate(
-                job_id=row["id"],
-                title=row["title"],
-                description=row["description"],
-                description_hash=row["description_hash"],
-                country_code=row["country_code"],
-                source_fingerprints=row["source_fingerprints"],
-            )
-            for row in rows
-        ]
-
-    async def persist_enriched_salary(
-        self,
-        *,
-        job_id: int,
-        description_hash: str,
-        salary: SalaryRange,
-    ) -> bool:
-        """Persist an LLM salary only if the deduplicated job JD is unchanged."""
-
-        async with self.pool.connection() as connection:
-            result = await connection.execute(
-                """
-                UPDATE jobs
-                SET salary_interval = %s,
-                    salary_min = %s,
-                    salary_max = %s,
-                    salary_currency = %s,
-                    salary_source = %s,
-                    salary_annual_min = %s,
-                    salary_annual_max = %s,
-                    updated_at = now()
-                WHERE id = %s
-                  AND description_hash = %s
-                  AND salary_interval IS NULL
-                  AND salary_min IS NULL
-                  AND salary_max IS NULL
-                """,
-                (
-                    salary.interval,
-                    salary.minimum,
-                    salary.maximum,
-                    salary.currency,
-                    salary.source,
-                    salary.annualized_minimum,
-                    salary.annualized_maximum,
-                    job_id,
-                    bytes.fromhex(description_hash),
-                ),
-            )
-        return result.rowcount == 1
-
-    async def recruiting_term_candidates(
-        self,
-        source_fingerprints: Iterable[str] | None = None,
-    ) -> list[RecruitingTermCandidate]:
-        """Return unique active jobs, optionally limited to one campaign's sources."""
-
-        fingerprints = sorted(set(source_fingerprints or []))
-        parameters: tuple[Any, ...] = ()
-        source_predicate = ""
-        if fingerprints:
-            source_predicate = """
-                AND EXISTS (
-                    SELECT 1 FROM job_sources js
-                    WHERE js.job_id = j.id
-                      AND js.source_fingerprint = ANY(%s::bytea[])
-                )
-            """
-            parameters = ([bytes.fromhex(value) for value in fingerprints],)
-        async with self.pool.connection() as connection:
-            rows = await (
-                await connection.execute(
-                    f"""
-                    SELECT j.id, j.title, j.description,
-                           encode(j.recruiting_term_input_hash, 'hex') AS checked_input_hash
-                    FROM jobs j
-                    WHERE j.status = 1
-                    {source_predicate}
-                    ORDER BY j.id
-                    """,
-                    parameters,
-                )
-            ).fetchall()
-        return [
-            RecruitingTermCandidate(
-                job_id=row["id"],
-                title=row["title"],
-                description=row["description"],
-                checked_input_hash=row["checked_input_hash"],
-            )
-            for row in rows
-        ]
-
-    async def persist_recruiting_term(
-        self,
-        *,
-        job_id: int,
-        input_hash: str,
-        term: RecruitingTerm | None,
-        model: str | None = None,
-    ) -> bool:
-        """Persist positive or negative extraction against an exact content hash."""
-
-        async with self.pool.connection() as connection:
-            result = await connection.execute(
-                """
-                UPDATE jobs
-                SET recruiting_season = %s,
-                    recruiting_year = %s,
-                    recruiting_term_source = %s,
-                    recruiting_term_evidence = %s,
-                    recruiting_term_input_hash = %s,
-                    recruiting_term_checked_at = now(),
-                    recruiting_term_model = %s,
-                    updated_at = now()
-                WHERE id = %s
-                  AND digest(title || E'\\n' || coalesce(description, ''), 'sha256') = %s
-                """,
-                (
-                    term.season if term else None,
-                    term.year if term else None,
-                    term.source if term else "not_found",
-                    term.evidence if term else None,
-                    bytes.fromhex(input_hash),
-                    model,
-                    job_id,
-                    bytes.fromhex(input_hash),
-                ),
-            )
-        return result.rowcount == 1
-
-    async def start_recruiting_term_generation(
-        self,
-        *,
-        job_id: int,
-        input_hash: str,
-        input_context: str,
-        model: str,
-    ) -> UUID:
-        """Create an addressable pending generation before calling DeepSeek."""
-
-        async with self.pool.connection() as connection:
-            row = await (
-                await connection.execute(
-                    """
-                    INSERT INTO recruiting_term_generations (
-                        job_id, input_hash, input_context, model
-                    ) VALUES (%s, %s, %s, %s)
-                    RETURNING id
-                    """,
-                    (job_id, bytes.fromhex(input_hash), input_context, model),
-                )
-            ).fetchone()
-        return row["id"]
-
-    async def finish_recruiting_term_generation(
-        self,
-        generation_id: UUID,
-        *,
-        response_json: dict | None,
-        prompt_tokens: int | None,
-        completion_tokens: int | None,
-        error_type: str | None,
-    ) -> None:
-        status = "complete" if error_type is None else "error"
-        async with self.pool.connection() as connection:
-            await connection.execute(
-                """
-                UPDATE recruiting_term_generations
-                SET status = %s,
-                    response_json = %s,
-                    prompt_tokens = %s,
-                    completion_tokens = %s,
-                    error_type = %s,
-                    finished_at = now()
-                WHERE id = %s
-                """,
-                (
-                    status,
-                    Jsonb(response_json) if response_json is not None else None,
-                    prompt_tokens,
-                    completion_tokens,
-                    error_type,
-                    generation_id,
-                ),
-            )
-
     async def start_run(
         self,
         *,
         sources: list[str],
         query: dict[str, Any],
-        collection_plan_id: int | None = None,
         provider: str = "jobspy",
     ) -> IngestionRun:
         async with self.pool.connection() as connection:
@@ -344,12 +57,12 @@ class JobIngestionRepository:
                 await connection.execute(
                     """
                     INSERT INTO ingestion_runs (
-                        provider, sources, query, collection_plan_id
+                        provider, sources, query
                     )
-                    VALUES (%s, %s, %s, %s)
+                    VALUES (%s, %s, %s)
                     RETURNING id, public_id
                     """,
-                    (provider, sources, Jsonb(query), collection_plan_id),
+                    (provider, sources, Jsonb(query)),
                 )
             ).fetchone()
         return IngestionRun(internal_id=row["id"], public_id=row["public_id"])

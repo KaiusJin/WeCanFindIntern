@@ -8,9 +8,9 @@ import json
 from typing import Any
 
 import pandas as pd
-from wecanfindintern.ingestion.jobspy_cli import add_query_arguments, query_from_args
 
 from wecanfindintern.ingestion.jobspy_adapter import scrape_and_normalize
+from wecanfindintern.ingestion.jobspy_cli import add_query_arguments, query_from_args
 
 
 def preview_value(value: Any) -> Any:

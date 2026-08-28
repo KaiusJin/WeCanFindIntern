@@ -5,8 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from wecanfindintern.ingestion.jobspy_adapter import JobSpyQuery
-from wecanfindintern.scheduler import runner
+from wecanfindintern.ingestion.jobspy_adapter import JobSpyQuery, scrape_checked
 
 
 def query() -> JobSpyQuery:
@@ -16,12 +15,11 @@ def query() -> JobSpyQuery:
 def test_scrape_checked_keeps_genuine_empty_result(monkeypatch) -> None:
     expected = SimpleNamespace(jobs=[])
     monkeypatch.setattr(
-        runner,
-        "scrape_and_normalize",
+        "wecanfindintern.ingestion.jobspy_adapter.scrape_and_normalize",
         lambda _: ("frame", expected),
     )
 
-    assert runner.scrape_checked(query()) == ("frame", expected)
+    assert scrape_checked(query()) == ("frame", expected)
 
 
 def test_scrape_checked_converts_jobspy_error_log_to_exception(monkeypatch) -> None:
@@ -31,7 +29,10 @@ def test_scrape_checked_converts_jobspy_error_log_to_exception(monkeypatch) -> N
         logger.error("upstream status code 403")
         return "frame", SimpleNamespace(jobs=[])
 
-    monkeypatch.setattr(runner, "scrape_and_normalize", failed_scrape)
+    monkeypatch.setattr(
+        "wecanfindintern.ingestion.jobspy_adapter.scrape_and_normalize",
+        failed_scrape,
+    )
 
     with pytest.raises(RuntimeError, match="status code 403"):
-        runner.scrape_checked(query())
+        scrape_checked(query())

@@ -168,7 +168,8 @@ def _candidate_windows(text: str) -> list[str]:
     compact = re.sub(r"[\t\r]+", " ", text)
     compact = re.sub(r"\n+", "\n", compact)
     signal = re.compile(
-        rf"{_CURRENCY}|salary|pay range|base pay|base salary|compensation|hourly|annually|per annum",
+        rf"{_CURRENCY}|salary|pay range|base pay|base salary|compensation|"
+        r"hourly|annually|per annum",
         re.IGNORECASE,
     )
     windows: list[str] = []

@@ -3,12 +3,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
 
 from wecanfindintern.config import Settings
-from wecanfindintern.db.ingestion_repository import JobIngestionRepository
 from wecanfindintern.db.pool import Database
+from wecanfindintern.db.repositories.recruiting_term import RecruitingTermRepository
 from wecanfindintern.ingestion.recruiting_term_enrichment import enrich_recruiting_terms
 
 
@@ -17,7 +17,7 @@ async def backfill(*, allow_llm: bool) -> None:
     await database.open()
     try:
         stats = await enrich_recruiting_terms(
-            JobIngestionRepository(database.pool),
+            RecruitingTermRepository(database.pool),
             allow_llm=allow_llm,
         )
     finally:

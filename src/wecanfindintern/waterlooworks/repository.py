@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from collections import Counter
@@ -60,10 +59,8 @@ CREATE TABLE IF NOT EXISTS waterlooworks_jobs (
     source_url TEXT NOT NULL,
     description TEXT,
     raw_payload TEXT NOT NULL,
-    payload_hash TEXT NOT NULL,
     first_seen_at TEXT NOT NULL,
-    last_seen_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    last_seen_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS waterlooworks_job_boards (
@@ -93,6 +90,7 @@ class WaterlooWorksRepository:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(SCHEMA)
+            self._drop_legacy_content_tracking_columns(connection)
 
     def start_run(self, boards: list[dict[str, Any]]) -> str:
         run_id = str(uuid4())
@@ -172,13 +170,13 @@ class WaterlooWorksRepository:
                                 city, province, country, work_mode, date_posted,
                                 application_deadline, application_url, application_delivery,
                                 application_documents, source_url, description, raw_payload,
-                                payload_hash, first_seen_at, last_seen_at, updated_at
+                                first_seen_at, last_seen_at
                             ) VALUES (
                                 :source_job_id, :title, :organization, :division, :location_text,
                                 :city, :province, :country, :work_mode, :date_posted,
                                 :application_deadline, :application_url, :application_delivery,
                                 :application_documents, :source_url, :description, :raw_payload,
-                                :payload_hash, :first_seen_at, :last_seen_at, :updated_at
+                                :first_seen_at, :last_seen_at
                             )
                             """,
                             record,
@@ -319,12 +317,6 @@ class WaterlooWorksRepository:
             items.append(item)
         return {"items": items, "total": total, "limit": limit, "offset": offset}
 
-    def count_jobs(self) -> int:
-        with self._connect() as connection:
-            return connection.execute(
-                "SELECT COUNT(*) count FROM waterlooworks_jobs"
-            ).fetchone()["count"]
-
     def count_source_ids(self, source_job_ids: list[str]) -> int:
         if not source_job_ids:
             return 0
@@ -356,21 +348,22 @@ class WaterlooWorksRepository:
         connection.execute("PRAGMA busy_timeout = 30000")
         return connection
 
+    @staticmethod
+    def _drop_legacy_content_tracking_columns(connection: sqlite3.Connection) -> None:
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(waterlooworks_jobs)").fetchall()
+        }
+        for column in ("payload_hash", "updated_at"):
+            if column in columns:
+                connection.execute(f"ALTER TABLE waterlooworks_jobs DROP COLUMN {column}")
+
 
 def _storage_record(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_waterlooworks_job(raw)
     location = raw.get("location") or {}
     application = raw.get("application") or {}
-    canonical_payload = dict(raw)
-    for key in ("jobBoard", "jobBoardUrl", "jobBoards"):
-        canonical_payload.pop(key, None)
     payload_json = json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    canonical_json = json.dumps(
-        canonical_payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
     now = _now()
     return {
         "source_job_id": normalized.source_job_id,
@@ -390,10 +383,8 @@ def _storage_record(raw: dict[str, Any]) -> dict[str, Any]:
         "source_url": normalized.source_url,
         "description": normalized.description,
         "raw_payload": payload_json,
-        "payload_hash": hashlib.sha256(canonical_json.encode()).hexdigest(),
         "first_seen_at": now,
         "last_seen_at": now,
-        "updated_at": now,
     }
 
 

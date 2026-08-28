@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 
 from wecanfindintern.interview.models import (
@@ -46,12 +48,12 @@ async def analyze_answer(
     provider: str = Form("Gemini"),
     model_name: str | None = Form(None),
     api_key: str | None = Form(None),
-    video: UploadFile | None = File(None),
+    video_file: Annotated[UploadFile | None, File()] = None,
 ):
     """Analyze mock interview answer with text transcript or recorded video."""
     video_bytes = None
-    if video:
-        video_bytes = await video.read()
+    if video_file:
+        video_bytes = await video_file.read()
 
     return analyze_interview_performance(
         job_description=job_description,

@@ -133,7 +133,7 @@ def _split_sections(lines: list[str]) -> tuple[list[str], dict[str, list[str]]]:
     return header, sections
 
 
-def _extract_basics(header: list[str], sections: dict[str, list[str]]) -> ProfileBasics:
+def _extract_basics(header: list[str]) -> ProfileBasics:
     head = "\n".join(header[:20])
     email_match = re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", head)
     phone_match = re.search(r"(?<!\d)(?:\+?1[ .-]?)?\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}(?!\d)", head)
@@ -346,7 +346,7 @@ def parse_resume_text(text: str) -> ProfilePayload:
         for item in _simple_entries(sections.get("awards", []))
     ]
     return ProfilePayload(
-        basics=_extract_basics(header, sections),
+        basics=_extract_basics(header),
         education=_extract_education(sections.get("education", [])),
         work_experience=_extract_work(sections.get("work", [])),
         projects=_extract_projects(sections.get("projects", [])),

@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from wecanfindintern.db.ingestion_repository import JobIngestionRepository
+from wecanfindintern.db.repositories.salary import SalaryRepository
 from wecanfindintern.domain.jobs import (
     SalaryRange,
     annualize_salary,
@@ -26,7 +26,7 @@ class SalaryEnrichmentStats:
 
 
 async def enrich_missing_salaries(
-    repository: JobIngestionRepository,
+    repository: SalaryRepository,
     jobs: Iterable[NormalizedJob],
 ) -> SalaryEnrichmentStats:
     """Run strict post-dedupe passes: source fields, regex, then DeepSeek."""
@@ -37,8 +37,8 @@ async def enrich_missing_salaries(
     regex_count = 0
     llm_count = 0
 
-    candidates = await repository.salary_enrichment_candidates(fingerprints)
-    for candidate in candidates:
+    remaining = await repository.salary_enrichment_candidates(fingerprints)
+    for candidate in list(remaining):
         salary = _structured_salary(
             (
                 jobs_by_fingerprint[fingerprint]
@@ -53,10 +53,10 @@ async def enrich_missing_salaries(
             salary=salary,
         ):
             structured_count += 1
+            remaining.remove(candidate)
 
     # Finish regex for the entire deduplicated batch before making any LLM request.
-    candidates = await repository.salary_enrichment_candidates(fingerprints)
-    for candidate in candidates:
+    for candidate in list(remaining):
         extracted = extract_salary_from_description(
             candidate.description,
             country_code=candidate.country_code,
@@ -70,10 +70,10 @@ async def enrich_missing_salaries(
             salary=salary,
         ):
             regex_count += 1
+            remaining.remove(candidate)
 
     # DeepSeek sees only unique jobs that remain salary-less after the regex pass.
-    candidates = await repository.salary_enrichment_candidates(fingerprints)
-    if candidates:
+    if remaining:
         salary_semaphore = asyncio.Semaphore(5)
         salary_lock = asyncio.Lock()
 
@@ -86,16 +86,15 @@ async def enrich_missing_salaries(
                     country_code=candidate.country_code,
                     title=candidate.title,
                 )
-                if extracted is not None:
-                    if await repository.persist_enriched_salary(
-                        job_id=candidate.job_id,
-                        description_hash=candidate.description_hash,
-                        salary=_salary_range(extracted),
-                    ):
-                        async with salary_lock:
-                            llm_count += 1
+                if extracted is not None and await repository.persist_enriched_salary(
+                    job_id=candidate.job_id,
+                    description_hash=candidate.description_hash,
+                    salary=_salary_range(extracted),
+                ):
+                    async with salary_lock:
+                        llm_count += 1
 
-        await asyncio.gather(*[_enrich_single_salary(c) for c in candidates])
+        await asyncio.gather(*[_enrich_single_salary(c) for c in remaining])
 
     return SalaryEnrichmentStats(
         structured=structured_count,

@@ -8,8 +8,7 @@
 - 为每个来源职位生成可重复的 `source_fingerprint`，方便后续幂等写入；
 - 提供输出格式检查和自动化测试。
 - 将标准职位幂等写入 PostgreSQL，并自动完成跨来源去重；
-- 按来源保存分页断点，失败时指数退避重试；
-- 使用数据库租约安全运行多个采集 worker，默认每 4 小时更新；
+- 自动多来源采集 campaign，带并发抓取、指数退避重试和单实例锁（launchd 每 4 小时运行）；
 - 提供高性能游标分页职位数据接口。
 
 JobSpy 源码位于 `vendor/JobSpy`，当前版本与提交记录见
@@ -94,7 +93,6 @@ Computer Science / Software、Data Science、Machine Learning / AI 实习与 Co-
 并使用已验证可用的 Indeed 和 LinkedIn。目录会自动展开为国家、关键词和来源查询。
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/collection/seed_collection_plans.py
 PYTHONPATH=src .venv/bin/python scripts/collection/run_collection_campaign.py
 ```
 
@@ -168,6 +166,19 @@ WaterlooWorks 岗位只使用 Job ID 去重；已有 ID 会直接跳过内容检
 ```bash
 PYTHONPATH=src .venv/bin/python -m pytest
 ```
+
+## 代码质量检查
+
+仓库内置统一的检查入口，`make check` 会依次运行：
+
+- `ruff check src tests scripts`（lint，0 错误为准）；
+- `pytest`（单元与路由契约测试）；
+- `scripts/dev/verify_frontend_api_contract.py`（校验前端 `fetch`/链接引用的
+  `/api/...` 路径都存在于 OpenAPI 路由表，防止前后端断链）；
+- `node --check web/modules/*.js`（前端语法）。
+
+GitHub Actions 工作流（`.github/workflows/ci.yml`）在推送/PR 时执行同样的检查。
+新增 API 或前端请求时，请保持该契约检查通过。
 
 ## 使用约束
 

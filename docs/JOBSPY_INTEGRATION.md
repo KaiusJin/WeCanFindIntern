@@ -79,7 +79,6 @@
   "date_posted": "2026-08-24",
   "employment_types": ["internship"],
   "is_remote": false,
-  "seniority": null,
   "description": "...",
   "contact_emails": [],
   "salary": {
@@ -102,7 +101,6 @@
     "reviews_count": null
   },
   "source_skills": [],
-  "experience_range": null,
   "vacancy_count": null,
   "work_from_home_type": null,
   "raw": {}

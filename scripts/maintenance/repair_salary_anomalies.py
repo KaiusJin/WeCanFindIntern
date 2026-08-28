@@ -48,14 +48,14 @@ async def repair() -> tuple[int, int, int]:
         async with database.pool.connection() as connection:
             rows = await (
                 await connection.execute(
-                    """
+                    f"""
                     SELECT id, title, description, description_hash, country_code
                     FROM jobs
                     WHERE description IS NOT NULL
                       AND description_hash IS NOT NULL
                       AND ({ANOMALY_PREDICATE})
                     ORDER BY id
-                    """.format(ANOMALY_PREDICATE=ANOMALY_PREDICATE)
+                    """
                 )
             ).fetchall()
 
@@ -79,7 +79,7 @@ async def repair() -> tuple[int, int, int]:
 
             async with database.pool.connection() as connection:
                 result = await connection.execute(
-                    """
+                    f"""
                     UPDATE jobs
                     SET salary_interval = %s,
                         salary_min = %s,
@@ -92,7 +92,7 @@ async def repair() -> tuple[int, int, int]:
                     WHERE id = %s
                       AND description_hash = %s
                       AND ({ANOMALY_PREDICATE})
-                    """.format(ANOMALY_PREDICATE=ANOMALY_PREDICATE),
+                    """,
                     (
                         extracted.interval,
                         extracted.minimum,

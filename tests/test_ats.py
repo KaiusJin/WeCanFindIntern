@@ -2,7 +2,7 @@
 
 from wecanfindintern.ats.models import AtsReviewResponse
 from wecanfindintern.ats.service import match_level
-from wecanfindintern.llm.client import clean_json_text
+from wecanfindintern.llm.gateway import clean_json_text
 
 
 def test_clean_json_text():

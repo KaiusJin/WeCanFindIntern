@@ -1,15 +1,19 @@
-"""Common LLM clients."""
+"""Common LLM gateway."""
 
-from wecanfindintern.llm.client import (
-    call_gemini,
-    call_openai_compatible,
+from wecanfindintern.llm.gateway import (
+    LLMError,
+    LLMResult,
     clean_json_text,
+    complete_json,
+    parse_json,
     resolve_api_key,
 )
 
 __all__ = [
-    "call_gemini",
-    "call_openai_compatible",
+    "LLMError",
+    "LLMResult",
     "clean_json_text",
+    "complete_json",
+    "parse_json",
     "resolve_api_key",
 ]

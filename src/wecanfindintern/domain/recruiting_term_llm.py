@@ -12,6 +12,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from wecanfindintern.domain.recruiting_term import RecruitingTerm
+from wecanfindintern.llm.gateway import LLMError, complete_json
+from wecanfindintern.llm.prompts.recruiting_term import (
+    build_recruiting_term_system_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,78 +60,38 @@ def extract_recruiting_term_with_deepseek(
     if not api_key:
         return RecruitingTermLLMCall(None, model, None, None, None, "missing_api_key")
 
-    try:
-        from openai import OpenAI
-    except ImportError:
-        return RecruitingTermLLMCall(None, model, None, None, None, "missing_openai_package")
-
-    schema = RecruitingTermLLMResult.model_json_schema()
-    system_prompt = f"""
-You extract the job's work term (the season/year when the internship or co-op starts
-or is performed) from a job title and selected description lines. Return one JSON
-object that conforms exactly to this schema:
-{json.dumps(schema, separators=(",", ":"))}
-
-Rules:
-- Normalize Autumn to fall.
-- Recognize full names, common abbreviations, two-digit years, apostrophe years,
-  academic term codes, and words such as term, semester, intake, internship, or program.
-- Accept either order and natural phrases, including date ranges that clearly identify
-  one North American recruiting season.
-- A January/February start maps to winter, March/April to spring, May-August to summer,
-  and September-November to fall. Use the start month when a dated work period is explicit.
-- Ignore application deadlines, recruiting dates, and posting dates.
-- Never infer a season from geography, market convention, or internship type.
-- Return found=true only when one defensible season and four-digit year are explicitly stated.
-- If multiple conflicting terms are present and no single role term is clear, return found=false.
-- Evidence must be an exact short substring copied from the supplied context.
-- If no defensible term exists, set found=false, season/year/evidence=null, confidence=1.
-""".strip()
-    client = OpenAI(
-        api_key=api_key,
-        base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
-        timeout=float(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "30")),
+    system_prompt = build_recruiting_term_system_prompt(
+        json.dumps(RecruitingTermLLMResult.model_json_schema(), separators=(",", ":"))
     )
     content = ""
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": context},
-            ],
+        result = complete_json(
+            provider="DeepSeek",
+            model_name=model,
+            api_key=api_key,
+            system_prompt=system_prompt,
+            user_prompt=context,
             response_format={"type": "json_object"},
-            max_tokens=500,
-            temperature=0,
+            timeout_seconds=float(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "30")),
+            max_retries=0,
         )
-        content = response.choices[0].message.content or ""
-        if not content:
-            error_type = (
-                "truncated_response"
-                if response.choices[0].finish_reason == "length"
-                else "empty_response"
-            )
-            return RecruitingTermLLMCall(
-                None, model, None, None, None, error_type
-            )
-        result = RecruitingTermLLMResult.model_validate_json(content)
-        usage = getattr(response, "usage", None)
-        prompt_tokens = getattr(usage, "prompt_tokens", None)
-        completion_tokens = getattr(usage, "completion_tokens", None)
+        parsed = RecruitingTermLLMResult.model_validate(result.data)
+        prompt_tokens = result.usage.get("prompt_tokens")
+        completion_tokens = result.usage.get("completion_tokens")
     except (ValidationError, ValueError, IndexError) as error:
         logger.warning("DeepSeek returned invalid recruiting term JSON (%s)", type(error).__name__)
         raw = {"raw_content": content[:2000]} if content else None
         return RecruitingTermLLMCall(
             None, model, raw, None, None, type(error).__name__
         )
-    except Exception as error:
+    except LLMError as error:
         logger.warning("DeepSeek recruiting term request failed (%s)", type(error).__name__)
         return RecruitingTermLLMCall(None, model, None, None, None, type(error).__name__)
 
-    response_json = result.model_dump(mode="json")
+    response_json = parsed.model_dump(mode="json")
     extraction = None
-    if result.found and result.confidence >= 0.7 and result.evidence:
-        if _normalize(result.evidence) not in _normalize(context):
+    if parsed.found and parsed.confidence >= 0.7 and parsed.evidence:
+        if _normalize(parsed.evidence) not in _normalize(context):
             return RecruitingTermLLMCall(
                 None,
                 model,
@@ -136,7 +100,7 @@ Rules:
                 completion_tokens,
                 "invalid_evidence",
             )
-        if _has_conflicting_month_seasons(result.evidence):
+        if _has_conflicting_month_seasons(parsed.evidence):
             return RecruitingTermLLMCall(
                 None,
                 model,
@@ -145,11 +109,11 @@ Rules:
                 completion_tokens,
             )
         extraction = RecruitingTerm(
-            season=result.season,
-            year=result.year,
+            season=parsed.season,
+            year=parsed.year,
             source="llm_description",
-            evidence=result.evidence,
-            confidence=result.confidence,
+            evidence=parsed.evidence,
+            confidence=parsed.confidence,
         )
     return RecruitingTermLLMCall(
         extraction,

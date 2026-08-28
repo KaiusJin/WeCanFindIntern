@@ -119,15 +119,6 @@ GET /api/v1/jobs?country=CA&region=ON&employment_type=internship&limit=30
 返回机会类型、工时、岗位大类、工作模式、技能、地区和公司的实时数量，
 用于生成前端筛选项。
 
-### `GET /api/v1/ingestion-runs/{run_id}`
-
-返回采集批次状态和 created/merged/unchanged/failed 计数。
-
-### `GET /api/v1/collection-plans`
-
-返回每个自动采集计划的下次运行时间，以及各来源的 offset、页数、记录数、
-重试状态和最近错误。
-
 ## 去重策略
 
 ### 第一层：来源内幂等
@@ -167,15 +158,14 @@ shingle 重合度自动判定。确定是同一岗位时自动合并，否则自
 写入时使用事务级 advisory lock，仅锁定相同来源指纹和相同去重 block，避免并发采集产生
 重复职位，同时不会串行化整批任务。
 
-## 定时采集、断点和重试
+## 定时采集与重试
 
-- `collection_plans.interval_seconds=14400` 表示每 4 小时执行一次；
-- 计划通过 PostgreSQL `FOR UPDATE SKIP LOCKED` 和租约领取，多 worker 不会重复执行；
-- 每个来源独立维护 offset、已完成页数、已见记录数和重试次数；
+- 自动采集 campaign 由 `config/collection_plans.json` 展开为国家、关键词和来源查询；
+- 并发抓取（默认 4），失败按指数退避自动重试（默认 3 次）并带随机抖动；
+- 采集进程持有单实例文件锁，launchd 定时任务与手动运行不会重叠；
 - `source_overrides` 可为不兼容公共查询参数的来源单独覆盖地点等参数；
-- 失败采用 60 秒起步、最高 1 小时并带随机抖动的指数退避；
-- 单个来源失败不会阻止其他来源采集；达到最大次数后标记 exhausted；
-- 数据批次先幂等入库，再提交下一页断点。即使两步之间宕机，重放同一页也不会产生重复职位或重复快照。
+- 单个来源查询失败不会阻止其他来源；运行结束时记录失败来源数；
+- 数据批次先幂等入库、完成全量去重后，再执行薪资与招聘季节 enrichment。
 
 ## 大数据量性能设计
 

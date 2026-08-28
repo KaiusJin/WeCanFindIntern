@@ -32,10 +32,10 @@ JobSpy 多来源抓取
 | 7. 地点/薪资/招聘季节规范化 | 支持国家、省州/地区、城市三级地点；薪资与招聘季节均采用全量正则优先、DeepSeek JSON 约束回退并按岗位内容哈希持久化 | `domain/salary*.py`、`domain/recruiting_term*.py` | 已完成 |
 | 8. 去重和幂等设计 | 已实现来源指纹、URL/公司/地点/JD 候选去重、事务和 advisory lock | `deduplication.py`、`db/ingestion_repository.py` | 已实现，需真实规模验收 |
 | 9. 数据库层 | 已有迁移、连接池、写入仓库、读取仓库、自动采集和申请跟踪相关表设计 | `migrations/0001–0009`、`src/wecanfindintern/db/`、`src/wecanfindintern/tracker/` | 已实现并完成本地迁移 |
-| 10. 调度系统 | 已实现 collection plan、4 小时间隔、租约、offset、断点、重试和 exhausted 状态 | `scheduler/`、`config/collection_plans.json` | 已实现，需故障演练 |
-| 11. 数据 API | 已实现职位列表、详情、筛选、游标分页、Facets、采集运行状态和采集计划接口 | `src/wecanfindintern/api/app.py`、`docs/DATA_API.md` | 已实现 |
+| 10. 自动采集 | 已实现基于 `config/collection_plans.json` 的 campaign：并发抓取、指数退避重试、单实例锁，launchd 每 4 小时运行 | `scripts/collection/run_collection_campaign.py`、`config/collection_plans.json` | 已实现 |
+| 11. 数据 API | 已实现职位列表、详情、筛选、游标分页和 Facets | `src/wecanfindintern/api/app.py`、`docs/DATA_API.md` | 已实现 |
 | 12. API 契约 | 已有 `job.v3`、`job-page.v3`、`job-facets.v2` schema 和契约检查脚本 | `schemas/`、`scripts/dev/verify_data_api_contract.py` | 已完成 |
-| 13. 申请跟踪 | 支持申请记录、阶段、备注、统计和职位详情关联 | `migrations/0009_application_tracker.sql`、`src/wecanfindintern/tracker/` | 已实现，仍需完善用户隔离 |
+| 13. 申请跟踪 | 支持申请记录、阶段、统计和职位详情关联 | `migrations/0009_application_tracker.sql`、`src/wecanfindintern/tracker/` | 已实现，仍需完善用户隔离 |
 | 14. 技术文档 | 已有 JobSpy 集成、数据 API、岗位分类/展示规范和项目状态文档 | `docs/` | 已完成 |
 | 15. 搜索和浏览页面 | 全英文搜索框、筛选器、职位卡片、详情弹窗、分页加载、原职位跳转和申请跟踪入口 | `web/`、`src/wecanfindintern/api/app.py` | 已完成 |
 | 16. Profile 与简历导入 | Profile 编辑、英文文本型 PDF/LaTeX 安全上传、结构化解析、审核确认、版本和原件管理 | `src/wecanfindintern/profile/`、`api/routes/profile.py`、`migrations/0011_user_profile.sql`、`web/` | 已完成本地 MVP |
@@ -44,6 +44,13 @@ JobSpy 多来源抓取
 
 ### 已在当前环境确认的结果
 
+- 已建立统一检查门禁：`make check`（ruff 0 错误、63 项测试、前端↔OpenAPI 契约检查、JS 语法）。
+- LLM 调用已收敛到统一网关 `llm/gateway.py`（超时、重试、JSON 解析、token 统计），
+  prompt 模板集中到 `llm/prompts/`。
+- `db/ingestion_repository.py` 已拆分为 `db/repositories/{jobs,salary,recruiting_term}.py`。
+- `domain/jobs.py` 已拆分为 `domain/{location,normalization,jobs}.py`；
+  `waterlooworks/service.py` 已拆分为 `waterlooworks/{browser,collector,state,service}.py`；
+  前端 `app.js` 已按高内聚拆分为 `web/modules/*.js`（ES modules）。
 - 最新薪资周期一致性改动已完成 12 项针对性测试和 JavaScript/Python 语法检查。
 - 本轮已完成 Python/JavaScript 语法检查和 `git diff --check`。
 - 当前已有 Indeed 原始采集产物：1 个 CSV 和 1 个标准化 JSONL 文件。
@@ -103,16 +110,17 @@ JobSpy 多来源抓取
 ### P2：加入简历和推荐能力
 
 - [x] 英文文本型 PDF/LaTeX 简历上传、结构化解析、审核确认和用户技能画像。
-- [ ] 简历与 JD 的结构化匹配评分。
-- [ ] 缺失技能、推荐原因和技能提升建议。
+- [x] 简历与 JD 的 ATS 匹配评分（ATS Review）。
+- [x] 缺失技能、关键差距和逐条改进建议（ATS Review）。
 - [ ] 语义检索、候选岗位排序和推荐解释。
 - [ ] 为模型输出保存版本、置信度、输入快照和可重跑记录。
 
 ### P2：完善求职管理
 
-- [x] 申请记录、阶段流转、备注和基础统计。
-- [ ] 收藏职位并与申请记录关联。
-- [ ] 增加提醒、申请时间线和岗位状态变化记录。
+- [x] 申请记录、阶段流转和基础统计。
+- [x] 收藏职位并与申请记录关联（bookmark → Interested）。
+- [x] 申请时间线和岗位状态变化记录。
+- [ ] 增加申请截止/跟进提醒。
 - [ ] 区分已关闭、重复和已申请岗位。
 
 ### P3：产品化和上线运营
@@ -146,5 +154,5 @@ JobSpy 多来源抓取
 - [岗位领域模型](../src/wecanfindintern/domain/jobs.py)
 - [岗位分类规则](../src/wecanfindintern/domain/classification.py)
 - [数据库写入仓库](../src/wecanfindintern/db/ingestion_repository.py)
-- [调度运行器](../src/wecanfindintern/scheduler/runner.py)
+- [自动采集脚本](../scripts/collection/run_collection_campaign.py)
 - [API 应用](../src/wecanfindintern/api/app.py)

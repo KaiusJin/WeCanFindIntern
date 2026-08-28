@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -29,18 +30,17 @@ class InterviewQuestionsResponse(BaseModel):
 
 
 class TimelineEvent(BaseModel):
-    time: str
-    comment: str
+    timestamp: str = ""
+    type: str = ""
+    observation: str = ""
 
 
 class InterviewAnalyzeResponse(BaseModel):
     ok: bool
     score: int = 0
-    feedback: str = ""
-    strengths: list[str] = Field(default_factory=list)
-    improvements: list[str] = Field(default_factory=list)
-    model_answer: str = ""
+    summary: str = ""
+    star_feedback: str = ""
     timeline: list[TimelineEvent] = Field(default_factory=list)
-    audio_analysis: dict[str, Any] | None = None
+    advice: list[str] = Field(default_factory=list)
     error: str | None = None
     usage: dict[str, Any] = Field(default_factory=dict)

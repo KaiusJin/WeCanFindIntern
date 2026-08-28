@@ -17,15 +17,20 @@ from pathlib import Path
 from typing import Any
 
 from wecanfindintern.config import Settings
-from wecanfindintern.db.ingestion_repository import JobIngestionRepository
 from wecanfindintern.db.pool import Database
+from wecanfindintern.db.repositories.jobs import JobIngestionRepository
+from wecanfindintern.db.repositories.recruiting_term import RecruitingTermRepository
+from wecanfindintern.db.repositories.salary import SalaryRepository
 from wecanfindintern.domain.jobs import canonical_job_from_jobspy, parse_location
 from wecanfindintern.ingestion.collection_catalog import expand_collection_catalog
-from wecanfindintern.ingestion.jobspy_adapter import JobSpyQuery, NormalizedJob
+from wecanfindintern.ingestion.jobspy_adapter import (
+    JobSpyQuery,
+    NormalizedJob,
+    scrape_checked,
+)
 from wecanfindintern.ingestion.location_query import resolve_query_location
 from wecanfindintern.ingestion.recruiting_term_enrichment import enrich_recruiting_terms
 from wecanfindintern.ingestion.salary_enrichment import enrich_missing_salaries
-from wecanfindintern.scheduler.runner import scrape_checked
 
 
 def log(message: str, level: str = "INFO") -> None:
@@ -99,7 +104,9 @@ async def collect_all(
                         if attempt > max_retries:
                             query_has_failed = True
                             log(
-                                f"[{task_idx}/{total_tasks}] FAILED after {max_retries} retries: {definition['name']} / {source} ({type(error).__name__}: {error})",
+                                f"[{task_idx}/{total_tasks}] FAILED after {max_retries} retries: "
+                                f"{definition['name']} / {source} "
+                                f"({type(error).__name__}: {error})",
                                 level="ERROR",
                             )
                             async with lock:
@@ -107,9 +114,13 @@ async def collect_all(
                                     f"{definition['name']}:{source}:{type(error).__name__}: {error}"
                                 )
                             break
-                        backoff = min(15.0, (2 ** (attempt - 1)) * 1.5 + random.uniform(0.5, 2.0))
+                        backoff = min(
+                            15.0, (2 ** (attempt - 1)) * 1.5 + random.uniform(0.5, 2.0)
+                        )
                         log(
-                            f"[{task_idx}/{total_tasks}] Retry {attempt}/{max_retries} in {backoff:.1f}s for {definition['name']} / {source} ({type(error).__name__}: {error})",
+                            f"[{task_idx}/{total_tasks}] Retry {attempt}/{max_retries} "
+                            f"in {backoff:.1f}s for {definition['name']} / {source} "
+                            f"({type(error).__name__}: {error})",
                             level="WARN",
                         )
                         await asyncio.sleep(backoff)
@@ -169,7 +180,12 @@ def _is_in_country_scope(job: NormalizedJob, requested_country: str | None) -> b
     return parsed.country_code == requested_code
 
 
-async def run(config_path: Path, batch_size: int, concurrency: int = 4, max_retries: int = 3) -> None:
+async def run(
+    config_path: Path,
+    batch_size: int,
+    concurrency: int = 4,
+    max_retries: int = 3,
+) -> None:
     start_time = time.time()
     definitions = expand_collection_catalog(
         json.loads(config_path.read_text(encoding="utf-8"))
@@ -179,7 +195,11 @@ async def run(config_path: Path, batch_size: int, concurrency: int = 4, max_retr
     normalized_jobs, failures, query_stats = await collect_all(
         definitions, concurrency=concurrency, max_retries=max_retries
     )
-    log(f"Collection stage complete: {len(normalized_jobs)} unique source records (queries succeeded={query_stats['succeeded']}, failed={query_stats['failed']}, retried={query_stats['retried']})")
+    log(
+        f"Collection stage complete: {len(normalized_jobs)} unique source records "
+        f"(queries succeeded={query_stats['succeeded']}, "
+        f"failed={query_stats['failed']}, retried={query_stats['retried']})"
+    )
 
     database = Database(Settings.from_env())
     await database.open()
@@ -211,19 +231,26 @@ async def run(config_path: Path, batch_size: int, concurrency: int = 4, max_retr
                 )
             )
         log(
-            f"Dedupe stage complete: created={counts['created']}, merged={counts['merged']}, unchanged={counts['unchanged']}"
+            f"Dedupe stage complete: created={counts['created']}, "
+            f"merged={counts['merged']}, unchanged={counts['unchanged']}"
         )
 
         # Stages 3 and 4: LLM Enrichments
-        salary = await enrich_missing_salaries(repository, normalized_jobs)
-        log(f"Salary stages complete: source={salary.structured}, regex={salary.regex}, deepseek={salary.llm}")
+        salary = await enrich_missing_salaries(
+            SalaryRepository(database.pool), normalized_jobs
+        )
+        log(
+            f"Salary stages complete: source={salary.structured}, "
+            f"regex={salary.regex}, deepseek={salary.llm}"
+        )
 
         term = await enrich_recruiting_terms(
-            repository,
+            RecruitingTermRepository(database.pool),
             [job.source_fingerprint for job in normalized_jobs],
         )
         log(
-            f"Recruiting term stages complete: regex={term.regex}, deepseek={term.llm}, not_found={term.not_found}, "
+            f"Recruiting term stages complete: regex={term.regex}, "
+            f"deepseek={term.llm}, not_found={term.not_found}, "
             f"cached={term.skipped_cached}, failed={term.failed}"
         )
 
@@ -233,22 +260,6 @@ async def run(config_path: Path, batch_size: int, concurrency: int = 4, max_retr
             error_summary="\n".join(failures)[:2000] or None,
             partial=bool(failures),
         )
-        plan_names = [definition["name"] for definition in definitions]
-        async with database.pool.connection() as connection:
-            await connection.execute(
-                """
-                UPDATE collection_plans
-                SET active_run_id = NULL,
-                    lease_owner = NULL,
-                    lease_expires_at = NULL,
-                    last_completed_at = now(),
-                    next_run_at = now() + make_interval(secs => interval_seconds),
-                    updated_at = now()
-                WHERE name = ANY(%s)
-                """,
-                (plan_names,),
-            )
-
         duration = time.time() - start_time
         summary_payload = {
             "completed_at": datetime.now(UTC).isoformat(),
@@ -300,10 +311,18 @@ async def run(config_path: Path, batch_size: int, concurrency: int = 4, max_retr
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=Path("config/collection_plans.json"))
+    parser.add_argument(
+        "--config", type=Path, default=Path("config/collection_plans.json")
+    )
     parser.add_argument("--batch-size", type=int, default=250)
-    parser.add_argument("--concurrency", type=int, default=4, help="Max concurrent scraper threads/queries")
-    parser.add_argument("--max-retries", type=int, default=3, help="Max retries per scraper query on error")
+    parser.add_argument(
+        "--concurrency", type=int, default=4,
+        help="Max concurrent scraper threads/queries",
+    )
+    parser.add_argument(
+        "--max-retries", type=int, default=3,
+        help="Max retries per scraper query on error",
+    )
     parser.add_argument(
         "--lock-file",
         type=Path,

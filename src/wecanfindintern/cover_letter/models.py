@@ -46,5 +46,4 @@ class CoverLetterResponse(BaseModel):
 class CoverLetterExportRequest(BaseModel):
     body: str
     user_info: UserProfile = Field(default_factory=UserProfile)
-    date_str: str = "[Date]"
     format: Literal["docx", "pdf"] = "docx"

@@ -16,6 +16,14 @@ class Settings:
     @classmethod
     def from_env(cls) -> Settings:
         database_url = os.getenv("DATABASE_URL")
+        if not database_url and os.path.exists(".env"):
+            with open(".env", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+            database_url = os.getenv("DATABASE_URL")
         if not database_url:
             raise RuntimeError("DATABASE_URL is required")
         minimum = int(os.getenv("DB_POOL_MIN_SIZE", "2"))

@@ -68,6 +68,7 @@ def test_job_list_filters_recruiting_term_parsing() -> None:
 
 def test_job_list_filters_hourly_salary() -> None:
     from decimal import Decimal
+
     from wecanfindintern.api.models import JobListFilters
 
     filters = JobListFilters(hourly_salary_min=Decimal("25.50"), hourly_salary_max=Decimal("50.00"))

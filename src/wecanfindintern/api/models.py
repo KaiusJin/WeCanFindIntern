@@ -7,7 +7,7 @@ import binascii
 import json
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -53,7 +53,13 @@ class JobListFilters(BaseModel):
         if not value:
             return None
         v = value.strip().lower()
-        aliases = {"winter": "winter", "spring": "spring", "summer": "summer", "fall": "fall", "autumn": "fall"}
+        aliases = {
+            "winter": "winter",
+            "spring": "spring",
+            "summer": "summer",
+            "fall": "fall",
+            "autumn": "fall",
+        }
         return aliases.get(v, v)
 
     @model_validator(mode="after")
@@ -180,46 +186,6 @@ class JobFacetsResponse(BaseModel):
     recruiting_terms: list[FacetCount] = Field(default_factory=list)
     recruiting_seasons: list[FacetCount] = Field(default_factory=list)
     last_updated_at: datetime | None = None
-
-
-class IngestionRunResponse(BaseModel):
-    id: UUID
-    provider: str
-    sources: list[str]
-    query: dict[str, Any]
-    status: Literal["running", "succeeded", "partial", "failed"]
-    started_at: datetime
-    finished_at: datetime | None
-    fetched_count: int
-    created_count: int
-    merged_count: int
-    unchanged_count: int
-    failed_count: int
-    error_summary: str | None
-
-
-class CollectionCheckpointResponse(BaseModel):
-    source: str
-    status: Literal["idle", "running", "retry_wait", "succeeded", "exhausted"]
-    offset: int
-    attempts: int
-    pages_completed: int
-    records_seen: int
-    next_retry_at: datetime | None
-    last_error: str | None
-
-
-class CollectionPlanResponse(BaseModel):
-    id: UUID
-    name: str
-    enabled: bool
-    sites: list[str]
-    interval_seconds: int
-    next_run_at: datetime
-    last_started_at: datetime | None
-    last_completed_at: datetime | None
-    active_run_id: UUID | None
-    checkpoints: list[CollectionCheckpointResponse]
 
 
 def encode_cursor(published_at: datetime, row_id: int) -> str:

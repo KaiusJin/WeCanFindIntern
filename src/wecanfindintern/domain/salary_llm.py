@@ -17,7 +17,11 @@ from wecanfindintern.domain.salary import (
     salary_signal_context,
     validated_salary,
 )
-
+from wecanfindintern.llm.gateway import LLMError, complete_json
+from wecanfindintern.llm.prompts.salary import (
+    build_salary_system_prompt,
+    build_salary_user_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,89 +79,58 @@ def extract_salary_with_deepseek(
     if not api_key:
         return None
 
-    try:
-        from openai import OpenAI
-    except ImportError:
-        return None
-
     context = salary_signal_context(description)
     if not context:
         return None
-    schema = SalaryLLMResult.model_json_schema()
     default_currency = {"CA": "CAD", "US": "USD", "GB": "GBP"}.get(
         country_code or "", "USD"
     )
-    system_prompt = f"""
-You extract base salary from job descriptions and return one JSON object only.
-The JSON must conform exactly to this schema:
-{json.dumps(schema, separators=(",", ":"))}
-
-Rules:
-- Never estimate market salary and never invent missing values.
-- Extract base salary only. Ignore bonus, commission, equity, insurance, tuition,
-  reimbursement, company revenue, benefits, and percentages.
-- Treat "Salaried" or "Pay Type: Salaried" as yearly.
-- If a bare $ symbol is used, default to {default_currency} for this job.
-- Use a three-letter ISO currency code.
-- Evidence must be an exact short substring copied from the supplied text.
-- If no defensible salary exists, set found=false and all amount/currency/interval/evidence
-  fields to null, is_base_salary=false, and confidence to 1.
-
-Example JSON:
-{{"found":true,"minimum":61600,"maximum":113900,"currency":"CAD",
-"interval":"yearly","is_base_salary":true,"confidence":0.98,
-"evidence":"$61,600.00 - $113,900.00"}}
-""".strip()
-    user_prompt = (
-        f"Job title: {title or 'unknown'}\n"
-        f"Country code: {country_code or 'unknown'}\n"
-        f"Job description salary context:\n{context}"
+    system_prompt = build_salary_system_prompt(
+        default_currency,
+        json.dumps(SalaryLLMResult.model_json_schema(), separators=(",", ":")),
     )
-    client = OpenAI(
-        api_key=api_key,
-        base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
-        timeout=float(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "30")),
+    user_prompt = build_salary_user_prompt(
+        context,
+        title=title,
+        country_code=country_code,
     )
     for _ in range(2):
         try:
-            response = client.chat.completions.create(
-                model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+            result = complete_json(
+                provider="DeepSeek",
+                model_name=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+                api_key=api_key,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
                 response_format={"type": "json_object"},
-                max_tokens=500,
-                temperature=0,
+                timeout_seconds=float(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "30")),
+                max_retries=0,
             )
-            content = response.choices[0].message.content
-            if not content:
-                continue
-            result = SalaryLLMResult.model_validate_json(content)
+            parsed = SalaryLLMResult.model_validate(result.data)
         except (ValidationError, ValueError, IndexError) as error:
             logger.warning(
                 "DeepSeek returned an invalid salary JSON response (%s)",
                 type(error).__name__,
             )
             continue
-        except Exception as error:
+        except LLMError as error:
             logger.warning(
                 "DeepSeek salary extraction request failed (%s)",
                 type(error).__name__,
             )
             return None
 
-        if not result.found or not result.is_base_salary or result.confidence < 0.7:
+        if not parsed.found or not parsed.is_base_salary or parsed.confidence < 0.7:
             return None
-        if not result.interval or not result.currency or not result.evidence:
+        if not parsed.interval or not parsed.currency or not parsed.evidence:
             return None
-        if _normalize_evidence(result.evidence) not in _normalize_evidence(description):
+        if _normalize_evidence(parsed.evidence) not in _normalize_evidence(description):
             return None
         return validated_salary(
-            interval=result.interval,
-            minimum=result.minimum,
-            maximum=result.maximum,
-            currency=result.currency,
+            interval=parsed.interval,
+            minimum=parsed.minimum,
+            maximum=parsed.maximum,
+            currency=parsed.currency,
             source="llm_description",
         )
     return None

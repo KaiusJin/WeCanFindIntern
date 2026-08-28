@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from wecanfindintern.ats.models import AtsReviewRequest, AtsReviewResponse
@@ -12,7 +14,7 @@ ats_router = APIRouter(prefix="/api/v1/ats", tags=["ATS Resume Review"])
 
 
 @ats_router.post("/extract-pdf")
-async def extract_pdf(file: UploadFile = File(...)):
+async def extract_pdf(file: Annotated[UploadFile, File()]):
     """Extract plain text from uploaded PDF resume."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")

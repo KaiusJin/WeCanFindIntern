@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 from collections.abc import Iterable
 from contextlib import suppress
@@ -156,15 +157,12 @@ class NormalizedJob(BaseModel):
     date_posted: date | None = None
     employment_types: list[str] = Field(default_factory=list)
     is_remote: bool | None = None
-    seniority: str | None = None
     job_function: str | None = None
-    listing_type: str | None = None
     description: str | None = None
     contact_emails: list[str] = Field(default_factory=list)
     salary: Salary | None = None
     company: CompanyDetails = Field(default_factory=CompanyDetails)
     source_skills: list[str] = Field(default_factory=list)
-    experience_range: str | None = None
     vacancy_count: int | None = None
     work_from_home_type: str | None = None
     raw: dict[str, Any]
@@ -210,6 +208,42 @@ def scrape_and_normalize(query: JobSpyQuery) -> tuple[pd.DataFrame, ScrapeResult
         raw_row_count=len(stable_frame),
         jobs=jobs,
     )
+
+
+def scrape_checked(query: JobSpyQuery):
+    """Convert JobSpy's logged source failure into a retryable exception.
+
+    Some JobSpy scrapers log an HTTP/parsing error and return an empty DataFrame
+    instead of raising. A genuinely empty search has no error log and remains a
+    successful terminal page.
+    """
+
+    errors: list[str] = []
+
+    class JobSpyErrorCapture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            if record.levelno >= logging.ERROR and record.name.startswith("JobSpy"):
+                errors.append(record.getMessage())
+
+    handler = JobSpyErrorCapture()
+    root_logger = logging.getLogger()
+    jobspy_loggers = [
+        logging.getLogger(name)
+        for name in logging.root.manager.loggerDict
+        if name.startswith("JobSpy:")
+    ]
+    root_logger.addHandler(handler)
+    for logger in jobspy_loggers:
+        logger.addHandler(handler)
+    try:
+        frame, result = scrape_and_normalize(query)
+    finally:
+        root_logger.removeHandler(handler)
+        for logger in jobspy_loggers:
+            logger.removeHandler(handler)
+    if not result.jobs and errors:
+        raise RuntimeError("; ".join(errors[-3:]))
+    return frame, result
 
 
 def stabilize_jobspy_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -282,9 +316,7 @@ def normalize_record(record: dict[str, Any]) -> NormalizedJob:
         date_posted=optional_date(record.get("date_posted")),
         employment_types=split_multi_value(record.get("job_type")),
         is_remote=optional_bool(record.get("is_remote")),
-        seniority=optional_text(record.get("job_level")),
         job_function=optional_text(record.get("job_function")),
-        listing_type=optional_text(record.get("listing_type")),
         description=optional_text(record.get("description")),
         contact_emails=split_multi_value(record.get("emails")),
         salary=salary,
@@ -301,7 +333,6 @@ def normalize_record(record: dict[str, Any]) -> NormalizedJob:
             reviews_count=optional_int(record.get("company_reviews_count")),
         ),
         source_skills=split_multi_value(record.get("skills")),
-        experience_range=optional_text(record.get("experience_range")),
         vacancy_count=optional_int(record.get("vacancy_count")),
         work_from_home_type=optional_text(record.get("work_from_home_type")),
         raw=record,

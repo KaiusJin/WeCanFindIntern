@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 from uuid import UUID
 
 from psycopg_pool import AsyncConnectionPool
 
 from wecanfindintern.api.models import (
-    CollectionCheckpointResponse,
-    CollectionPlanResponse,
     FacetCount,
-    IngestionRunResponse,
     JobDetail,
     JobFacetsResponse,
     JobListFilters,
@@ -27,7 +25,9 @@ from wecanfindintern.api.models import (
 from wecanfindintern.domain.classification import normalize_tag
 from wecanfindintern.domain.jobs import normalize_company
 
-RUN_STATUS = {0: "running", 1: "succeeded", 2: "partial", 3: "failed"}
+FACETS_CACHE_TTL_SECONDS = 120
+_facets_cache_at = 0.0
+_facets_cache_payload: JobFacetsResponse | None = None
 
 JOB_SELECT = """
     j.id AS internal_id,
@@ -159,8 +159,7 @@ class JobReadRepository:
                            (SELECT max(finished_at) FROM ingestion_runs),
                            (SELECT max(started_at) FROM ingestion_runs),
                            (SELECT max(last_seen_at) FROM jobs),
-                           (SELECT max(first_seen_at) FROM jobs),
-                           (SELECT max(last_completed_at) FROM collection_plans)
+                           (SELECT max(first_seen_at) FROM jobs)
                        )
                    ) AS last_updated_at
             FROM jobs j
@@ -184,9 +183,13 @@ class JobReadRepository:
             LIMIT %s
         """
         async with self.pool.connection() as connection:
-            total_count_row = await (await connection.execute(total_count_sql, filter_parameters)).fetchone()
+            total_count_row = await (
+                await connection.execute(total_count_sql, filter_parameters)
+            ).fetchone()
             total_count = int(total_count_row["total"]) if total_count_row else 0
-            last_updated_at = total_count_row["last_updated_at"] if total_count_row else None
+            last_updated_at = (
+                total_count_row["last_updated_at"] if total_count_row else None
+            )
             rows = await (await connection.execute(sql, select_parameters)).fetchall()
 
         has_more = len(rows) > filters.limit
@@ -196,7 +199,13 @@ class JobReadRepository:
         if has_more and page_rows:
             last = page_rows[-1]
             next_cursor = encode_cursor(last["published_sort_at"], last["internal_id"])
-        return JobPage(items=items, total_count=total_count, last_updated_at=last_updated_at, next_cursor=next_cursor, has_more=has_more)
+        return JobPage(
+            items=items,
+            total_count=total_count,
+            last_updated_at=last_updated_at,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
 
     async def get_job(self, public_id: UUID) -> JobDetail | None:
         sql = f"""
@@ -258,6 +267,14 @@ class JobReadRepository:
         )
 
     async def job_facets(self) -> JobFacetsResponse:
+        global _facets_cache_at, _facets_cache_payload
+        now = time.monotonic()
+        if (
+            _facets_cache_payload is not None
+            and now - _facets_cache_at < FACETS_CACHE_TTL_SECONDS
+        ):
+            return _facets_cache_payload
+
         async with self.pool.connection() as connection:
             row = await (
                 await connection.execute(
@@ -313,11 +330,18 @@ class JobReadRepository:
                                GROUP BY company_name LIMIT 100) grouped) AS companies,
                         (SELECT coalesce(jsonb_agg(item ORDER BY (item->>'count')::int DESC,
                                                             item->>'value'), '[]')
-                         FROM (SELECT jsonb_build_object('value', concat(initcap(recruiting_season), ' ', recruiting_year),
-                                                        'count', count(*)) AS item
-                               FROM jobs
-                               WHERE status = 1 AND recruiting_season IS NOT NULL AND recruiting_year IS NOT NULL
-                                GROUP BY recruiting_season, recruiting_year) grouped) AS recruiting_terms,
+                         FROM (
+                             SELECT jsonb_build_object(
+                                 'value',
+                                 concat(initcap(recruiting_season), ' ', recruiting_year),
+                                 'count', count(*)
+                             ) AS item
+                             FROM jobs
+                             WHERE status = 1
+                               AND recruiting_season IS NOT NULL
+                               AND recruiting_year IS NOT NULL
+                             GROUP BY recruiting_season, recruiting_year
+                         ) grouped) AS recruiting_terms,
                         (SELECT coalesce(jsonb_agg(item ORDER BY (item->>'count')::int DESC,
                                                             item->>'value'), '[]')
                          FROM (SELECT jsonb_build_object('value', recruiting_season,
@@ -329,14 +353,13 @@ class JobReadRepository:
                                 (SELECT max(finished_at) FROM ingestion_runs),
                                 (SELECT max(started_at) FROM ingestion_runs),
                                 (SELECT max(last_seen_at) FROM jobs),
-                                (SELECT max(first_seen_at) FROM jobs),
-                                (SELECT max(last_completed_at) FROM collection_plans)
+                                (SELECT max(first_seen_at) FROM jobs)
                             )
                         ) AS last_updated_at
                     """
                 )
             ).fetchone()
-        return JobFacetsResponse(
+        response = JobFacetsResponse(
             last_updated_at=row["last_updated_at"] if row else None,
             **{
                 key: [FacetCount.model_validate(item) for item in row[key]]
@@ -355,105 +378,9 @@ class JobReadRepository:
                 )
             }
         )
-
-    async def get_ingestion_run(self, public_id: UUID) -> IngestionRunResponse | None:
-        async with self.pool.connection() as connection:
-            row = await (
-                await connection.execute(
-                    """
-                    SELECT public_id, provider, sources, query, status, started_at, finished_at,
-                           fetched_count, created_count, merged_count, unchanged_count,
-                           failed_count, error_summary
-                    FROM ingestion_runs
-                    WHERE public_id = %s
-                    """,
-                    (public_id,),
-                )
-            ).fetchone()
-        if row is None:
-            return None
-        return IngestionRunResponse(
-            id=row["public_id"],
-            provider=row["provider"],
-            sources=row["sources"],
-            query=row["query"],
-            status=RUN_STATUS[row["status"]],
-            started_at=row["started_at"],
-            finished_at=row["finished_at"],
-            fetched_count=row["fetched_count"],
-            created_count=row["created_count"],
-            merged_count=row["merged_count"],
-            unchanged_count=row["unchanged_count"],
-            failed_count=row["failed_count"],
-            error_summary=row["error_summary"],
-        )
-
-    async def list_collection_plans(self) -> list[CollectionPlanResponse]:
-        async with self.pool.connection() as connection:
-            rows = await (
-                await connection.execute(
-                    """
-                    SELECT p.public_id, p.name, p.enabled, p.sites,
-                           p.interval_seconds, p.next_run_at, p.last_started_at,
-                           p.last_completed_at, r.public_id AS active_run_public_id,
-                           coalesce(
-                               jsonb_agg(
-                                   jsonb_build_object(
-                                       'source', c.source,
-                                       'status', c.status,
-                                       'offset', c.offset_value,
-                                       'attempts', c.attempts,
-                                       'pages_completed', c.pages_completed,
-                                       'records_seen', c.records_seen,
-                                       'next_retry_at', c.next_retry_at,
-                                       'last_error', c.last_error
-                                   ) ORDER BY c.source
-                               ) FILTER (WHERE c.source IS NOT NULL),
-                               '[]'::jsonb
-                           ) AS checkpoints
-                    FROM collection_plans p
-                    LEFT JOIN ingestion_runs r ON r.id = p.active_run_id
-                    LEFT JOIN collection_checkpoints c ON c.plan_id = p.id
-                    GROUP BY p.id, r.public_id
-                    ORDER BY p.name
-                    """
-                )
-            ).fetchall()
-        status_names = {
-            0: "idle",
-            1: "running",
-            2: "retry_wait",
-            3: "succeeded",
-            4: "exhausted",
-        }
-        return [
-            CollectionPlanResponse(
-                id=row["public_id"],
-                name=row["name"],
-                enabled=row["enabled"],
-                sites=row["sites"],
-                interval_seconds=row["interval_seconds"],
-                next_run_at=row["next_run_at"],
-                last_started_at=row["last_started_at"],
-                last_completed_at=row["last_completed_at"],
-                active_run_id=row["active_run_public_id"],
-                checkpoints=[
-                    CollectionCheckpointResponse(
-                        source=item["source"],
-                        status=status_names[item["status"]],
-                        offset=item["offset"],
-                        attempts=item["attempts"],
-                        pages_completed=item["pages_completed"],
-                        records_seen=item["records_seen"],
-                        next_retry_at=item["next_retry_at"],
-                        last_error=item["last_error"],
-                    )
-                    for item in row["checkpoints"]
-                ],
-            )
-            for row in rows
-        ]
-
+        _facets_cache_at = now
+        _facets_cache_payload = response
+        return response
 
 def job_list_item(row: dict[str, Any]) -> JobListItem:
     salary = None
