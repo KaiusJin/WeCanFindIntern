@@ -220,6 +220,31 @@ button {
   display: block;
   margin-top: 12px;
 }
+.cl-review-card { display: grid; gap: 5px; margin-bottom: 16px; padding: 11px 13px; border: 1px solid #dfe3e8; border-radius: 9px; font-size: 12px; line-height: 1.45; }
+.cl-review-card span { color: #59636e; }
+.cl-review-card ul { margin: 3px 0 0 17px; padding: 0; color: #59636e; }
+.cl-review-card.approved { background: #edf8f1; border-color: #b8e1c5; color: #176b45; }
+.cl-review-card.warning { background: #fff7e5; border-color: #efd48b; color: #7d5b0b; }
+.cl-review-card.unavailable { background: #f4f5f6; color: #59636e; }
+.cl-contact-section {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.cl-contact-section .career-config-grid {
+  margin-bottom: 0;
+}
+.subfield-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
 .profile-confidence { font-size: 10px; color: #55705e; background: #eaf6ee; padding: 3px 7px; border-radius: 999px; }
 .profile-section-empty { border: 1px dashed #d8dce1; border-radius: 9px; padding: 18px; color: #8a929d; font-size: 12px; text-align: center; }
 .profile-save-footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 20px; }
@@ -1139,8 +1164,8 @@ main {
 
 .career-workspace {
   display: grid;
-  gap: 32px;
-  grid-template-columns: 360px 1fr;
+  gap: 28px;
+  grid-template-columns: minmax(360px, 420px) 1fr;
   align-items: start;
   margin-top: 0;
 }

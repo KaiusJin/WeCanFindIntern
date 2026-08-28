@@ -338,7 +338,7 @@ async function openJob(jobId) {
     if (!response.ok) throw new Error("Could not load job details");
     const job = await response.json();
     const fullJd = `${job.title || "Role"} at ${job.company_name || "Company"}\n\nLocation: ${job.location?.display_name || "Unspecified"}\nWork Mode: ${workModeLabel(job.work_mode)}\nRecruiting Term: ${job.recruiting_term?.display_name || "Unspecified"}\n\nDescription:\n${job.description || ""}`;
-    
+
     // Store current job context for quick AI actions
     state.activeJobContext = {
       id: job.id,
@@ -513,7 +513,7 @@ function loadSettings() {
       const parsed = JSON.parse(saved);
       Object.assign(aiSettings, parsed);
     }
-  } catch (_) {}
+  } catch (_) { }
 
   const modelEl = $("#setting-selected-model");
   if (modelEl) modelEl.value = aiSettings.selectedModel || "Gemini:gemini-3.7-flash";
@@ -538,7 +538,7 @@ function saveSettings() {
 
   try {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(aiSettings));
-  } catch (_) {}
+  } catch (_) { }
 
   const feedback = $("#settings-save-feedback");
   if (feedback) {
@@ -1008,6 +1008,9 @@ $("#clear-interview")?.addEventListener("click", () => {
 // SECTION 4: COVER LETTER GENERATOR & EXPORT
 // =========================================================
 
+let coverLetterProfile = null;
+let coverLetterProgressTimer = null;
+
 function profileToCoverLetterText(profile) {
   const lines = [];
   const basics = profile?.basics || {};
@@ -1035,6 +1038,7 @@ async function loadCoverLetterProfile() {
     const response = await fetch("/api/v1/profile");
     if (!response.ok) throw new Error("Could not load Profile.");
     const profile = await response.json();
+    coverLetterProfile = profile;
     const text = profileToCoverLetterText(profile);
     $("#cl-resume-text").value = text;
     if (status) {
@@ -1044,6 +1048,67 @@ async function loadCoverLetterProfile() {
     if (status) status.textContent = error.message;
     $("#cl-resume-text").value = "";
   }
+}
+
+function coverLetterUserInfo() {
+  const basics = coverLetterProfile?.basics || {};
+  const usePdf = $("input[name='cl-resume-source'][value='pdf']")?.checked;
+  const value = (id, fallback) => usePdf ? ($(`#${id}`)?.value.trim() || fallback) : fallback;
+  return {
+    full_name: value("cl-full-name", basics.full_name || ""),
+    email: value("cl-email", basics.email || ""),
+    phone: value("cl-phone", basics.phone || ""),
+    linkedin: value("cl-linkedin", basics.linkedin_url || basics.github_url || basics.portfolio_url || ""),
+    address: [basics.city, basics.region, basics.country].filter(Boolean).join(", "),
+  };
+}
+
+function validateCoverLetterInputs() {
+  const isPdf = $("input[name='cl-resume-source'][value='pdf']")?.checked;
+  const resumeText = $("#cl-resume-text").value.trim();
+  const jdText = $("#cl-jd-text").value.trim();
+  if (isPdf && !$("#cl-resume-pdf")?.files?.length) {
+    alert("Upload a resume PDF before generating the cover letter.");
+    return false;
+  }
+  if (!resumeText) {
+    alert(isPdf ? "Extract your resume PDF before generating the cover letter." : "Your Profile has no resume content yet.");
+    return false;
+  }
+  if (!jdText) {
+    alert("Enter a Target Job Description before generating the cover letter.");
+    return false;
+  }
+  const contact = coverLetterUserInfo();
+  const missing = [["full_name", "full name"], ["email", "email"], ["phone", "phone"], ["linkedin", "LinkedIn or portfolio"]]
+    .filter(([field]) => !contact[field]);
+  if (missing.length) {
+    const location = isPdf ? "the Contact Details form" : "your Profile";
+    alert(`Complete ${missing.map(([, label]) => label).join(", ")} in ${location} before generating the cover letter.`);
+    return false;
+  }
+  return true;
+}
+
+function startCoverLetterProgress() {
+  const message = $("#cl-loading-message");
+  let stage = 0;
+  const stages = [
+    "Writer AI is drafting your cover letter…",
+    "Reviewer AI is checking every factual claim…",
+    "If rejected, Writer AI is revising the draft (up to 5 attempts)…",
+  ];
+  if (message) message.textContent = stages[stage];
+  clearInterval(coverLetterProgressTimer);
+  coverLetterProgressTimer = setInterval(() => {
+    stage = (stage + 1) % stages.length;
+    if (message) message.textContent = stages[stage];
+  }, 2200);
+}
+
+function stopCoverLetterProgress() {
+  clearInterval(coverLetterProgressTimer);
+  coverLetterProgressTimer = null;
 }
 
 async function extractCoverLetterPdf(file) {
@@ -1068,7 +1133,11 @@ document.querySelectorAll("input[name='cl-resume-source']").forEach((input) => i
   const isPdf = event.target.value === "pdf";
   $("#cl-profile-source").hidden = isPdf;
   $("#cl-pdf-source").hidden = !isPdf;
-  if (!isPdf) loadCoverLetterProfile();
+  $("#cl-contact-section").hidden = !isPdf;
+  if (isPdf) {
+    $("#cl-resume-text").value = "";
+    $("#cl-file-label").textContent = "Click or drag & drop resume PDF";
+  } else loadCoverLetterProfile();
 }));
 $("#cl-resume-pdf")?.addEventListener("change", (event) => extractCoverLetterPdf(event.target.files?.[0]));
 loadCoverLetterProfile();
@@ -1076,10 +1145,7 @@ loadCoverLetterProfile();
 $("#btn-generate-cl")?.addEventListener("click", async () => {
   const resumeText = $("#cl-resume-text").value.trim();
   const jdText = $("#cl-jd-text").value.trim();
-  if (!resumeText || !jdText) {
-    alert("Please provide both candidate resume/achievements and target job description.");
-    return;
-  }
+  if (!validateCoverLetterInputs()) return;
 
   let config;
   try {
@@ -1093,6 +1159,8 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
   $("#cl-loading").hidden = false;
   $("#cl-result-card").hidden = true;
   $("#cl-export-group").hidden = true;
+  $("#cl-review-card").hidden = true;
+  startCoverLetterProgress();
 
   try {
     const res = await fetch("/api/v1/cover-letter/generate", {
@@ -1105,21 +1173,46 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
         model_name: config.model_name,
         api_key: config.api_key,
         user_info: {
-          full_name: $("#cl-full-name").value.trim(),
-          email: $("#cl-email").value.trim(),
-          phone: $("#cl-phone").value.trim(),
-          linkedin: $("#cl-linkedin").value.trim(),
+          ...coverLetterUserInfo(),
         },
+        job_title: $("#cl-job-title")?.value.trim() || "",
+        company_name: $("#cl-company-name")?.value.trim() || "",
+        company_location: $("#cl-company-location")?.value.trim() || "",
+        hiring_manager: $("#cl-hiring-manager")?.value.trim() || "",
+        company_information: $("#cl-company-info")?.value.trim() || "",
       }),
     });
+    if (!res.ok) {
+      const errText = await res.text();
+      let msg = errText;
+      try {
+        const json = JSON.parse(errText);
+        if (json.detail) msg = json.detail;
+        else if (json.error) msg = json.error;
+      } catch { }
+      throw new Error(msg || `Server error (${res.status})`);
+    }
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Generation failed");
 
     $("#cl-editor-text").value = data.text;
+    const reviewCard = $("#cl-review-card");
+    if (reviewCard) {
+      const approved = data.review_approved === true;
+      const rejected = data.review_approved === false;
+      const attempts = data.review_attempts ? ` (${data.review_attempts}/5 attempts)` : "";
+      const title = approved ? `Reviewer AI approved the letter${attempts}` : rejected ? `Reviewer AI rejected the final draft${attempts}` : "Reviewer AI could not complete the check";
+      const details = [...(data.review_unsupported_claims || []), ...(data.review_issues || [])];
+      reviewCard.hidden = false;
+      reviewCard.className = `cl-review-card ${approved ? "approved" : rejected ? "warning" : "unavailable"}`;
+      reviewCard.innerHTML = `<strong>${title}</strong><span>${escapeHtml(data.review_summary || "Review the letter before sending.")}</span>${details.length ? `<ul>${details.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}`;
+    }
+    stopCoverLetterProgress();
     $("#cl-loading").hidden = true;
     $("#cl-result-card").hidden = false;
     $("#cl-export-group").hidden = false;
   } catch (err) {
+    stopCoverLetterProgress();
     $("#cl-loading").hidden = true;
     $("#cl-empty").hidden = false;
     alert(`Cover Letter Error: ${err.message}`);
@@ -1132,10 +1225,7 @@ async function downloadExport(format) {
   const payload = {
     body: bodyText,
     user_info: {
-      full_name: $("#cl-full-name").value.trim(),
-      email: $("#cl-email").value.trim(),
-      phone: $("#cl-phone").value.trim(),
-      linkedin: $("#cl-linkedin").value.trim(),
+      ...coverLetterUserInfo(),
     },
     format,
   };
@@ -1169,6 +1259,7 @@ $("#clear-cover-letter")?.addEventListener("click", () => {
   if (profileRadio) profileRadio.checked = true;
   $("#cl-profile-source").hidden = false;
   $("#cl-pdf-source").hidden = true;
+  $("#cl-contact-section").hidden = true;
   const fileInput = $("#cl-resume-pdf");
   if (fileInput) fileInput.value = "";
   const fileLabel = $("#cl-file-label");
@@ -1176,6 +1267,16 @@ $("#clear-cover-letter")?.addEventListener("click", () => {
   $("#cl-resume-text").value = "";
   $("#cl-jd-text").value = "";
   $("#cl-editor-text").value = "";
+  $("#cl-review-card").hidden = true;
+  $("#cl-full-name").value = "";
+  $("#cl-email").value = "";
+  $("#cl-phone").value = "";
+  $("#cl-linkedin").value = "";
+  $("#cl-job-title").value = "";
+  $("#cl-company-name").value = "";
+  $("#cl-company-location").value = "";
+  $("#cl-hiring-manager").value = "";
+  $("#cl-company-info").value = "";
   $("#cl-empty").hidden = false;
   $("#cl-loading").hidden = true;
   $("#cl-result-card").hidden = true;
@@ -1472,10 +1573,10 @@ async function loadTrackerTimeline(appId) {
   const events = await response.json();
   root.innerHTML = events.length
     ? events.map((event) => {
-        const typeClass = escapeHtml(event.event_type || "note");
-        const stageKey = (event.title || "").toLowerCase().replace(/[^a-z]/g, "");
-        const stageClass = `stage-${escapeHtml(stageKey)}`;
-        return `<article class="timeline-item">
+      const typeClass = escapeHtml(event.event_type || "note");
+      const stageKey = (event.title || "").toLowerCase().replace(/[^a-z]/g, "");
+      const stageClass = `stage-${escapeHtml(stageKey)}`;
+      return `<article class="timeline-item">
           <div class="timeline-spine">
             <span class="timeline-marker event-${typeClass} ${stageClass}"></span>
           </div>
@@ -1486,7 +1587,7 @@ async function loadTrackerTimeline(appId) {
             </div>
           </div>
         </article>`;
-      }).join("")
+    }).join("")
     : `<p class="tracker-view-note">No progress recorded yet.</p>`;
 }
 

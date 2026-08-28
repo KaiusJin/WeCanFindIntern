@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260827-decoupled-v14" />
+    <link rel="stylesheet" href="/styles.css?v=20260828-noborder-v19" />
   </head>
   <body>
     <header class="topbar">
@@ -429,8 +429,9 @@
               <button id="clear-cover-letter" class="text-button" type="button">Reset</button>
             </div>
 
+            <!-- Candidate Source Switcher -->
             <div class="field-group">
-              <span class="field-label">Candidate source</span>
+              <span class="field-label">Candidate Source</span>
               <div class="cl-source-options" role="radiogroup" aria-label="Candidate source">
                 <label><input type="radio" name="cl-resume-source" value="profile" checked /> Use Profile</label>
                 <label><input type="radio" name="cl-resume-source" value="pdf" /> Upload Resume</label>
@@ -438,7 +439,7 @@
               <div id="cl-profile-source" class="cl-source-panel">
                 <div class="cl-profile-badge">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                  <span id="cl-profile-source-status">Loading saved Profile…</span>
+                  <span id="cl-profile-source-status">Using saved Profile as candidate context</span>
                 </div>
               </div>
               <div id="cl-pdf-source" class="cl-source-panel" hidden>
@@ -452,35 +453,36 @@
                   </div>
                 </div>
               </div>
-              <label class="field-label cl-resume-preview-label" for="cl-resume-text">Candidate text preview</label>
-              <textarea id="cl-resume-text" class="career-textarea" rows="7" placeholder="Your Profile or extracted resume text will appear here…"></textarea>
+              <div id="cl-contact-section" class="cl-contact-section" hidden>
+                <span class="field-label">Contact Details</span>
+                <div class="career-config-grid">
+                  <div><label class="subfield-label" for="cl-full-name">Full Name</label><input type="text" id="cl-full-name" class="career-input" placeholder="e.g. Alex Chen" /></div>
+                  <div><label class="subfield-label" for="cl-email">Email</label><input type="email" id="cl-email" class="career-input" placeholder="e.g. alex@example.com" /></div>
+                  <div><label class="subfield-label" for="cl-phone">Phone</label><input type="text" id="cl-phone" class="career-input" placeholder="e.g. +1 (555) 019-2834" /></div>
+                  <div><label class="subfield-label" for="cl-linkedin">LinkedIn / Portfolio</label><input type="text" id="cl-linkedin" class="career-input" placeholder="e.g. linkedin.com/in/alex" /></div>
+                </div>
+              </div>
+              <label class="field-label cl-resume-preview-label" for="cl-resume-text">Candidate Context Preview</label>
+              <textarea id="cl-resume-text" class="career-textarea" rows="4" placeholder="Your Profile or extracted resume text will appear here…"></textarea>
             </div>
 
+            <!-- Target Job Description -->
             <div class="field-group">
-              <label class="field-label" for="cl-jd-text">Target Job Description</label>
-              <textarea id="cl-jd-text" class="career-textarea" rows="5" placeholder="Job description details..."></textarea>
+              <label class="field-label" for="cl-jd-text">Target Job Description *</label>
+              <textarea id="cl-jd-text" class="career-textarea" rows="6" placeholder="Paste the target job description and requirements here…"></textarea>
             </div>
 
-            <div class="career-config-grid">
-              <div>
-                <label class="field-label" for="cl-full-name">Full Name</label>
-                <input type="text" id="cl-full-name" class="career-input" placeholder="e.g. Alex Chen" />
+            <div class="profile-divider cl-optional-divider"><span>Additional Details</span></div>
+            <div class="cl-optional-section">
+              <p class="muted-copy">Add job or company details to make the letter more specific.</p>
+              <div class="career-config-grid">
+                <div><label class="field-label" for="cl-job-title">Job Title</label><input type="text" id="cl-job-title" class="career-input" placeholder="e.g. Software Engineering Intern" /></div>
+                <div><label class="field-label" for="cl-company-name">Company Name</label><input type="text" id="cl-company-name" class="career-input" placeholder="e.g. Datadog" /></div>
+                <div><label class="field-label" for="cl-company-location">Company Location</label><input type="text" id="cl-company-location" class="career-input" placeholder="e.g. Toronto, ON" /></div>
+                <div><label class="field-label" for="cl-hiring-manager">Hiring Manager / Team</label><input type="text" id="cl-hiring-manager" class="career-input" placeholder="e.g. Engineering Team" /></div>
               </div>
-              <div>
-                <label class="field-label" for="cl-email">Email Address</label>
-                <input type="email" id="cl-email" class="career-input" placeholder="e.g. alex@example.com" />
-              </div>
-            </div>
-
-            <div class="career-config-grid">
-              <div>
-                <label class="field-label" for="cl-phone">Phone Number</label>
-                <input type="text" id="cl-phone" class="career-input" placeholder="e.g. +1 (555) 019-2834" />
-              </div>
-              <div>
-                <label class="field-label" for="cl-linkedin">LinkedIn / Portfolio</label>
-                <input type="text" id="cl-linkedin" class="career-input" placeholder="e.g. linkedin.com/in/alex" />
-              </div>
+              <label class="field-label" for="cl-company-info">Company Information</label>
+              <textarea id="cl-company-info" class="career-textarea" rows="3" placeholder="Product, mission, or team details…"></textarea>
             </div>
 
             <button id="btn-generate-cl" class="primary-button career-btn" type="button">
@@ -510,11 +512,12 @@
 
             <div id="cl-loading" class="loading-state" hidden>
               <div class="spinner"></div>
-              <span>Drafting personalized cover letter…</span>
+              <span id="cl-loading-message">Writer AI is drafting your cover letter…</span>
             </div>
 
             <div id="cl-result-card" class="career-card" hidden>
-              <label class="field-label" for="cl-editor-text">Live Editable Letter (Changes update downloads automatically)</label>
+              <div id="cl-review-card" class="cl-review-card" hidden></div>
+              <label class="field-label" for="cl-editor-text">Live Editable Letter (Exports will include your edits)</label>
               <textarea id="cl-editor-text" class="career-textarea cl-editor" rows="18"></textarea>
             </div>
           </div>
@@ -806,6 +809,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script src="/app.js?v=20260827-decoupled-v14" defer></script>
+    <script src="/app.js?v=20260828-noborder-v19" defer></script>
   </body>
 </html>
