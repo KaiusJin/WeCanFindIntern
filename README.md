@@ -21,6 +21,9 @@ JobSpy 源码位于 `vendor/JobSpy`，当前版本与提交记录见
 岗位分类、标签、薪资换算和前端展示字段规范见
 [`docs/JOB_DATA_TAXONOMY.md`](docs/JOB_DATA_TAXONOMY.md)。
 
+Profile、英文 PDF/LaTeX 简历导入、解析审核和上传安全边界见
+[`docs/PROFILE.md`](docs/PROFILE.md)。
+
 ## 环境准备
 
 需要 Python 3.10 或更高版本。

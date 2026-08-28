@@ -38,6 +38,7 @@ JobSpy 多来源抓取
 | 13. 申请跟踪 | 支持申请记录、阶段、备注、统计和职位详情关联 | `migrations/0009_application_tracker.sql`、`src/wecanfindintern/tracker/` | 已实现，仍需完善用户隔离 |
 | 14. 技术文档 | 已有 JobSpy 集成、数据 API、岗位分类/展示规范和项目状态文档 | `docs/` | 已完成 |
 | 15. 搜索和浏览页面 | 全英文搜索框、筛选器、职位卡片、详情弹窗、分页加载、原职位跳转和申请跟踪入口 | `web/`、`src/wecanfindintern/api/app.py` | 已完成 |
+| 16. Profile 与简历导入 | Profile 编辑、英文文本型 PDF/LaTeX 安全上传、结构化解析、审核确认、版本和原件管理 | `src/wecanfindintern/profile/`、`api/routes/profile.py`、`migrations/0011_user_profile.sql`、`web/` | 已完成本地 MVP |
 
 ## 三、当前做得怎么样
 
@@ -101,7 +102,7 @@ JobSpy 多来源抓取
 
 ### P2：加入简历和推荐能力
 
-- [ ] 简历上传、文本解析和用户技能画像。
+- [x] 英文文本型 PDF/LaTeX 简历上传、结构化解析、审核确认和用户技能画像。
 - [ ] 简历与 JD 的结构化匹配评分。
 - [ ] 缺失技能、推荐原因和技能提升建议。
 - [ ] 语义检索、候选岗位排序和推荐解释。
