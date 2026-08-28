@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260827-clean-v9" />
+    <link rel="stylesheet" href="/styles.css?v=20260827-decoupled-v14" />
   </head>
   <body>
     <header class="topbar">
@@ -27,6 +27,10 @@
           <button class="nav-tab" data-tab="tab-cover-letter" type="button">
             <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
             <span>Cover Letter</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-profile" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            <span>Profile</span>
           </button>
           <button class="nav-tab" data-tab="tab-tracker" type="button">
             <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14l2 2 4-4"></path></svg>
@@ -426,8 +430,30 @@
             </div>
 
             <div class="field-group">
-              <label class="field-label" for="cl-resume-text">Candidate Resume / Achievements</label>
-              <textarea id="cl-resume-text" class="career-textarea" rows="5" placeholder="Candidate skills, background, and key project metrics..."></textarea>
+              <span class="field-label">Candidate source</span>
+              <div class="cl-source-options" role="radiogroup" aria-label="Candidate source">
+                <label><input type="radio" name="cl-resume-source" value="profile" checked /> Use Profile</label>
+                <label><input type="radio" name="cl-resume-source" value="pdf" /> Upload Resume</label>
+              </div>
+              <div id="cl-profile-source" class="cl-source-panel">
+                <div class="cl-profile-badge">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  <span id="cl-profile-source-status">Loading saved Profile…</span>
+                </div>
+              </div>
+              <div id="cl-pdf-source" class="cl-source-panel" hidden>
+                <div class="file-dropzone" id="cl-dropzone">
+                  <input id="cl-resume-pdf" class="file-input" type="file" accept="application/pdf,.pdf" />
+                  <div class="dropzone-content">
+                    <span class="dropzone-icon">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                    </span>
+                    <span class="dropzone-text" id="cl-file-label">Click or drag & drop resume PDF</span>
+                  </div>
+                </div>
+              </div>
+              <label class="field-label cl-resume-preview-label" for="cl-resume-text">Candidate text preview</label>
+              <textarea id="cl-resume-text" class="career-textarea" rows="7" placeholder="Your Profile or extracted resume text will appear here…"></textarea>
             </div>
 
             <div class="field-group">
@@ -471,7 +497,6 @@
               <div id="cl-export-group" class="export-btn-group" hidden>
                 <button class="secondary-button" id="btn-export-docx" type="button">Word (.docx)</button>
                 <button class="secondary-button" id="btn-export-pdf" type="button">PDF (.pdf)</button>
-                <button class="secondary-button" id="btn-export-tex" type="button">LaTeX (.tex)</button>
               </div>
             </div>
 
@@ -496,7 +521,46 @@
         </section>
       </div>
 
-      <!-- TAB 5: APPLICATION TRACKER -->
+      <!-- TAB 5: PROFILE -->
+      <div id="tab-profile" class="tab-pane" hidden>
+        <section class="hero profile-hero">
+          <p class="eyebrow">CANDIDATE PROFILE / 05</p>
+          <h1>Turn your resume into reusable career data.</h1>
+          <p class="hero-copy">Import an English text-based PDF or LaTeX source, review every field, and keep one profile for matching and applications.</p>
+        </section>
+        <section class="profile-workspace">
+          <aside class="profile-import-panel">
+            <div class="profile-panel-head"><div><p class="eyebrow">RESUME IMPORT</p><h2>Source document</h2></div><span class="profile-security-pill">Strict validation</span></div>
+            <p class="profile-help">PDF must contain selectable English text. Scans, encrypted PDFs, active content, embedded files, and disguised extensions are rejected. LaTeX is read as text and never compiled.</p>
+            <label class="profile-dropzone" for="profile-resume-file"><input id="profile-resume-file" type="file" accept=".pdf,.tex,application/pdf,application/x-tex,text/x-tex" hidden /><strong>Choose PDF or .tex</strong><span>Maximum 8 MB PDF / 1 MB LaTeX</span></label>
+            <button id="profile-upload-file" class="primary-button profile-wide-button" type="button">Parse selected resume</button>
+            <div class="profile-divider"><span>or paste LaTeX source</span></div>
+            <textarea id="profile-latex-source" class="career-textarea profile-code-input" rows="8" spellcheck="false" placeholder="\\documentclass{article}&#10;\\begin{document}&#10;...&#10;\\end{document}"></textarea>
+            <button id="profile-parse-latex" class="secondary-button profile-wide-button" type="button">Parse LaTeX source</button>
+            <div id="profile-import-status" class="profile-status" hidden></div>
+            <div class="profile-resume-list-head"><h3>Resume history</h3><button id="profile-refresh-resumes" class="text-button" type="button">Refresh</button></div>
+            <div id="profile-resume-list" class="profile-resume-list"><p class="muted-copy">No resumes uploaded yet.</p></div>
+          </aside>
+          <div class="profile-editor-panel">
+            <div class="profile-editor-toolbar"><div><p class="eyebrow">STRUCTURED PROFILE</p><h2 id="profile-editor-title">Your profile</h2><p id="profile-completion-label" class="muted-copy">0% complete</p></div><div class="profile-toolbar-actions"><a class="secondary-button" href="/api/v1/profile/export" target="_blank" rel="noreferrer">Export JSON</a><button id="profile-save" class="primary-button" type="button">Save profile</button></div></div>
+            <div class="profile-progress"><span id="profile-progress-fill"></span></div>
+            <div id="profile-draft-banner" class="profile-draft-banner" hidden><div><strong>Resume draft ready for review</strong><span>Check extracted fields before confirming. Saved data has not been overwritten.</span></div><button id="profile-discard-draft" class="secondary-button compact-button" type="button">Discard draft</button></div>
+            <section class="profile-section-card">
+              <div class="profile-section-heading"><div><span>01</span><h3>Basic information</h3></div></div>
+              <div class="profile-basic-grid">
+                <label><span>Full name</span><input id="profile-full-name" class="career-input" type="text" /></label><label><span>Preferred name</span><input id="profile-preferred-name" class="career-input" type="text" /></label>
+                <label><span>Email</span><input id="profile-email" class="career-input" type="email" /></label><label><span>Phone</span><input id="profile-phone" class="career-input" type="text" /></label>
+                <label><span>City</span><input id="profile-city" class="career-input" type="text" /></label><label><span>Region</span><input id="profile-region" class="career-input" type="text" /></label><label><span>Country</span><input id="profile-country" class="career-input" type="text" /></label>
+                <label><span>LinkedIn</span><input id="profile-linkedin" class="career-input" type="url" /></label><label><span>GitHub</span><input id="profile-github" class="career-input" type="url" /></label><label><span>Portfolio</span><input id="profile-portfolio" class="career-input" type="url" /></label>
+              </div>
+            </section>
+            <div id="profile-repeat-sections"></div>
+            <div class="profile-save-footer"><span id="profile-save-feedback" class="settings-save-feedback" hidden>Saved</span><button id="profile-save-bottom" class="primary-button" type="button">Save profile</button></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- TAB 6: APPLICATION TRACKER -->
       <div id="tab-tracker" class="tab-pane" hidden>
         <section class="hero tracker-hero">
           <div>
@@ -694,16 +758,15 @@
         <div class="field-group">
           <label class="field-label" for="setting-selected-model">AI Model</label>
           <select id="setting-selected-model" class="career-select">
+            <optgroup label="Google Gemini">
+              <option value="Gemini:gemini-3.7-flash" selected>Gemini 3.7 Flash</option>
+              <option value="Gemini:gemini-3.6-flash">Gemini 3.6 Flash</option>
+              <option value="Gemini:gemini-3.5-flash">Gemini 3.5 Flash</option>
+              <option value="Gemini:gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
+            </optgroup>
             <optgroup label="DeepSeek">
-              <option value="DeepSeek:deepseek-v4-flash">DeepSeek V4 Flash (Ultra Fast / Low Latency)</option>
               <option value="DeepSeek:deepseek-chat">DeepSeek V3 (Chat)</option>
               <option value="DeepSeek:deepseek-reasoner">DeepSeek R1 (Reasoner)</option>
-            </optgroup>
-            <optgroup label="Google Gemini">
-              <option value="Gemini:gemini-3.7-flash" selected>Gemini 3.7 Flash (Default / Fast)</option>
-              <option value="Gemini:gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="Gemini:gemini-2.0-flash">Gemini 2.0 Flash</option>
-              <option value="Gemini:gemini-1.5-pro">Gemini 1.5 Pro</option>
             </optgroup>
             <optgroup label="OpenAI">
               <option value="OpenAI:gpt-4o-mini">OpenAI GPT-4o-mini</option>
@@ -743,6 +806,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script src="/app.js?v=20260827-clean-v9" defer></script>
+    <script src="/app.js?v=20260827-decoupled-v14" defer></script>
   </body>
 </html>
