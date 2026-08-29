@@ -11,9 +11,11 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from wecanfindintern.domain.normalization import to_decimal
 from wecanfindintern.tracker.models import (
     ApplicationStage,
     TrackedApplication,
+    TrackedExternalJobState,
     TrackedJobState,
     TrackerBulkDeleteRequest,
     TrackerBulkResult,
@@ -33,6 +35,25 @@ def get_tracker_repo(request: Request) -> TrackerRepository:
 
 
 TrackerRepoDep = Annotated[TrackerRepository, Depends(get_tracker_repo)]
+
+
+def _waterlooworks_salary_text(job: dict[str, Any]) -> str | None:
+    """Format structured WaterlooWorks salary the same way the tracker formats public jobs."""
+
+    minimum = to_decimal(job.get("salary_min"))
+    maximum = to_decimal(job.get("salary_max"))
+    if minimum is None and maximum is None:
+        return None
+    if minimum is not None and maximum is not None:
+        amount = f"{minimum:.2f}–{maximum:.2f}"
+    elif minimum is not None:
+        amount = f"from {minimum:.2f}"
+    else:
+        amount = f"up to {maximum:.2f}"
+    parts = [job.get("salary_currency"), amount]
+    if job.get("salary_interval"):
+        parts.append(f"/{job['salary_interval']}")
+    return " ".join(part for part in parts if part)
 
 
 @tracker_router.get("", response_model=TrackerListResponse)
@@ -68,6 +89,65 @@ async def list_tracked_applications(
 @tracker_router.get("/bookmarks", response_model=list[TrackedJobState])
 async def get_tracked_job_states(repo: TrackerRepoDep) -> list[TrackedJobState]:
     return await repo.list_tracked_job_states()
+
+
+@tracker_router.get("/bookmarks/waterlooworks", response_model=list[TrackedExternalJobState])
+async def get_waterlooworks_bookmarks(repo: TrackerRepoDep) -> list[TrackedExternalJobState]:
+    rows = await repo.list_tracked_external_states()
+    return [
+        TrackedExternalJobState(**row)
+        for row in rows
+        if row.get("source") == "waterloo_work"
+    ]
+
+
+@tracker_router.put(
+    "/bookmarks/waterlooworks/{source_job_id}",
+    response_model=TrackedApplication,
+)
+async def bookmark_waterlooworks_job(
+    source_job_id: str,
+    request: Request,
+    repo: TrackerRepoDep,
+) -> TrackedApplication:
+    job = await request.app.state.waterlooworks.get_job(source_job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="WaterlooWorks job not found")
+    item = await repo.bookmark_waterlooworks_job(
+        source_job_id=source_job_id,
+        company_name=job.get("organization") or "Company not specified",
+        title=job.get("title") or "Untitled role",
+        location_text=job.get("location_text"),
+        work_mode=job.get("work_mode"),
+        job_url=None,
+        job_description=job.get("description"),
+        application_deadline=job.get("application_deadline"),
+        salary_text=_waterlooworks_salary_text(job),
+    )
+    if not item:
+        raise HTTPException(status_code=500, detail="Could not bookmark WaterlooWorks job")
+    return item
+
+
+@tracker_router.delete("/bookmarks/waterlooworks/{source_job_id}")
+async def unbookmark_waterlooworks_job(
+    source_job_id: str, repo: TrackerRepoDep
+) -> dict[str, Any]:
+    deleted, stage = await repo.unbookmark_waterlooworks_job(source_job_id)
+    if deleted:
+        return {"success": True, "deleted": True}
+    if stage:
+        return {
+            "success": False,
+            "deleted": False,
+            "protected": True,
+            "stage": stage,
+            "message": (
+                f"This application is currently in stage '{stage}' and is protected "
+                "in your Tracker."
+            ),
+        }
+    raise HTTPException(status_code=404, detail="Tracked job not found")
 
 
 @tracker_router.put("/bookmarks/{job_id}", response_model=TrackedApplication)

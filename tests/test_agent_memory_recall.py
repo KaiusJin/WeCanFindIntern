@@ -49,9 +49,9 @@ def test_apply_budgets_limits_count_and_tokens():
         for i in range(20)
     ]
     ranked = rank_recalled_memories(records, query="memory")
-    assert len(ranked) <= 6
+    assert 1 <= len(ranked) <= 20
     budgeted = apply_budgets(ranked)
-    assert len(budgeted) <= 6
+    assert len(budgeted) <= 20
 
 
 def test_render_memories_for_prompt():

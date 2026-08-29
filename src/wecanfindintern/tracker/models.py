@@ -86,6 +86,13 @@ class TrackedJobState(BaseModel):
     stage: ApplicationStage
 
 
+class TrackedExternalJobState(BaseModel):
+    external_job_id: str
+    application_id: UUID
+    stage: ApplicationStage
+    source: str = "waterloo_work"
+
+
 class TrackerStatsResponse(BaseModel):
     total: int = 0
     interested_count: int = 0

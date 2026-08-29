@@ -6,12 +6,36 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from wecanfindintern.domain.normalization import annualize_salary, to_decimal
 from wecanfindintern.waterlooworks.service import WaterlooWorksService
 
 waterlooworks_router = APIRouter(
     prefix="/api/v1/waterlooworks",
     tags=["WaterlooWorks"],
 )
+
+
+def _with_salary(item: dict[str, Any]) -> dict[str, Any]:
+    """Expose structured salary in the same shape as public job postings."""
+
+    minimum = to_decimal(item.get("salary_min"))
+    maximum = to_decimal(item.get("salary_max"))
+    interval = item.get("salary_interval")
+    salary = None
+    if minimum is not None or maximum is not None:
+        salary = {
+            "interval": interval,
+            "minimum": minimum,
+            "maximum": maximum,
+            "currency": item.get("salary_currency"),
+            "source": "waterlooworks",
+            "annualized_minimum": annualize_salary(minimum, interval),
+            "annualized_maximum": annualize_salary(maximum, interval),
+        }
+    for key in ("salary_min", "salary_max", "salary_interval", "salary_currency"):
+        item.pop(key, None)
+    item["salary"] = salary
+    return item
 
 
 def get_service(request: Request) -> WaterlooWorksService:
@@ -53,11 +77,24 @@ async def list_jobs(
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     try:
-        return await service.list_jobs(
+        payload = await service.list_jobs(
             board=board,
             query=query,
             limit=limit,
             offset=offset,
         )
+        payload["items"] = [_with_salary(item) for item in payload["items"]]
+        return payload
     except RuntimeError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@waterlooworks_router.get("/jobs/{source_job_id}")
+async def get_job(
+    source_job_id: str,
+    service: ServiceDep,
+) -> dict[str, Any]:
+    item = await service.get_job(source_job_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="WaterlooWorks job not found")
+    return _with_salary(item)

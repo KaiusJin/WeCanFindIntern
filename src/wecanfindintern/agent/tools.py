@@ -602,7 +602,7 @@ async def tool_add_interested(
                     title=job.get("title") or "Untitled role",
                     location_text=job.get("location"),
                     work_mode=job.get("work_mode"),
-                    job_url=job.get("application_url"),
+                    job_url=None,
                     job_description=job.get("description"),
                     application_deadline=job.get("application_deadline"),
                 )

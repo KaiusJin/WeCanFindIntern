@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260828-fix-v25" />
+    <link rel="stylesheet" href="/styles.css?v=20260828-fix-v26" />
   </head>
   <body>
     <header class="topbar">
@@ -219,7 +219,6 @@
             <div class="ww-actions">
               <button id="ww-launch" class="primary-button" type="button">Log into WaterlooWorks ↗</button>
               <button id="ww-collect" class="secondary-button" type="button" disabled>Import all job boards</button>
-              <button id="ww-view-jobs" class="text-button" type="button" hidden>View imported jobs →</button>
             </div>
             <p id="ww-action-error" class="notice error" hidden></p>
           </article>
@@ -227,11 +226,11 @@
           <aside class="ww-side-panel">
             <div class="ww-side-heading"><p class="eyebrow">INCLUDED BOARDS</p><span>5 sources</span></div>
             <div class="ww-board-list">
-              <div data-ww-board="full_cycle"><span>01</span><p><strong>Co-op: Full-Cycle</strong><small>/co-op/full/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
-              <div data-ww-board="employer_student_direct"><span>02</span><p><strong>Employer-Student Direct</strong><small>/co-op/direct/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
-              <div data-ww-board="graduating"><span>03</span><p><strong>Graduating jobs</strong><small>/graduating/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
-              <div data-ww-board="contract"><span>04</span><p><strong>Contract jobs</strong><small>/contract/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
-              <div data-ww-board="campus"><span>05</span><p><strong>Campus jobs</strong><small>/campus/jobs.htm</small><small class="ww-board-metrics">0 found · 0 succeeded · 0 failed</small><small class="ww-board-error" hidden></small></p><em class="ww-board-state pending">Pending</em></div>
+              <div data-ww-board="full_cycle"><strong>Co-op: Full-Cycle</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              <div data-ww-board="employer_student_direct"><strong>Employer-Student Direct</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              <div data-ww-board="graduating"><strong>Graduating jobs</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              <div data-ww-board="contract"><strong>Contract jobs</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              <div data-ww-board="campus"><strong>Campus jobs</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
             </div>
           </aside>
 
@@ -715,62 +714,73 @@
           <p class="hero-copy">Ask in plain language — organize jobs, manage your Tracker, fill your Profile, or get recommendations.</p>
         </section>
         <section class="agent-workspace">
-          <div class="agent-session-bar">
-            <button id="agent-new-session" class="secondary-button compact-button" type="button">+ New conversation</button>
-            <div id="agent-session-list" class="agent-session-list" aria-label="Conversations"></div>
-          </div>
-          <div class="agent-context-bar">
-            <span class="agent-context-label">Context:</span>
-            <button id="agent-context-job" class="agent-context-chip" type="button" hidden></button>
-            <span id="agent-context-empty" class="agent-context-empty">No job selected — open a job in Jobs to attach it.</span>
-          </div>
-          <div id="agent-chat" class="agent-chat" aria-live="polite">
-            <div class="agent-message agent-assistant">
-              <div class="agent-bubble"><p class="md-p">Hi! I'm your AI Agent. Try: <em>“Add this job to Interested”</em>, <em>“Recommend jobs from my profile”</em>, <em>“What's in my Tracker?”</em>, or <em>“Fill in my graduation year”</em>.</p></div>
+          <div class="agent-layout">
+            <aside class="agent-sidebar">
+              <button id="agent-new-session" class="primary-button agent-new-session-btn" type="button">+ New conversation</button>
+              <div class="agent-sidebar-section">
+                <div class="agent-sidebar-heading">Conversations</div>
+                <div id="agent-session-list" class="agent-session-list" aria-label="Conversations"></div>
+              </div>
+              <details id="agent-memory-panel" class="agent-memory-panel" open>
+                <summary>Long-term memory</summary>
+                <div id="agent-memory-list" class="agent-memory-list"></div>
+                <div id="agent-memory-status" class="agent-memory-status">No conversation yet.</div>
+              </details>
+              <details id="agent-preferences-panel" class="agent-memory-panel">
+                <summary>Preferences</summary>
+                <div class="agent-memory-body">
+                  <div class="agent-memory-grid agent-memory-grid-vertical">
+                    <label class="field-group"><span class="field-label">Long-term memory</span>
+                      <select id="agent-pref-ltm" class="career-select">
+                        <option value="ENABLED">Enabled</option>
+                        <option value="DISABLED">Disabled</option>
+                      </select>
+                    </label>
+                    <label class="field-group"><span class="field-label">Target locations</span>
+                      <input id="agent-pref-locations" class="career-input" placeholder="e.g. Toronto, Vancouver" />
+                    </label>
+                    <label class="field-group"><span class="field-label">Target roles</span>
+                      <input id="agent-pref-roles" class="career-input" placeholder="e.g. Backend, Data Science" />
+                    </label>
+                    <label class="field-group"><span class="field-label">Work mode</span>
+                      <select id="agent-pref-work-mode" class="career-select">
+                        <option value="">Any</option>
+                        <option value="REMOTE">Remote</option>
+                        <option value="HYBRID">Hybrid</option>
+                        <option value="ONSITE">In-person</option>
+                      </select>
+                    </label>
+                    <label class="field-group"><span class="field-label">Salary range</span>
+                      <input id="agent-pref-salary" class="career-input" placeholder="e.g. $40+/hr" />
+                    </label>
+                    <label class="field-group"><span class="field-label">Answer language</span>
+                      <input id="agent-pref-language" class="career-input" placeholder="e.g. 中文 / English" />
+                    </label>
+                  </div>
+                  <div class="agent-memory-actions">
+                    <span id="agent-pref-feedback" class="settings-save-feedback" hidden>✓ Saved</span>
+                    <button id="agent-pref-save" class="primary-button compact-button" type="button">Save preferences</button>
+                  </div>
+                </div>
+              </details>
+            </aside>
+            <div class="agent-main">
+              <div class="agent-context-bar">
+                <span class="agent-context-label">Context:</span>
+                <button id="agent-context-job" class="agent-context-chip" type="button" hidden></button>
+                <span id="agent-context-empty" class="agent-context-empty">No job selected — open a job in Jobs to attach it.</span>
+              </div>
+              <div id="agent-chat" class="agent-chat" aria-live="polite">
+                <div class="agent-message agent-assistant">
+                  <div class="agent-bubble"><p class="md-p">Hi! I'm your AI Agent. Try: <em>“Add this job to Interested”</em>, <em>“Recommend jobs from my profile”</em>, <em>“What's in my Tracker?”</em>, or <em>“Fill in my graduation year”</em>.</p></div>
+                </div>
+              </div>
+              <form id="agent-form" class="agent-composer" autocomplete="off">
+                <input id="agent-input" class="career-input" type="text" placeholder="e.g. Add the job I'm viewing to Interested" />
+                <button class="primary-button" type="submit">Send</button>
+              </form>
             </div>
           </div>
-          <form id="agent-form" class="agent-composer" autocomplete="off">
-            <input id="agent-input" class="career-input" type="text" placeholder="e.g. Add the job I'm viewing to Interested" />
-            <button class="primary-button" type="submit">Send</button>
-          </form>
-          <details id="agent-memory-panel" class="agent-memory-panel">
-            <summary>Memory &amp; preferences</summary>
-            <div class="agent-memory-body">
-              <div id="agent-memory-status" class="agent-memory-status">No conversation yet.</div>
-              <div class="agent-memory-grid">
-                <label class="field-group"><span class="field-label">Long-term memory</span>
-                  <select id="agent-pref-ltm" class="career-select">
-                    <option value="ENABLED">Enabled</option>
-                    <option value="DISABLED">Disabled</option>
-                  </select>
-                </label>
-                <label class="field-group"><span class="field-label">Target locations</span>
-                  <input id="agent-pref-locations" class="career-input" placeholder="e.g. Toronto, Vancouver" />
-                </label>
-                <label class="field-group"><span class="field-label">Target roles</span>
-                  <input id="agent-pref-roles" class="career-input" placeholder="e.g. Backend, Data Science" />
-                </label>
-                <label class="field-group"><span class="field-label">Work mode</span>
-                  <select id="agent-pref-work-mode" class="career-select">
-                    <option value="">Any</option>
-                    <option value="REMOTE">Remote</option>
-                    <option value="HYBRID">Hybrid</option>
-                    <option value="ONSITE">In-person</option>
-                  </select>
-                </label>
-                <label class="field-group"><span class="field-label">Salary range</span>
-                  <input id="agent-pref-salary" class="career-input" placeholder="e.g. $40+/hr" />
-                </label>
-                <label class="field-group"><span class="field-label">Answer language</span>
-                  <input id="agent-pref-language" class="career-input" placeholder="e.g. 中文 / English" />
-                </label>
-              </div>
-              <div class="agent-memory-actions">
-                <span id="agent-pref-feedback" class="settings-save-feedback" hidden>✓ Saved</span>
-                <button id="agent-pref-save" class="primary-button compact-button" type="button">Save preferences</button>
-              </div>
-            </div>
-          </details>
         </section>
       </div>
     </main>
@@ -988,6 +998,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script type="module" src="/modules/main.js?v=20260828-fix-v25"></script>
+    <script type="module" src="/modules/main.js?v=20260828-fix-v26"></script>
   </body>
 </html>

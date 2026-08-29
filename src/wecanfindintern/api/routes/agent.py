@@ -125,7 +125,7 @@ async def agent_memory_status(
     store = memory.store()
     state = await store.load_session_state(session_id)
     preferences = await store.load_user_preferences()
-    memories = await store.load_active_memories(50)
+    memories = await store.load_active_memories(200)
     summary_backlog = await store.unsummarized_token_count(
         session_id, state.summary_covers_through_message_id
     )
@@ -185,6 +185,15 @@ async def delete_agent_preference(
     if key not in PREFERENCE_KEYS:
         raise HTTPException(status_code=422, detail=f"Unknown preference key: {key}")
     deleted = await _memory_manager(request).clear_preference(key)
+    return {"deleted": deleted}
+
+
+@agent_router.delete("/memories/{memory_id}")
+async def delete_agent_memory(
+    memory_id: UUID,
+    request: Request,
+) -> dict[str, bool]:
+    deleted = await _memory_manager(request).store().delete_memory(memory_id)
     return {"deleted": deleted}
 
 

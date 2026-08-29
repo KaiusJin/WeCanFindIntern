@@ -325,6 +325,14 @@ class AgentMemoryStore:
             )
         return result.rowcount or 0
 
+    async def delete_memory(self, memory_id: UUID) -> bool:
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                "DELETE FROM agent_memories WHERE public_id = %s;",
+                (memory_id,),
+            )
+        return (result.rowcount or 0) > 0
+
     # ------------------------------------------------------------------
     # Explicit preferences
     # ------------------------------------------------------------------

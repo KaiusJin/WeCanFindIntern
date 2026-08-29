@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from wecanfindintern.domain.salary import ParsedSalary, extract_salary_from_description
 from wecanfindintern.ingestion.jobspy_adapter import (
     CompanyDetails,
     NormalizedJob,
@@ -21,6 +23,33 @@ WATERLOOWORKS_BOARDS: tuple[tuple[str, str], ...] = (
     ("campus", f"{WATERLOOWORKS_ORIGIN}/myAccount/campus/jobs.htm"),
 )
 
+# Structured numeric rate fields, e.g. "Rate Of Pay Per Hour" -> hourly.
+_RATE_FIELD_INTERVALS = {
+    "rate of pay per hour": ("hourly", "/hour"),
+    "rate of pay per week": ("weekly", "/week"),
+    "rate of pay per month": ("monthly", "/month"),
+    "rate of pay per year": ("yearly", "/year"),
+}
+
+# Fields whose value often mixes benefits prose with a real pay figure.
+_COMPENSATION_LABELS = (
+    "compensation and benefits",
+    "compensation and benefits information",
+    "compensation and hours",
+    "total rewards",
+    "compensation",
+)
+
+_BOILERPLATE_VALUES = {
+    "",
+    "-",
+    "n/a",
+    "na",
+    "none",
+    "not specified",
+    "tbd",
+    "to be discussed",
+}
 
 # This runs inside the authenticated WaterlooWorks job-list page. Authentication
 # remains entirely in Chrome; only the extracted posting records cross into the app.
@@ -294,6 +323,7 @@ def _text(value: Any) -> str:
 
 def _description(value: Any) -> str | None:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"<[^>]+>", " ", text)
     lines = [" ".join(line.split()) for line in text.split("\n")]
     normalized = "\n".join(line for line in lines if line)
     return normalized or None
@@ -331,3 +361,32 @@ def _posting_date(fields: dict[str, Any]) -> date | None:
             except ValueError:
                 continue
     return None
+
+
+def waterlooworks_salary(raw: dict[str, Any]) -> ParsedSalary | None:
+    """Extract salary the same way public postings do, from posting text."""
+
+    overview = raw.get("overviewFields") or {}
+    inputs: list[str] = []
+    for field_key, field_value in overview.items():
+        mapping = _RATE_FIELD_INTERVALS.get(field_key.casefold())
+        if mapping:
+            _, unit = mapping
+            value = _text(field_value)
+            if value and not _is_boilerplate(value):
+                inputs.append(f"Compensation: ${value} {unit}")
+    for label in _COMPENSATION_LABELS:
+        for field_key, field_value in overview.items():
+            if field_key.casefold() == label and _text(field_value):
+                inputs.append(str(field_value))
+    jd_text = str(raw.get("fullJdText") or raw.get("rowText") or "")
+    if jd_text:
+        inputs.append(jd_text)
+    return extract_salary_from_description("\n\n".join(inputs), country_code="CA")
+
+
+def _is_boilerplate(value: str) -> bool:
+    lowered = value.casefold()
+    return lowered in _BOILERPLATE_VALUES or any(
+        lowered.startswith(prefix) for prefix in ("to be discussed", "not specified")
+    )

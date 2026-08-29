@@ -103,11 +103,19 @@ def build_extraction_prompt(
         "- JOB_TARGET: specific jobs/companies the user is actively targeting "
         "or has decided to apply to.\n"
         "- EXPLICIT_FACT: something the user explicitly asked you to remember.\n\n"
+        "- SKILL_PROFILE: skills, tech stack, tools, experience level.\n"
+        "- EDUCATION_PROFILE: school, program, degree, graduation timeline.\n"
+        "- WORK_EXPERIENCE: past roles, employers, responsibilities.\n"
+        "- APPLICATION_PLAN: concrete plans, deadlines, target counts, process "
+        "preferences (e.g. weekly hours, how many applications).\n\n"
         "Positive examples:\n"
         '- USER_PREFERENCE: "Prefers jobs in Toronto and remote-friendly roles."\n'
         '- CAREER_CONTEXT: "Graduating in April 2027 from University of Waterloo CS."\n'
         '- JOB_TARGET: "Targeting the Innovax full-stack intern posting (ww:482179)."\n'
-        '- EXPLICIT_FACT: "User asked to remember that they prefer first names."\n\n'
+        '- SKILL_PROFILE: "Comfortable with Python, FastAPI, PostgreSQL, Docker, '
+        'AWS, React and TypeScript."\n'
+        '- APPLICATION_PLAN: "Plans to apply to 12-15 internships this summer, '
+        'spending about 10 hours per week on applications."\n\n'
         "Hard constraints:\n"
         "- NEVER record inferred sensitive traits (health, ethnicity, religion, "
         "politics, sexuality, disability, immigration status, precise location "
@@ -115,8 +123,11 @@ def build_extraction_prompt(
         "omit it entirely.\n"
         "- Do not store transient conversation state (what was just asked) or "
         "general job facts; those belong to retrieval, not user memory.\n"
-        "- Each memory must be one self-contained sentence, understandable "
-        "without this conversation.\n"
+        "- You decide where each fact belongs (best memoryType) and to what "
+        "degree (confidence). Content may be one or several self-contained "
+        "sentences, understandable without this conversation.\n"
+        "- Split distinct facts into separate memories instead of lumping them; "
+        "do not force a memory for every statement.\n"
         "- sourceMessageId must be the id of the message that best evidences "
         "the memory, chosen from the ids in the input.\n"
         "- confidence reflects how directly the user stated it: explicit "

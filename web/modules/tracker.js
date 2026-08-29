@@ -6,6 +6,7 @@ const trackerState = {
   stats: {},
   trackedJobIds: new Set(),
   trackedJobs: new Map(),
+  waterlooWorksTracked: new Map(),
   selectedIds: new Set(),
   loading: false,
   page: 1,
@@ -27,6 +28,9 @@ const trackerStageLabels = {
   offer: "Offers",
   rejected: "Refused",
 };
+
+const bookmarkOutlineIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+const bookmarkFilledIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
 
 function trackerFiltersFromControls() {
   const [sort, direction] = ($("#tracker-sort")?.value || "updated:desc").split(":");
@@ -79,9 +83,10 @@ async function fetchTrackerData({ keepSelection = false } = {}) {
   try {
     syncTrackerFilterState();
     const params = buildTrackerParams();
-    const [listRes, bookmarksRes] = await Promise.all([
+    const [listRes, bookmarksRes, wwBookmarksRes] = await Promise.all([
       fetch(`/api/v1/tracker?${params}`),
       fetch("/api/v1/tracker/bookmarks"),
+      fetch("/api/v1/tracker/bookmarks/waterlooworks"),
     ]);
     if (!listRes.ok) throw new Error("Failed to load applications");
     const data = await listRes.json();
@@ -94,6 +99,10 @@ async function fetchTrackerData({ keepSelection = false } = {}) {
       const bookmarks = await bookmarksRes.json();
       trackerState.trackedJobs = new Map(bookmarks.map((item) => [item.job_id, item]));
       trackerState.trackedJobIds = new Set(trackerState.trackedJobs.keys());
+    }
+    if (wwBookmarksRes.ok) {
+      const wwBookmarks = await wwBookmarksRes.json();
+      trackerState.waterlooWorksTracked = new Map(wwBookmarks.map((item) => [item.external_job_id, item]));
     }
     if (!keepSelection) trackerState.selectedIds.clear();
     renderTrackerStats();
@@ -206,9 +215,12 @@ async function openTrackerDrawer(appId) {
   $("#drawer-title").textContent = app.title;
   $("#drawer-company").textContent = `${app.company_name} · ${app.location_text || "Location unspecified"}`;
   const isPlatformJob = app.origin_type === "platform_bookmark";
-  $("#drawer-origin-notice").textContent = isPlatformJob
-    ? "Bookmarked from WecanFindIntern · Job information is synced from the platform and is read-only."
-    : "External application · You can edit both the job information and tracking fields.";
+  const isWaterlooJob = app.source === "waterloo_work";
+  $("#drawer-origin-notice").textContent = isWaterlooJob
+    ? "Bookmarked from WaterlooWorks · Job information is synced from WaterlooWorks and is read-only."
+    : isPlatformJob
+      ? "Bookmarked from WecanFindIntern · Job information is synced from the platform and is read-only."
+      : "External application · You can edit both the job information and tracking fields.";
   $("#drawer-origin-notice").classList.toggle("platform-origin", isPlatformJob);
   const fields = {
     "#drawer-stage": app.stage,
@@ -359,14 +371,33 @@ function updateBookmarkButtons() {
 
     if (!saved) {
       btn.title = "Save to Interested";
-      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+      btn.innerHTML = bookmarkOutlineIcon;
     } else if (tracked.stage === "interested") {
       btn.title = "Interested · Click to remove";
-      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+      btn.innerHTML = bookmarkFilledIcon;
     } else {
       const stageName = trackerStageLabels[tracked.stage] || tracked.stage;
       btn.title = `${stageName} in Tracker · Click to view`;
-      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+      btn.innerHTML = bookmarkFilledIcon;
+    }
+  });
+
+  $$(".ww-bookmark-btn").forEach((btn) => {
+    const tracked = trackerState.waterlooWorksTracked.get(btn.dataset.sourceJobId);
+    const saved = Boolean(tracked);
+    btn.classList.toggle("saved", saved);
+    btn.setAttribute("aria-pressed", String(saved));
+
+    if (!saved) {
+      btn.title = "Save to Interested";
+      btn.innerHTML = bookmarkOutlineIcon;
+    } else if (tracked.stage === "interested") {
+      btn.title = "Interested · Click to remove";
+      btn.innerHTML = bookmarkFilledIcon;
+    } else {
+      const stageName = trackerStageLabels[tracked.stage] || tracked.stage;
+      btn.title = `${stageName} in Tracker · Click to view`;
+      btn.innerHTML = bookmarkFilledIcon;
     }
   });
 }
@@ -393,6 +424,67 @@ async function toggleBookmarkJob(jobId) {
       if (!res.ok) throw new Error("Could not remove bookmark.");
       trackerState.trackedJobs.delete(jobId);
       trackerState.trackedJobIds.delete(jobId);
+      updateBookmarkButtons();
+      showPlainToast("Removed from Interested");
+      await fetchTrackerData({ keepSelection: true });
+    } else {
+      const stageName = trackerStageLabels[existing.stage] || existing.stage;
+      showPlainToast(`This job is in stage [${stageName}] in your Tracker`, "Open Tracker ↗", () => {
+        switchTab("tab-tracker");
+        openTrackerDrawer(existing.application_id);
+      });
+    }
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+
+async function loadWaterlooWorksBookmarks() {
+  try {
+    const response = await fetch("/api/v1/tracker/bookmarks/waterlooworks");
+    if (!response.ok) return;
+    const bookmarks = await response.json();
+    trackerState.waterlooWorksTracked = new Map(
+      bookmarks.map((item) => [item.external_job_id, item]),
+    );
+    updateBookmarkButtons();
+  } catch (_) {
+    // Keep the previous state when the tracker is unavailable.
+  }
+}
+
+async function toggleWaterlooWorksBookmark(sourceJobId) {
+  const existing = trackerState.waterlooWorksTracked.get(sourceJobId);
+  const buttons = $$(`.ww-bookmark-btn[data-source-job-id="${sourceJobId}"]`);
+  buttons.forEach((b) => { b.disabled = true; });
+
+  try {
+    if (!existing) {
+      const response = await fetch(
+        `/api/v1/tracker/bookmarks/waterlooworks/${encodeURIComponent(sourceJobId)}`,
+        { method: "PUT" },
+      );
+      if (!response.ok) throw new Error("Could not save this job to your tracker.");
+      const app = await response.json();
+      trackerState.waterlooWorksTracked.set(sourceJobId, {
+        external_job_id: sourceJobId,
+        application_id: app.id,
+        stage: app.stage,
+      });
+      updateBookmarkButtons();
+      showPlainToast("Saved to Interested", "Open Tracker ↗", () => {
+        switchTab("tab-tracker");
+      });
+      await fetchTrackerData({ keepSelection: true });
+    } else if (existing.stage === "interested") {
+      const response = await fetch(
+        `/api/v1/tracker/bookmarks/waterlooworks/${encodeURIComponent(sourceJobId)}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) throw new Error("Could not remove bookmark.");
+      trackerState.waterlooWorksTracked.delete(sourceJobId);
       updateBookmarkButtons();
       showPlainToast("Removed from Interested");
       await fetchTrackerData({ keepSelection: true });
@@ -501,4 +593,11 @@ $("#custom-job-form")?.addEventListener("submit", async (event) => {
   $("#custom-job-dialog")?.close(); await fetchTrackerData();
 });
 
-export { fetchTrackerData, toggleBookmarkJob, trackerState };
+export {
+  fetchTrackerData,
+  loadWaterlooWorksBookmarks,
+  toggleBookmarkJob,
+  toggleWaterlooWorksBookmark,
+  trackerState,
+  updateBookmarkButtons,
+};

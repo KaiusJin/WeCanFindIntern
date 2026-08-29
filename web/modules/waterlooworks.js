@@ -1,4 +1,19 @@
-import { $, escapeHtml, formatDate, formatRelativeTime } from "./helpers.js";
+import {
+  $,
+  escapeHtml,
+  formatDate,
+  formatSalary,
+  formatRelativeTime,
+  renderMarkdown,
+  workModeLabel,
+} from "./helpers.js";
+import { syncDialogScrollLock } from "./settings.js";
+import {
+  loadWaterlooWorksBookmarks,
+  toggleWaterlooWorksBookmark,
+  trackerState,
+  updateBookmarkButtons,
+} from "./tracker.js";
 
 let wwBusy = false;
 
@@ -18,6 +33,17 @@ const WW_STATUS_LABELS = {
   partial: "Partially completed",
   failed: "Needs attention",
 };
+
+const WW_BOARD_LABELS = {
+  full_cycle: "Co-op: Full-Cycle",
+  employer_student_direct: "Employer-Student Direct",
+  graduating: "Graduating",
+  contract: "Contract",
+  campus: "Campus",
+};
+
+const WW_BOOKMARK_OUTLINE = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+const WW_BOOKMARK_FILLED = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
 
 function renderWaterlooWorksStatus(data) {
   const status = data.status || "idle";
@@ -41,24 +67,22 @@ function renderWaterlooWorksStatus(data) {
   $("#ww-collect").textContent = ["collecting", "importing"].includes(status)
     ? "Import in progress…"
     : "Import all job boards";
-  $("#ww-view-jobs").hidden = !["completed", "partial"].includes(status);
   for (const board of data.boards || []) {
     const row = document.querySelector(`[data-ww-board="${board.name}"]`);
     if (!row) continue;
+    const countLabel = row.querySelector(".ww-board-count");
     const stateLabel = row.querySelector(".ww-board-state");
-    const metricsLabel = row.querySelector(".ww-board-metrics");
-    const errorLabel = row.querySelector(".ww-board-error");
     const labels = {
       pending: "Pending",
       collecting: "Collecting…",
       completed: "Completed",
       failed: "Failed",
     };
+    const marks = { pending: "…", collecting: "…", completed: "✓", failed: "✗" };
+    countLabel.textContent = `${Number(board.posting_success_count || 0).toLocaleString()} jobs`;
     stateLabel.className = `ww-board-state ${board.status}`;
-    stateLabel.textContent = labels[board.status] || board.status;
-    metricsLabel.textContent = `${Number(board.discovered_count || 0).toLocaleString()} found · ${Number(board.posting_success_count || 0).toLocaleString()} succeeded · ${Number(board.posting_failed_count || 0).toLocaleString()} failed`;
-    errorLabel.textContent = board.error || "";
-    errorLabel.hidden = !board.error;
+    stateLabel.textContent = marks[board.status] || "…";
+    stateLabel.setAttribute("aria-label", labels[board.status] || board.status);
   }
 }
 
@@ -70,6 +94,7 @@ async function loadWaterlooWorksJobs() {
   if (board) params.set("board", board);
   const list = $("#ww-job-list");
   try {
+    await loadWaterlooWorksBookmarks();
     const response = await fetch(`/api/v1/waterlooworks/jobs?${params}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not load WaterlooWorks jobs.");
@@ -78,19 +103,34 @@ async function loadWaterlooWorksJobs() {
       list.innerHTML = '<p class="muted-copy">No matching WaterlooWorks jobs.</p>';
       return;
     }
-    list.innerHTML = data.items.map((job) => `
-      <article class="ww-job-item">
-        <div>
-          <span class="ww-job-id">Job ID ${escapeHtml(job.source_job_id || "Unknown")}</span>
-          <h3>${escapeHtml(job.title)}</h3>
-          <p>${escapeHtml(job.organization || "Organization not specified")} · ${escapeHtml(job.location_text || "Location not specified")}</p>
-        </div>
-        <div class="ww-job-item-meta">
-          <span>${escapeHtml((job.boards || []).map((value) => value.replaceAll("_", " ")).join(" · "))}</span>
-          <span>${escapeHtml(formatDate(job.date_posted))}</span>
-        </div>
-      </article>
-    `).join("");
+    list.innerHTML = data.items.map((job) => {
+      const boards = job.boards || [];
+      const isSaved = trackerState.waterlooWorksTracked?.has(job.source_job_id);
+      return `
+        <article class="job-card ww-job-card" data-source-job-id="${escapeHtml(job.source_job_id)}" data-boards="${escapeHtml(boards.join(","))}">
+          <div class="job-card-main">
+            <div class="company-mark">${escapeHtml((job.organization || "?").slice(0, 1).toUpperCase())}</div>
+            <div class="job-copy">
+              <h3>${escapeHtml(job.title)}</h3>
+              <p class="company-name">${escapeHtml(job.organization || "Company not specified")}</p>
+              <p class="job-location">${escapeHtml(job.location_text || "Location not specified")} <span>·</span> ${escapeHtml(formatDate(job.date_posted))}</p>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+              <button type="button" class="ww-bookmark-btn ${isSaved ? "saved" : ""}" data-source-job-id="${escapeHtml(job.source_job_id)}" title="${isSaved ? "Tracked in Pipeline" : "Bookmark / Track Job"}" aria-pressed="${isSaved}">${isSaved ? WW_BOOKMARK_FILLED : WW_BOOKMARK_OUTLINE}</button>
+              <div class="job-date">Job ID ${escapeHtml(job.source_job_id)}</div>
+            </div>
+          </div>
+          <div class="job-card-footer">
+            <div class="job-tags">
+              <span class="tag accent">WaterlooWorks</span>
+              ${boards.map((value) => `<span class="tag">${escapeHtml(WW_BOARD_LABELS[value] || value.replaceAll("_", " "))}</span>`).join("")}
+            </div>
+            <span class="salary">${escapeHtml(formatSalary(job.salary))}</span>
+          </div>
+        </article>
+      `;
+    }).join("");
+    updateBookmarkButtons();
   } catch (error) {
     list.innerHTML = `<p class="notice error">${escapeHtml(error.message)}</p>`;
   }
@@ -124,15 +164,52 @@ async function runWaterlooWorksAction(path) {
 
 $("#ww-launch")?.addEventListener("click", () => runWaterlooWorksAction("launch"));
 $("#ww-collect")?.addEventListener("click", () => runWaterlooWorksAction("collect"));
-$("#ww-view-jobs")?.addEventListener("click", () => {
-  loadWaterlooWorksJobs();
-  $("#ww-jobs-card").scrollIntoView({ behavior: "smooth", block: "start" });
-});
 $("#ww-job-search")?.addEventListener("click", loadWaterlooWorksJobs);
 $("#ww-job-board")?.addEventListener("change", loadWaterlooWorksJobs);
 $("#ww-job-query")?.addEventListener("keydown", (event) => {
   if (event.key === "Enter") loadWaterlooWorksJobs();
 });
+document.addEventListener("click", (event) => {
+  const bookmarkBtn = event.target.closest(".ww-bookmark-btn");
+  if (bookmarkBtn) {
+    event.stopPropagation();
+    toggleWaterlooWorksBookmark(bookmarkBtn.dataset.sourceJobId);
+    return;
+  }
+  const card = event.target.closest(".ww-job-card");
+  if (card) {
+    openWaterlooWorksJob(card.dataset.sourceJobId, card.dataset.boards);
+  }
+});
+
+async function openWaterlooWorksJob(sourceJobId, boardsCsv) {
+  const dialog = $("#job-dialog");
+  const detail = $("#job-detail");
+  detail.innerHTML = `<p class="loading-detail">Loading job details…</p>`;
+  dialog.showModal();
+  syncDialogScrollLock();
+  try {
+    const response = await fetch(`/api/v1/waterlooworks/jobs/${encodeURIComponent(sourceJobId)}`);
+    if (!response.ok) throw new Error("Could not load job details");
+    const job = await response.json();
+    const boards = (boardsCsv || "").split(",").filter(Boolean);
+    const boardsLabel = boards.map((value) => WW_BOARD_LABELS[value] || value.replaceAll("_", " ")).join(" · ") || "All boards";
+    detail.innerHTML = `
+      <p class="eyebrow">WaterlooWorks · ${escapeHtml(boardsLabel)}</p>
+      <h2>${escapeHtml(job.title)}</h2>
+      <p class="detail-company">${escapeHtml(job.organization || "Company not specified")}</p>
+      <p class="detail-location">${escapeHtml(job.location_text || "Location not specified")} · Job ID ${escapeHtml(job.source_job_id)}</p>
+      <div class="detail-grid">
+        <div><span>Salary</span><strong>${escapeHtml(formatSalary(job.salary))}</strong></div>
+        <div><span>Work mode</span><strong>${escapeHtml(workModeLabel(job.work_mode))}</strong></div>
+        <div class="detail-grid-full"><span>Application deadline</span><strong>${escapeHtml(job.application_deadline || "Not specified")}</strong></div>
+      </div>
+      <div class="detail-description">${job.description ? renderMarkdown(job.description) : "<p>No detailed description is available for this job.</p>"}</div>
+    `;
+  } catch (error) {
+    detail.innerHTML = `<div class="notice error">${escapeHtml(error.message)}</div>`;
+  }
+}
 let wwPollTimer = null;
 function scheduleWaterlooWorksPoll() {
   const delay = wwBusy ? 2000 : 10000;

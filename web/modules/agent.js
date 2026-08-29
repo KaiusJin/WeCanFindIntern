@@ -344,9 +344,11 @@ async function savePreferences() {
 
 async function loadMemoryStatus() {
   const status = $("#agent-memory-status");
+  const memoryList = $("#agent-memory-list");
   if (!status) return;
   if (!currentSessionId) {
     status.textContent = "No conversation yet.";
+    if (memoryList) memoryList.innerHTML = "";
     return;
   }
   try {
@@ -358,7 +360,37 @@ async function loadMemoryStatus() {
     status.textContent =
       `Summary v${summary.version || 0} (${summary.unsummarized_tokens ?? 0} unsummarized tokens) · ` +
       `${ltm.active_count ?? 0} memories · long-term memory ${ltm.enabled ? "on" : "off"}`;
+    if (memoryList) {
+      const memories = data.memories || [];
+      memoryList.innerHTML = memories.length
+        ? memories.map((memory) => `
+            <div class="agent-memory-item">
+              <div class="agent-memory-item-head">
+                <span class="agent-memory-type">${escapeHtml(memory.memory_type)}</span>
+                <span class="agent-memory-conf">conf ${Math.round((memory.confidence || 0) * 100)}%</span>
+              </div>
+              <div class="agent-memory-text">${escapeHtml(memory.content)}</div>
+              <div class="agent-memory-item-head" style="margin-top:4px;margin-bottom:0;">
+                <span></span>
+                <button type="button" class="agent-memory-delete" data-memory-id="${escapeHtml(memory.id)}" title="Delete this memory">✕ delete</button>
+              </div>
+            </div>`).join("")
+        : '<div class="agent-memory-status">No long-term memories yet.</div>';
+      memoryList.querySelectorAll("[data-memory-id]").forEach((button) => {
+        button.addEventListener("click", () => deleteMemory(button.dataset.memoryId));
+      });
+    }
   } catch (_) { }
+}
+
+async function deleteMemory(memoryId) {
+  try {
+    const res = await fetch(`/api/v1/agent/memories/${memoryId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Could not delete memory");
+    await loadMemoryStatus();
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 $("#agent-form")?.addEventListener("submit", (event) => {

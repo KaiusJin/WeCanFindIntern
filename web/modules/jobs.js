@@ -363,7 +363,7 @@ document.addEventListener("click", (event) => {
   }
 
   const card = event.target.closest(".job-card");
-  if (card && !event.target.closest(".btn-ai-action") && !event.target.closest(".job-bookmark-btn")) {
+  if (card && !card.classList.contains("ww-job-card") && !event.target.closest(".btn-ai-action") && !event.target.closest(".job-bookmark-btn")) {
     openJob(card.dataset.id);
   }
 

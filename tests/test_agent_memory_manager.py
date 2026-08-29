@@ -90,7 +90,18 @@ class FakeMemoryStore:
         return None
 
     async def load_active_memories(self, limit):
-        return []
+        from wecanfindintern.agent.memory.models import MemoryRecord
+
+        return [
+            MemoryRecord(
+                id=item["id"],
+                memory_type=item["memory_type"],
+                content=item["content"],
+                content_hash=item["content_hash"],
+                confidence=0.8,
+            )
+            for item in self.memories
+        ]
 
     async def touch_memory_access(self, memory_ids):
         return None
@@ -162,6 +173,9 @@ def test_run_maintenance_compresses_and_extracts(monkeypatch):
     store = FakeMemoryStore()
     store.messages = [_message("word " * 300, index=i) for i in range(12)]
     manager = AgentMemoryManager(store=store)
+    monkeypatch.setattr(manager_module.settings, "summary_trigger_tokens", 300)
+    monkeypatch.setattr(manager_module.settings, "summary_retain_tokens", 150)
+    monkeypatch.setattr(manager_module.settings, "extraction_min_new_tokens", 20)
 
     def fake_summary(deps, previous, evicted):
         return {
@@ -221,6 +235,113 @@ def test_run_maintenance_skips_extraction_when_disabled(monkeypatch):
     report = asyncio.run(manager.run_maintenance(store.session_id, _deps()))
     assert report.extraction_ran is False
     assert monkeypatch_calls == []
+
+
+def test_run_maintenance_updates_similar_memory_instead_of_duplicating(monkeypatch):
+    import wecanfindintern.agent.memory.manager as manager_module
+
+    store = FakeMemoryStore()
+    store.messages = [_message("word " * 300, index=i) for i in range(12)]
+    manager = AgentMemoryManager(store=store)
+
+    first = {
+        "memoryType": "USER_PREFERENCE",
+        "content": "Prefers jobs in Toronto with remote options.",
+        "confidence": 0.9,
+        "sourceMessageId": str(store.messages[0].id),
+        "ttlDays": 0,
+    }
+    updated = {
+        "memoryType": "USER_PREFERENCE",
+        "content": "Prefers jobs in Toronto with remote options and hybrid friendly.",
+        "confidence": 0.95,
+        "sourceMessageId": str(store.messages[1].id),
+        "ttlDays": 0,
+    }
+
+    def fake_extract(deps, messages, summary):
+        return [
+            MemoryCandidate(
+                memory_type=item["memoryType"],
+                content=item["content"],
+                confidence=item["confidence"],
+                source_message_id=UUID(item["sourceMessageId"]),
+                ttl_days=item["ttlDays"] or None,
+            )
+            for item in (first, updated)
+        ]
+
+    monkeypatch.setattr(manager_module, "extract_memory_candidates", fake_extract)
+
+    report = asyncio.run(manager.run_maintenance(store.session_id, _deps()))
+    # First candidate adds; the second is similar enough to supersede it.
+    assert report.memories_added == 1
+    assert report.memories_updated == 1
+    assert report.memories_skipped == 0
+
+
+def test_memory_similarity_and_find_similar():
+    from wecanfindintern.agent.memory.manager import (
+        _find_similar_memory,
+        _memory_similarity,
+    )
+    from wecanfindintern.agent.memory.models import MemoryCandidate, MemoryRecord
+
+    assert _memory_similarity("Prefers Toronto jobs.", "Prefers Toronto jobs with remote.") > 0.5
+    assert _memory_similarity("Likes Toronto.", "Enjoys playing piano.") < 0.5
+
+    existing = [
+        MemoryRecord(
+            id=uuid4(),
+            memory_type="USER_PREFERENCE",
+            content="Prefers Toronto jobs.",
+            content_hash="x",
+            confidence=0.8,
+        ),
+        MemoryRecord(
+            id=uuid4(),
+            memory_type="SKILL_PROFILE",
+            content="Knows Python and FastAPI.",
+            content_hash="y",
+            confidence=0.8,
+        ),
+    ]
+    candidate = MemoryCandidate(
+        memory_type="USER_PREFERENCE",
+        content="Prefers Toronto jobs with remote options.",
+        confidence=0.9,
+        source_message_id=None,
+    )
+    match = _find_similar_memory(existing, candidate)
+    assert match is not None
+    assert match.content == "Prefers Toronto jobs."
+
+    other = MemoryCandidate(
+        memory_type="SKILL_PROFILE",
+        content="Knows Rust and Go.",
+        confidence=0.9,
+        source_message_id=None,
+    )
+    assert _find_similar_memory(existing, other) is None
+
+    # A graduation correction may be typed CAREER_CONTEXT while the stored
+    # memory is EDUCATION_PROFILE; compatible groups must still supersede.
+    education = MemoryRecord(
+        id=uuid4(),
+        memory_type="EDUCATION_PROFILE",
+        content="University of Waterloo CS student, graduating April 2027.",
+        content_hash="z",
+        confidence=0.8,
+    )
+    correction = MemoryCandidate(
+        memory_type="CAREER_CONTEXT",
+        content="Graduating in April 2028.",
+        confidence=1.0,
+        source_message_id=None,
+    )
+    match = _find_similar_memory([education], correction)
+    assert match is not None
+    assert match.content == education.content
 
 
 def test_set_and_clear_preference():

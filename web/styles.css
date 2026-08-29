@@ -140,17 +140,12 @@ button {
 .ww-side-heading span { background: #eef4ef; border-radius: 999px; color: var(--dark-mint); font-size: 11px; font-weight: 700; padding: 5px 9px; }
 .ww-board-list { display: grid; margin-top: 15px; }
 .ww-board-list > div { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 12px; padding: 14px 0; }
-.ww-board-list > div > span { color: #82a08e; font-family: ui-monospace, monospace; font-size: 11px; }
-.ww-board-list p { display: grid; gap: 2px; margin: 0; min-width: 0; }
 .ww-board-list strong { font-size: 13px; }
-.ww-board-list small { color: var(--muted); font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ww-board-list .ww-board-metrics { font-family: inherit; font-size: 10px; white-space: normal; }
-.ww-board-list .ww-board-metrics { color: #4f6256; }
-.ww-board-list .ww-board-error { color: #a52a2a; font-family: inherit; max-width: 230px; white-space: normal; }
-.ww-board-state { border-radius: 999px; color: var(--muted); font-size: 10px; font-style: normal; font-weight: 750; margin-left: auto; padding: 4px 7px; white-space: nowrap; }
-.ww-board-state.collecting { background: #edf3ff; color: #275fa0; }
-.ww-board-state.completed { background: #e9f7ed; color: #207144; }
-.ww-board-state.failed { background: #fff0f0; color: #a52a2a; }
+.ww-board-count { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.ww-board-state { font-size: 15px; font-style: normal; line-height: 1; }
+.ww-board-state.pending, .ww-board-state.collecting { color: #9aa49e; }
+.ww-board-state.completed { color: #207144; }
+.ww-board-state.failed { color: #c0392b; }
 .ww-run-card { grid-column: 1; }
 .ww-stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 20px; }
 .ww-stat-grid > div { border-left: 1px solid var(--line); display: grid; gap: 2px; padding: 2px 14px; }
@@ -160,7 +155,7 @@ button {
 .ww-jobs-card { grid-column: 1 / -1; }
 .ww-job-filters { display: grid; gap: 10px; grid-template-columns: minmax(220px, 1fr) minmax(190px, auto) auto; margin: 20px 0; }
 .ww-job-filters input, .ww-job-filters select { border: 1px solid var(--line); border-radius: 10px; font: inherit; padding: 10px 12px; }
-.ww-job-list { display: grid; }
+.ww-job-list { display: grid; gap: 12px; }
 .ww-job-item { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 20px; justify-content: space-between; padding: 16px 0; }
 .ww-job-item h3 { font-size: 16px; margin: 3px 0 4px; }
 .ww-job-item p { color: var(--muted); margin: 0; }
@@ -1922,7 +1917,7 @@ main {
 }
 
 /* Bookmark Button in Job List & Job Detail */
-.job-bookmark-btn {
+.job-bookmark-btn, .ww-bookmark-btn {
   align-items: center;
   background: #ffffff;
   border: 1px solid var(--line);
@@ -1936,22 +1931,23 @@ main {
   width: 32px;
 }
 
-.job-bookmark-btn:hover {
+.job-bookmark-btn:hover, .ww-bookmark-btn:hover {
   background: #f1f7f2;
   border-color: #a8c4b2;
   color: var(--dark-mint);
 }
 
-.job-bookmark-btn.saved {
+.job-bookmark-btn.saved, .ww-bookmark-btn.saved {
   background: #edf6ef;
   border-color: #a8d5b5;
   color: #1e7e34;
 }
 
-.job-bookmark-btn:disabled {
+.job-bookmark-btn:disabled, .ww-bookmark-btn:disabled {
   opacity: 0.5;
   pointer-events: none;
 }
+
 
 /* Minimal Plain Floating Toast */
 .plain-toast {
@@ -2872,20 +2868,47 @@ button.tracker-stat-card.active {
    -------------------------------------------------------------------------- */
 .agent-workspace {
   margin: 0 auto;
-  max-width: 900px;
+  max-width: 1200px;
   padding: 0 28px 64px;
 }
 
-.agent-session-bar {
-  align-items: center;
+.agent-layout {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.agent-sidebar {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: flex;
+  flex: 0 0 300px;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 76vh;
+  overflow-y: auto;
+  padding: 16px;
+  position: sticky;
+  top: 20px;
+}
+
+.agent-new-session-btn {
+  width: 100%;
+}
+
+.agent-sidebar-heading {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
 }
 
 .agent-session-list {
   display: flex;
+  flex-direction: column;
   flex-wrap: wrap;
   gap: 6px;
 }
@@ -2896,7 +2919,12 @@ button.tracker-stat-card.active {
   border-radius: 999px;
   color: var(--muted);
   font-size: 12px;
+  overflow: hidden;
   padding: 5px 11px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
 }
 
 .agent-session-chip.active {
@@ -3048,7 +3076,6 @@ button.tracker-stat-card.active {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 12px;
-  margin-top: 14px;
   padding: 12px 16px;
 }
 
@@ -3066,13 +3093,17 @@ button.tracker-stat-card.active {
 .agent-memory-status {
   color: var(--muted);
   font-size: 12px;
-  margin-bottom: 10px;
+  margin-top: 8px;
 }
 
 .agent-memory-grid {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.agent-memory-grid-vertical {
+  grid-template-columns: 1fr;
 }
 
 .agent-memory-grid .field-label {
@@ -3088,6 +3119,73 @@ button.tracker-stat-card.active {
   margin-top: 12px;
 }
 
+.agent-memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.agent-memory-item {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.agent-memory-item-head {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.agent-memory-type {
+  background: var(--mint);
+  border-radius: 999px;
+  color: var(--dark-mint);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  text-transform: uppercase;
+}
+
+.agent-memory-conf {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.agent-memory-text {
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-memory-delete {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 2px;
+}
+
+.agent-memory-delete:hover {
+  color: #a33;
+}
+
+.agent-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-main .agent-chat {
+  flex: 1;
+}
+
 @media (max-width: 640px) {
   .agent-workspace {
     padding-left: 16px;
@@ -3096,5 +3194,16 @@ button.tracker-stat-card.active {
 
   .agent-bubble {
     max-width: 92%;
+  }
+
+  .agent-layout {
+    flex-direction: column;
+  }
+
+  .agent-sidebar {
+    flex: none;
+    max-height: none;
+    position: static;
+    width: 100%;
   }
 }

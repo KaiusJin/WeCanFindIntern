@@ -86,6 +86,9 @@ def test_openapi_contract_covers_frontend_endpoints():
     assert "delete" in paths["/api/v1/profile/resumes/{resume_id}"]
     assert "/api/v1/tracker/export.csv" in paths
     assert "patch" in paths["/api/v1/tracker/bulk"]
+    assert "get" in paths["/api/v1/tracker/bookmarks/waterlooworks"]
+    assert "put" in paths["/api/v1/tracker/bookmarks/waterlooworks/{source_job_id}"]
+    assert "delete" in paths["/api/v1/tracker/bookmarks/waterlooworks/{source_job_id}"]
     assert "post" in paths["/api/v1/agent/sessions"]
     assert "post" in paths["/api/v1/agent/sessions/{session_id}/messages"]
     assert "post" in paths["/api/v1/agent/approvals/{approval_id}/decision"]

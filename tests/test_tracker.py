@@ -155,3 +155,60 @@ def test_unbookmark_job_safe_interested_and_protected_states():
     deleted, stage = asyncio.run(TrackerRepository(FakePool(None)).unbookmark_job(job_id))
     assert deleted is False
     assert stage is None
+
+
+def test_bookmark_waterlooworks_job_includes_salary():
+    class FakeCursor:
+        def __init__(self):
+            self.executed = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, query, params):
+            self.executed.append((query, params))
+
+        async def fetchone(self):
+            return None
+
+    class FakeConnection:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def cursor(self, row_factory=None):
+            return self.cursor_obj
+
+        def transaction(self):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakePool:
+        def __init__(self, connection):
+            self._connection = connection
+
+        def connection(self):
+            return self._connection
+
+    connection = FakeConnection()
+    repo = TrackerRepository(FakePool(connection))
+    asyncio.run(
+        repo.bookmark_waterlooworks_job(
+            source_job_id="123456",
+            company_name="Acme Corp",
+            title="Software Developer",
+            salary_text="$40/hr",
+        )
+    )
+    query, params = connection.cursor_obj.executed[0]
+    assert "salary_text" in query
+    assert "$40/hr" in params
+    assert "waterloo_work" in query
+    assert params[0] == "123456"

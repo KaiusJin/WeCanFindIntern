@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from wecanfindintern.agent.memory.extraction import extract_memory_candidates
 from wecanfindintern.agent.memory.models import (
     ConversationSummary,
     MaintenanceReport,
+    MemoryRecord,
     WorkingContext,
 )
 from wecanfindintern.agent.memory.preferences import (
@@ -271,6 +273,7 @@ class AgentMemoryManager:
             conversational,
             state.summary_text,
         )
+        existing = await store.load_active_memories(settings.max_active_memories)
         added = updated = skipped = 0
         for candidate in candidates:
             new_id = await store.insert_memory(
@@ -288,9 +291,23 @@ class AgentMemoryManager:
             if new_id is None:
                 skipped += 1
             else:
-                added += 1
-        if candidates:
-            updated = 0  # hash-dedup consolidation; updates are future work
+                match = _find_similar_memory(existing, candidate)
+                if match is not None:
+                    await store.supersede_memory(match.id, new_id)
+                    updated += 1
+                    existing = [item for item in existing if item.id != match.id]
+                else:
+                    added += 1
+                existing.append(
+                    MemoryRecord(
+                        id=new_id,
+                        session_id=state.session_id,
+                        memory_type=candidate.memory_type,
+                        content=candidate.content,
+                        content_hash="",
+                        confidence=candidate.confidence,
+                    )
+                )
         last = messages[-1]
         await store.advance_extraction_watermark(state.session_id, last.id)
         active_count = await store.count_active_memories()
@@ -298,6 +315,62 @@ class AgentMemoryManager:
         if excess > 0:
             await store.expire_lowest_value_memories(excess)
         return True, len(candidates), added, updated, skipped
+
+
+_MEMORY_STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "with",
+    "without",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "is",
+    "are",
+    "be",
+    "it",
+    "this",
+    "that",
+}
+
+_MEMORY_TYPE_GROUPS: dict[str, set[str]] = {
+    "EDUCATION_PROFILE": {"EDUCATION_PROFILE", "CAREER_CONTEXT"},
+    "CAREER_CONTEXT": {"EDUCATION_PROFILE", "CAREER_CONTEXT"},
+}
+
+
+def _memory_tokens(content: str) -> set[str]:
+    text = content.lower()
+    tokens = set(re.findall(r"[a-z0-9]+", text)) - _MEMORY_STOPWORDS
+    cjk = re.findall(r"[\u4e00-\u9fff]", text)
+    tokens.update(cjk[index] + cjk[index + 1] for index in range(len(cjk) - 1))
+    return tokens
+
+
+def _memory_similarity(left: str, right: str) -> float:
+    left_tokens = _memory_tokens(left)
+    right_tokens = _memory_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / min(len(left_tokens), len(right_tokens))
+
+
+def _find_similar_memory(existing: list[MemoryRecord], candidate) -> MemoryRecord | None:
+    """Find an active memory the new candidate should supersede (same topic)."""
+
+    for record in existing:
+        compatible = _MEMORY_TYPE_GROUPS.get(record.memory_type, {record.memory_type})
+        if candidate.memory_type not in compatible:
+            continue
+        if _memory_similarity(record.content, candidate.content) >= 0.5:
+            return record
+    return None
 
 
 def render_context_sections(context: WorkingContext) -> list[str]:
@@ -316,7 +389,7 @@ def render_context_sections(context: WorkingContext) -> list[str]:
         sections.append(memories_block)
     if context.window:
         lines = [
-            f"{message.role}: {message.content[:900]}"
+            f"{message.role}: {message.content[:2000]}"
             for message in context.window
         ]
         sections.append("## Recent conversation\n" + "\n".join(lines))

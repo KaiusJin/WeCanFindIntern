@@ -334,6 +334,7 @@ class TrackerRepository:
         job_url: str | None = None,
         job_description: str | None = None,
         application_deadline: str | None = None,
+        salary_text: str | None = None,
     ) -> TrackedApplication | None:
         """Create or restore one tracker record referencing a WaterlooWorks job."""
 
@@ -341,10 +342,10 @@ class TrackerRepository:
         sql = f"""
             INSERT INTO application_tracker (
                 external_job_id, source_type, company_name, title, location_text,
-                work_mode, job_url, job_description, application_deadline,
+                work_mode, job_url, job_description, application_deadline, salary_text,
                 origin_type, stage, created_at, updated_at
             ) VALUES (
-                %s, 'waterloo_work', %s, %s, %s, %s, %s, %s, %s,
+                %s, 'waterloo_work', %s, %s, %s, %s, %s, %s, %s, %s,
                 'platform_bookmark', 'interested', %s, %s
             )
             ON CONFLICT (source_type, external_job_id)
@@ -357,6 +358,7 @@ class TrackerRepository:
                 job_url = EXCLUDED.job_url,
                 job_description = EXCLUDED.job_description,
                 application_deadline = EXCLUDED.application_deadline,
+                salary_text = EXCLUDED.salary_text,
                 origin_type = 'platform_bookmark',
                 archived_at = NULL,
                 updated_at = EXCLUDED.updated_at
@@ -375,6 +377,7 @@ class TrackerRepository:
                         job_url,
                         job_description,
                         application_deadline,
+                        salary_text,
                         now,
                         now,
                     ),

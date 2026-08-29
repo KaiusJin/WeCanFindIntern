@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from wecanfindintern.waterlooworks.extractor import normalize_waterlooworks_job
+from wecanfindintern.waterlooworks.extractor import (
+    normalize_waterlooworks_job,
+    waterlooworks_salary,
+)
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -51,6 +54,10 @@ CREATE TABLE IF NOT EXISTS waterlooworks_jobs (
     province TEXT,
     country TEXT,
     work_mode TEXT NOT NULL DEFAULT 'unknown',
+    salary_min TEXT,
+    salary_max TEXT,
+    salary_interval TEXT,
+    salary_currency TEXT,
     date_posted TEXT,
     application_deadline TEXT,
     application_url TEXT,
@@ -91,6 +98,8 @@ class WaterlooWorksRepository:
         with self._connect() as connection:
             connection.executescript(SCHEMA)
             self._drop_legacy_content_tracking_columns(connection)
+            self._ensure_salary_columns(connection)
+            self._clean_html_descriptions(connection)
 
     def start_run(self, boards: list[dict[str, Any]]) -> str:
         run_id = str(uuid4())
@@ -167,13 +176,15 @@ class WaterlooWorksRepository:
                             """
                             INSERT INTO waterlooworks_jobs(
                                 source_job_id, title, organization, division, location_text,
-                                city, province, country, work_mode, date_posted,
+                                city, province, country, work_mode,
+                                salary_min, salary_max, salary_interval, salary_currency, date_posted,
                                 application_deadline, application_url, application_delivery,
                                 application_documents, source_url, description, raw_payload,
                                 first_seen_at, last_seen_at
                             ) VALUES (
                                 :source_job_id, :title, :organization, :division, :location_text,
-                                :city, :province, :country, :work_mode, :date_posted,
+                                :city, :province, :country, :work_mode,
+                                :salary_min, :salary_max, :salary_interval, :salary_currency, :date_posted,
                                 :application_deadline, :application_url, :application_delivery,
                                 :application_documents, :source_url, :description, :raw_payload,
                                 :first_seen_at, :last_seen_at
@@ -369,13 +380,70 @@ class WaterlooWorksRepository:
             row[1]
             for row in connection.execute("PRAGMA table_info(waterlooworks_jobs)").fetchall()
         }
-        for column in ("payload_hash", "updated_at"):
+        for column in ("payload_hash", "updated_at", "salary_text"):
             if column in columns:
                 connection.execute(f"ALTER TABLE waterlooworks_jobs DROP COLUMN {column}")
+
+    @staticmethod
+    def _ensure_salary_columns(connection: sqlite3.Connection) -> None:
+        """Add structured salary columns and recompute them from stored payloads."""
+
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(waterlooworks_jobs)").fetchall()
+        }
+        for column in ("salary_min", "salary_max", "salary_interval", "salary_currency"):
+            if column not in columns:
+                connection.execute(f"ALTER TABLE waterlooworks_jobs ADD COLUMN {column} TEXT")
+        rows = connection.execute(
+            "SELECT source_job_id, raw_payload FROM waterlooworks_jobs"
+        ).fetchall()
+        for row in rows:
+            try:
+                raw = json.loads(row["raw_payload"])
+            except (TypeError, ValueError):
+                continue
+            salary = waterlooworks_salary(raw)
+            connection.execute(
+                """
+                UPDATE waterlooworks_jobs SET
+                    salary_min=?, salary_max=?, salary_interval=?, salary_currency=?
+                WHERE source_job_id=?
+                """,
+                (
+                    str(salary.minimum) if salary and salary.minimum is not None else None,
+                    str(salary.maximum) if salary and salary.maximum is not None else None,
+                    salary.interval if salary else None,
+                    salary.currency if salary else None,
+                    row["source_job_id"],
+                ),
+            )
+
+    @staticmethod
+    def _clean_html_descriptions(connection: sqlite3.Connection) -> None:
+        """Strip stray HTML from stored JD text so it renders as plain Markdown."""
+
+        import re
+
+        rows = connection.execute(
+            "SELECT source_job_id, description FROM waterlooworks_jobs "
+            "WHERE description IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            cleaned = "\n".join(
+                " ".join(line.split())
+                for line in re.sub(r"<[^>]+>", " ", row["description"]).split("\n")
+            )
+            if cleaned != row["description"]:
+                connection.execute(
+                    "UPDATE waterlooworks_jobs SET description=? WHERE source_job_id=?",
+                    (cleaned, row["source_job_id"]),
+                )
 
 
 def _storage_record(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_waterlooworks_job(raw)
+    salary = waterlooworks_salary(raw)
     location = raw.get("location") or {}
     application = raw.get("application") or {}
     payload_json = json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -390,6 +458,10 @@ def _storage_record(raw: dict[str, Any]) -> dict[str, Any]:
         "province": _text(location.get("province")),
         "country": _text(location.get("country")),
         "work_mode": "remote" if normalized.is_remote else "unknown",
+        "salary_min": str(salary.minimum) if salary and salary.minimum is not None else None,
+        "salary_max": str(salary.maximum) if salary and salary.maximum is not None else None,
+        "salary_interval": salary.interval if salary else None,
+        "salary_currency": salary.currency if salary else None,
         "date_posted": normalized.date_posted.isoformat() if normalized.date_posted else None,
         "application_deadline": _text(application.get("deadline")),
         "application_url": normalized.direct_url,

@@ -12,7 +12,7 @@ import {
 import { fetchTrackerData } from "./tracker.js";
 import { loadProfileWorkspace } from "./profile.js";
 // Cache-busted so browsers re-fetch the module after the formatDate import fix.
-import { loadWaterlooWorksStatus, loadWaterlooWorksJobs } from "./waterlooworks.js?v=20260828-fix-v24";
+import { loadWaterlooWorksStatus, loadWaterlooWorksJobs } from "./waterlooworks.js?v=20260828-fix-v26";
 import { updateContextChip, renderSessionList } from "./agent.js";
 import "./ats.js";
 import "./interview.js";
