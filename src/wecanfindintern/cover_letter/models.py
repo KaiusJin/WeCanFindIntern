@@ -25,9 +25,10 @@ class CoverLetterRequest(BaseModel):
     company_information: str = ""
     date_str: str = "[Date]"
     user_info: UserProfile = Field(default_factory=UserProfile)
-    provider: Literal["Gemini", "OpenAI", "DeepSeek"] = "Gemini"
+    provider: Literal["Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"] = "Gemini"
     model_name: str | None = None
     api_key: str | None = None
+    api_base: str | None = None
 
 
 class CoverLetterResponse(BaseModel):

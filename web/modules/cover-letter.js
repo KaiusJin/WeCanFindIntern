@@ -172,6 +172,7 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
           provider: config.provider,
           model_name: config.model_name,
           api_key: config.api_key,
+          api_base: config.api_base || "",
           date_str: new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "long", day: "numeric" }).format(new Date()),
           user_info: {
             ...coverLetterUserInfo(),

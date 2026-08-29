@@ -31,6 +31,7 @@ def run_cover_letter_generation(payload: CoverLetterRequest):
         provider=payload.provider,
         model_name=payload.model_name,
         api_key=payload.api_key,
+        api_base=payload.api_base,
     )
 
 

@@ -76,6 +76,7 @@ $("#btn-run-ats")?.addEventListener("click", async () => {
           provider: config.provider,
           model_name: config.model_name,
           api_key: config.api_key,
+          api_base: config.api_base || "",
         }),
       },
       120000,

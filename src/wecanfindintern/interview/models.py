@@ -9,9 +9,10 @@ from pydantic import BaseModel, Field
 
 class InterviewQuestionsRequest(BaseModel):
     job_description: str
-    provider: Literal["Gemini", "OpenAI", "DeepSeek"] = "Gemini"
+    provider: Literal["Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"] = "Gemini"
     model_name: str | None = None
     api_key: str | None = None
+    api_base: str | None = None
 
 
 class InterviewQuestionItem(BaseModel):

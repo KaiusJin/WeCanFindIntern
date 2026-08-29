@@ -37,4 +37,5 @@ def run_ats_review(payload: AtsReviewRequest):
         provider=payload.provider,
         model_name=payload.model_name,
         api_key=payload.api_key,
+        api_base=payload.api_base,
     )

@@ -26,6 +26,7 @@ def generate_interview_questions(
     provider: str = "Gemini",
     model_name: str | None = None,
     api_key: str | None = None,
+    api_base: str | None = None,
 ) -> InterviewQuestionsResponse:
     """Generate 3-stage tailored mock interview loop."""
     if not job_description.strip():
@@ -41,6 +42,7 @@ def generate_interview_questions(
             provider=provider,
             model_name=model_name,
             api_key=resolved_key,
+            api_base=api_base,
             system_prompt="You are a professional technical interviewer. Output valid JSON.",
             user_prompt=build_questions_prompt(job_description),
         )
@@ -61,6 +63,7 @@ def analyze_interview_performance(
     provider: str = "Gemini",
     model_name: str | None = None,
     api_key: str | None = None,
+    api_base: str | None = None,
 ) -> InterviewAnalyzeResponse:
     """Analyze mock interview answer performance."""
 
@@ -94,10 +97,13 @@ def analyze_interview_performance(
             provider=provider,
             model_name=model_name,
             api_key=resolved_key,
+            api_base=api_base,
             system_prompt="You are a professional interview coach. Output valid JSON.",
             user_prompt=prompt_text,
             response_format=(
-                {"type": "json_object"} if provider in ("OpenAI", "DeepSeek") else None
+                {"type": "json_object"}
+                if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama")
+                else None
             ),
         )
         return _analysis_from_data(result.data, usage=result.usage)

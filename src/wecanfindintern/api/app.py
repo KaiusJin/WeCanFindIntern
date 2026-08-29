@@ -147,6 +147,17 @@ def create_app() -> FastAPI:
 
     # Keep the browser experience in the same deployable service as the data API.
     # API routes are declared first, so the catch-all static route does not shadow them.
+    @app.middleware("http")
+    async def no_cache_frontend(request: Request, call_next):
+        response = await call_next(request)
+        if (
+            request.url.path in ("/", "/index.html")
+            or request.url.path.startswith("/modules/")
+            or request.url.path == "/styles.css"
+        ):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
     return app
 

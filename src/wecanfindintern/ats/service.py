@@ -21,6 +21,7 @@ def generate_ats_review(
     provider: str = "Gemini",
     model_name: str | None = None,
     api_key: str | None = None,
+    api_base: str | None = None,
 ) -> AtsReviewResponse:
     """Evaluate candidate resume against a target job description."""
     if not resume_text.strip():
@@ -38,10 +39,13 @@ def generate_ats_review(
             provider=provider,
             model_name=model_name,
             api_key=resolved_key,
+            api_base=api_base,
             system_prompt=ATS_SYSTEM_PROMPT,
             user_prompt=build_ats_prompt(resume_text, job_description),
             response_format=(
-                {"type": "json_object"} if provider in ("OpenAI", "DeepSeek") else None
+                {"type": "json_object"}
+                if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama")
+                else None
             ),
         )
         data = result.data

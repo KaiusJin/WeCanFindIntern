@@ -67,6 +67,7 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
           provider: config.provider,
           model_name: config.model_name,
           api_key: config.api_key,
+          api_base: config.api_base || "",
         }),
       },
       120000,
@@ -206,6 +207,7 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
   formData.append("provider", config.provider);
   formData.append("model_name", config.model_name || "");
   formData.append("api_key", config.api_key || "");
+  formData.append("api_base", config.api_base || "");
 
   if (interviewState.recordedBlob) {
     formData.append("video_file", interviewState.recordedBlob, "answer.webm");

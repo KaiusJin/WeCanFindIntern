@@ -45,6 +45,8 @@ def clean_api_key(api_key: str) -> str:
 def resolve_api_key(provider: str, api_key: str | None = None) -> str:
     """Validate and sanitize an API key supplied by the caller."""
 
+    if provider == "Ollama":
+        return "local"
     if api_key and api_key.strip():
         cleaned = clean_api_key(api_key)
         if cleaned:
@@ -71,10 +73,54 @@ def parse_json(text: str) -> Any:
     try:
         parsed = json.loads(clean_json_text(text))
     except json.JSONDecodeError as error:
-        raise ValueError(f"invalid JSON response: {error}") from error
+        parsed = _find_last_json(clean_json_text(text))
+        if parsed is None:
+            raise ValueError(f"invalid JSON response: {error}") from error
     if not isinstance(parsed, (dict, list)):
         raise ValueError("LLM response was not a JSON object or array.")
     return parsed
+
+
+def _find_last_json(text: str) -> Any:
+    """Locate the last balanced JSON value when models emit extra blocks.
+
+    Some providers return a reasoning/scratch block followed by the real JSON
+    answer. ``json.loads`` rejects those concatenated documents, so fall back
+    to scanning for the last balanced JSON value in the text.
+    """
+
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start = text.rfind(opener)
+        while start != -1:
+            depth = 0
+            in_string = False
+            escaped = False
+            for index in range(start, len(text)):
+                char = text[index]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                    continue
+                if char == '"':
+                    in_string = True
+                elif char == opener:
+                    depth += 1
+                elif char == closer:
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[start : index + 1]
+                        try:
+                            parsed = json.loads(candidate)
+                        except json.JSONDecodeError:
+                            break
+                        if isinstance(parsed, (dict, list)):
+                            return parsed
+            start = text.rfind(opener, 0, start)
+    return None
 
 
 def complete_json(
@@ -85,6 +131,7 @@ def complete_json(
     system_prompt: str,
     user_prompt: str,
     response_format: dict[str, str] | None = None,
+    api_base: str | None = None,
     timeout_seconds: float = 60.0,
     max_retries: int = 1,
 ) -> LLMResult:
@@ -99,20 +146,22 @@ def complete_json(
     if not model_name or not model_name.strip():
         raise LLMError(provider, "No AI model selected. Please select a model in Settings.")
     key = clean_api_key(api_key)
-    if not key:
+    if provider == "Ollama":
+        key = "local"
+    elif not key:
         raise LLMError(
             provider,
             f"Missing {provider} API key. Please enter your API key in Settings.",
         )
     model = model_name.strip().replace("models/", "")
-    if provider not in ("Gemini", "OpenAI", "DeepSeek"):
+    if provider not in ("Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"):
         raise LLMError(provider, f"Unsupported provider: {provider}", model=model)
 
     delay = 1.0
     last_error: Exception | None = None
     for attempt in range(max_retries + 1):
         try:
-            if provider in ("OpenAI", "DeepSeek"):
+            if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"):
                 return _openai_compatible(
                     provider=provider,
                     api_key=key,
@@ -120,6 +169,7 @@ def complete_json(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     response_format=response_format,
+                    api_base=api_base,
                     timeout_seconds=timeout_seconds,
                 )
             return _gemini(
@@ -148,15 +198,25 @@ def _openai_compatible(
     system_prompt: str,
     user_prompt: str,
     response_format: dict[str, str] | None,
+    api_base: str | None = None,
     timeout_seconds: float,
 ) -> LLMResult:
     from openai import OpenAI
 
-    base_url = (
-        os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
-        if provider == "DeepSeek"
-        else None
-    )
+    if api_base:
+        base_url = api_base
+    elif provider == "DeepSeek":
+        base_url = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+    elif provider == "GLM":
+        base_url = os.environ.get("GLM_API_BASE", "https://open.bigmodel.cn/api/paas/v4")
+    elif provider == "Qwen":
+        base_url = os.environ.get(
+            "QWEN_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        )
+    elif provider == "Ollama":
+        base_url = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434/v1")
+    else:
+        base_url = None
     client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_seconds, max_retries=0)
     kwargs: dict[str, Any] = {}
     if response_format:

@@ -28,6 +28,7 @@ def get_questions(payload: InterviewQuestionsRequest):
         provider=payload.provider,
         model_name=payload.model_name,
         api_key=payload.api_key,
+        api_base=payload.api_base,
     )
 
 
@@ -48,6 +49,7 @@ async def analyze_answer(
     provider: str = Form("Gemini"),
     model_name: str | None = Form(None),
     api_key: str | None = Form(None),
+    api_base: str | None = Form(None),
     video_file: Annotated[UploadFile | None, File()] = None,
 ):
     """Analyze mock interview answer with text transcript or recorded video."""
@@ -63,4 +65,5 @@ async def analyze_answer(
         provider=provider,
         model_name=model_name,
         api_key=api_key,
+        api_base=api_base,
     )
