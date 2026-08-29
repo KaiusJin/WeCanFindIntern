@@ -277,6 +277,7 @@ class WaterlooWorksRepository:
         query: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        include_description: bool = False,
     ) -> dict[str, Any]:
         predicates: list[str] = []
         params: list[Any] = []
@@ -313,9 +314,23 @@ class WaterlooWorksRepository:
             item["boards"] = json.loads(item["boards"] or "[]")
             item.pop("raw_payload", None)
             item.pop("payload_hash", None)
-            item.pop("description", None)
+            if not include_description:
+                item.pop("description", None)
             items.append(item)
         return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    def get_job(self, source_job_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM waterlooworks_jobs WHERE source_job_id=?",
+                (source_job_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item.pop("raw_payload", None)
+        item.pop("payload_hash", None)
+        return item
 
     def count_source_ids(self, source_job_ids: list[str]) -> int:
         if not source_job_ids:

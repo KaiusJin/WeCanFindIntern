@@ -14,6 +14,7 @@ from wecanfindintern.api.models import (
     JobListFilters,
     JobPage,
 )
+from wecanfindintern.api.routes.agent import agent_router
 from wecanfindintern.api.routes.ats import ats_router
 from wecanfindintern.api.routes.cover_letter import cover_letter_router
 from wecanfindintern.api.routes.interview import interview_router
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(tracker_router)
     app.include_router(profile_router)
     app.include_router(waterlooworks_router)
+    app.include_router(agent_router)
 
     def repository(request: Request) -> JobReadRepository:
         return JobReadRepository(request.app.state.database.pool)

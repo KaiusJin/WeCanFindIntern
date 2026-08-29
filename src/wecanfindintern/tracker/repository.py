@@ -23,7 +23,7 @@ from wecanfindintern.tracker.models import (
 )
 
 APPLICATION_COLUMNS = """
-    public_id AS id, job_id, company_name, title, location_text, work_mode,
+    public_id AS id, job_id, external_job_id, company_name, title, location_text, work_mode,
     job_url, job_description, salary_text, origin_type, source_type AS source, stage,
     applied_at, created_at, updated_at
 """
@@ -133,6 +133,29 @@ class TrackerRepository:
             result = await connection.execute(sql)
             rows = await result.fetchall()
         return [TrackedJobState.model_validate(row) for row in rows]
+
+    async def list_tracked_external_states(
+        self,
+    ) -> list[dict[str, Any]]:
+        """Map external source references to tracker records (WaterlooWorks)."""
+
+        sql = """
+            SELECT source_type AS source, external_job_id, public_id AS application_id, stage
+            FROM application_tracker
+            WHERE external_job_id IS NOT NULL AND archived_at IS NULL;
+        """
+        async with self.pool.connection() as connection:
+            result = await connection.execute(sql)
+            rows = await result.fetchall()
+        return [
+            {
+                "source": row["source"],
+                "external_job_id": row["external_job_id"],
+                "application_id": row["application_id"],
+                "stage": row["stage"],
+            }
+            for row in rows
+        ]
 
     async def create_application(self, req: TrackerCreateRequest) -> TrackedApplication:
         now = datetime.now(UTC)
@@ -297,6 +320,104 @@ class TrackerRepository:
                 await cursor.execute(
                     "DELETE FROM application_tracker WHERE job_id = %s;",
                     (job_id,),
+                )
+                return True, None
+
+    async def bookmark_waterlooworks_job(
+        self,
+        *,
+        source_job_id: str,
+        company_name: str,
+        title: str,
+        location_text: str | None = None,
+        work_mode: str | None = None,
+        job_url: str | None = None,
+        job_description: str | None = None,
+        application_deadline: str | None = None,
+    ) -> TrackedApplication | None:
+        """Create or restore one tracker record referencing a WaterlooWorks job."""
+
+        now = datetime.now(UTC)
+        sql = f"""
+            INSERT INTO application_tracker (
+                external_job_id, source_type, company_name, title, location_text,
+                work_mode, job_url, job_description, application_deadline,
+                origin_type, stage, created_at, updated_at
+            ) VALUES (
+                %s, 'waterloo_work', %s, %s, %s, %s, %s, %s, %s,
+                'platform_bookmark', 'interested', %s, %s
+            )
+            ON CONFLICT (source_type, external_job_id)
+                WHERE external_job_id IS NOT NULL
+            DO UPDATE SET
+                company_name = EXCLUDED.company_name,
+                title = EXCLUDED.title,
+                location_text = EXCLUDED.location_text,
+                work_mode = EXCLUDED.work_mode,
+                job_url = EXCLUDED.job_url,
+                job_description = EXCLUDED.job_description,
+                application_deadline = EXCLUDED.application_deadline,
+                origin_type = 'platform_bookmark',
+                archived_at = NULL,
+                updated_at = EXCLUDED.updated_at
+            RETURNING {APPLICATION_COLUMNS};
+        """
+        async with self.pool.connection() as connection, connection.transaction():
+            async with connection.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(
+                    sql,
+                    (
+                        source_job_id,
+                        company_name,
+                        title,
+                        location_text,
+                        work_mode,
+                        job_url,
+                        job_description,
+                        application_deadline,
+                        now,
+                        now,
+                    ),
+                )
+                row = await cursor.fetchone()
+                if row:
+                    await cursor.execute(
+                        """
+                        INSERT INTO application_tracker_events (
+                            application_id, event_type, title, details, occurred_at
+                        )
+                        SELECT id, 'created', 'Interested', 'Opportunity saved to pipeline', %s
+                        FROM application_tracker WHERE public_id = %s
+                        AND NOT EXISTS (
+                            SELECT 1 FROM application_tracker_events
+                            WHERE application_id = application_tracker.id AND event_type = 'created'
+                        );
+                        """,
+                        (now, row["id"]),
+                    )
+        return TrackedApplication.model_validate(row) if row else None
+
+    async def unbookmark_waterlooworks_job(
+        self, source_job_id: str
+    ) -> tuple[bool, str | None]:
+        """Safely remove a WaterlooWorks-tracked job if still 'interested'."""
+
+        async with self.pool.connection() as connection, connection.transaction():
+            async with connection.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(
+                    "SELECT id, stage FROM application_tracker "
+                    "WHERE external_job_id = %s AND source_type = 'waterloo_work';",
+                    (source_job_id,),
+                )
+                row = await cursor.fetchone()
+                if not row:
+                    return False, None
+                stage = row["stage"]
+                if stage != "interested":
+                    return False, stage
+                await cursor.execute(
+                    "DELETE FROM application_tracker WHERE id = %s;",
+                    (row["id"],),
                 )
                 return True, None
 

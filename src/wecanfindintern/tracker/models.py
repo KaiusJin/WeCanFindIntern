@@ -38,6 +38,7 @@ class TrackerEventType(StrEnum):
 class TrackedApplication(BaseModel):
     id: UUID
     job_id: UUID | None = None
+    external_job_id: str | None = None
     company_name: str
     title: str
     location_text: str | None = None

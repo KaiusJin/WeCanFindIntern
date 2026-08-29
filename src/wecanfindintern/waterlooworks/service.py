@@ -197,6 +197,7 @@ class WaterlooWorksService:
         query: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        include_description: bool = False,
     ) -> dict[str, Any]:
         allowed_boards = {name for name, _ in WATERLOOWORKS_BOARDS}
         if board and board not in allowed_boards:
@@ -207,7 +208,11 @@ class WaterlooWorksService:
             query=query,
             limit=limit,
             offset=offset,
+            include_description=include_description,
         )
+
+    async def get_job(self, source_job_id: str) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self.repository.get_job, source_job_id)
 
     async def close(self) -> None:
         if self.collect_task and not self.collect_task.done():

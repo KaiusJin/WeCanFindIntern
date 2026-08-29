@@ -5,49 +5,53 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260828-fix-v22" />
+    <link rel="stylesheet" href="/styles.css?v=20260828-fix-v25" />
   </head>
   <body>
     <header class="topbar">
-      <div class="topbar-brand-group">
+      <div class="topbar-row">
         <a class="brand" href="/">WeCanFindIntern<span>_</span></a>
-        <nav class="topbar-nav" aria-label="Main Navigation">
-          <button class="nav-tab active" data-tab="tab-jobs" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <span>Jobs</span>
+        <div class="topbar-actions">
+          <button id="open-settings" class="settings-trigger-btn" type="button" aria-label="AI Settings">
+            <svg class="gear-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>AI Settings</span>
           </button>
-          <button class="nav-tab" data-tab="tab-waterlooworks" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 2v4M16 2v4M3 9h18"></path><path d="m9 14 2 2 4-4"></path></svg>
-            <span>WaterlooWorks</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-ats" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
-            <span>ATS Review</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-interview" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-            <span>Interview Coach</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-cover-letter" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-            <span>Cover Letter</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-profile" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="7" r="4"></circle></svg>
-            <span>Profile</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-tracker" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14l2 2 4-4"></path></svg>
-            <span>Tracker</span>
-          </button>
-        </nav>
+        </div>
       </div>
-      <div class="topbar-actions">
-        <button id="open-settings" class="settings-trigger-btn" type="button" aria-label="AI Settings">
-          <svg class="gear-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-          <span>AI Settings</span>
+      <nav class="topbar-nav" aria-label="Main Navigation">
+        <button class="nav-tab active" data-tab="tab-jobs" type="button">
+          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <span>Jobs</span>
         </button>
-      </div>
+        <button class="nav-tab" data-tab="tab-waterlooworks" type="button">
+          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 2v4M16 2v4M3 9h18"></path><path d="m9 14 2 2 4-4"></path></svg>
+          <span>WaterlooWorks</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-ats" type="button">
+          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
+          <span>ATS Review</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-interview" type="button">
+          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+          <span>Interview Coach</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-cover-letter" type="button">
+          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+          <span>Cover Letter</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-profile" type="button">
+          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          <span>Profile</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-tracker" type="button">
+          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14l2 2 4-4"></path></svg>
+          <span>Tracker</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-agent" type="button">
+          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect x="2" y="2" width="20" height="12" rx="2"></rect><path d="M6 2v4M18 2v4"></path><path d="M2 8h20"></path><path d="M8 14v.01M16 14v.01"></path><rect x="8" y="16" width="8" height="4" rx="1"></rect></svg>
+          <span>AI Agent</span>
+        </button>
+      </nav>
     </header>
 
     <main>
@@ -700,6 +704,73 @@
             </div>
             <div class="tracker-pagination"><span id="tracker-page-summary"></span><div><button id="tracker-page-prev" class="secondary-button compact-button" type="button">Previous</button><button id="tracker-page-next" class="secondary-button compact-button" type="button">Next</button></div><label>Rows <select id="tracker-page-size"><option>25</option><option selected>50</option><option>100</option></select></label></div>
           </div>
+        </section>
+      </div>
+
+      <!-- TAB 8: AI AGENT -->
+      <div id="tab-agent" class="tab-pane" hidden>
+        <section class="hero">
+          <p class="eyebrow">AI AGENT / 08</p>
+          <h1>Your job-search copilot.</h1>
+          <p class="hero-copy">Ask in plain language — organize jobs, manage your Tracker, fill your Profile, or get recommendations.</p>
+        </section>
+        <section class="agent-workspace">
+          <div class="agent-session-bar">
+            <button id="agent-new-session" class="secondary-button compact-button" type="button">+ New conversation</button>
+            <div id="agent-session-list" class="agent-session-list" aria-label="Conversations"></div>
+          </div>
+          <div class="agent-context-bar">
+            <span class="agent-context-label">Context:</span>
+            <button id="agent-context-job" class="agent-context-chip" type="button" hidden></button>
+            <span id="agent-context-empty" class="agent-context-empty">No job selected — open a job in Jobs to attach it.</span>
+          </div>
+          <div id="agent-chat" class="agent-chat" aria-live="polite">
+            <div class="agent-message agent-assistant">
+              <div class="agent-bubble"><p class="md-p">Hi! I'm your AI Agent. Try: <em>“Add this job to Interested”</em>, <em>“Recommend jobs from my profile”</em>, <em>“What's in my Tracker?”</em>, or <em>“Fill in my graduation year”</em>.</p></div>
+            </div>
+          </div>
+          <form id="agent-form" class="agent-composer" autocomplete="off">
+            <input id="agent-input" class="career-input" type="text" placeholder="e.g. Add the job I'm viewing to Interested" />
+            <button class="primary-button" type="submit">Send</button>
+          </form>
+          <details id="agent-memory-panel" class="agent-memory-panel">
+            <summary>Memory &amp; preferences</summary>
+            <div class="agent-memory-body">
+              <div id="agent-memory-status" class="agent-memory-status">No conversation yet.</div>
+              <div class="agent-memory-grid">
+                <label class="field-group"><span class="field-label">Long-term memory</span>
+                  <select id="agent-pref-ltm" class="career-select">
+                    <option value="ENABLED">Enabled</option>
+                    <option value="DISABLED">Disabled</option>
+                  </select>
+                </label>
+                <label class="field-group"><span class="field-label">Target locations</span>
+                  <input id="agent-pref-locations" class="career-input" placeholder="e.g. Toronto, Vancouver" />
+                </label>
+                <label class="field-group"><span class="field-label">Target roles</span>
+                  <input id="agent-pref-roles" class="career-input" placeholder="e.g. Backend, Data Science" />
+                </label>
+                <label class="field-group"><span class="field-label">Work mode</span>
+                  <select id="agent-pref-work-mode" class="career-select">
+                    <option value="">Any</option>
+                    <option value="REMOTE">Remote</option>
+                    <option value="HYBRID">Hybrid</option>
+                    <option value="ONSITE">In-person</option>
+                  </select>
+                </label>
+                <label class="field-group"><span class="field-label">Salary range</span>
+                  <input id="agent-pref-salary" class="career-input" placeholder="e.g. $40+/hr" />
+                </label>
+                <label class="field-group"><span class="field-label">Answer language</span>
+                  <input id="agent-pref-language" class="career-input" placeholder="e.g. 中文 / English" />
+                </label>
+              </div>
+              <div class="agent-memory-actions">
+                <span id="agent-pref-feedback" class="settings-save-feedback" hidden>✓ Saved</span>
+                <button id="agent-pref-save" class="primary-button compact-button" type="button">Save preferences</button>
+              </div>
+            </div>
+          </details>
         </section>
       </div>
     </main>

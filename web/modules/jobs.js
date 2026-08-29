@@ -228,6 +228,7 @@ async function openJob(jobId) {
         <button class="btn-ai-action" type="button" data-ai-target="tab-ats">ATS Review ↗</button>
         <button class="btn-ai-action" type="button" data-ai-target="tab-interview">Mock Interview ↗</button>
         <button class="btn-ai-action" type="button" data-ai-target="tab-cover-letter">Cover Letter ↗</button>
+        <button class="btn-ai-action" type="button" data-ai-target="tab-agent">Ask AI Agent ↗</button>
       </div>
       <div class="detail-actions" style="margin-top: 16px;">${job.sources?.map((source) => `<a class="primary-button" href="${escapeHtml(source.direct_url || source.url)}" target="_blank" rel="noreferrer">View Application Link ↗</a>`).join("") || ""}</div>`;
   } catch (requestError) {

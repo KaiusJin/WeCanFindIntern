@@ -12,6 +12,7 @@ import {
 import { fetchTrackerData } from "./tracker.js";
 import { loadProfileWorkspace } from "./profile.js";
 import { loadWaterlooWorksStatus, loadWaterlooWorksJobs } from "./waterlooworks.js";
+import { updateContextChip, renderSessionList } from "./agent.js";
 import "./ats.js";
 import "./interview.js";
 import "./cover-letter.js";
@@ -38,6 +39,9 @@ document.addEventListener("click", (event) => {
       $("#cl-jd-text").value = jd;
       switchTab("tab-cover-letter");
       $("#cl-resume-text").focus();
+    } else if (targetTab === "tab-agent") {
+      switchTab("tab-agent");
+      $("#agent-input")?.focus();
     }
     $("#job-dialog")?.close();
   }
@@ -50,6 +54,10 @@ setTabActivators({
   "tab-waterlooworks": () => {
     loadWaterlooWorksStatus();
     loadWaterlooWorksJobs();
+  },
+  "tab-agent": () => {
+    updateContextChip();
+    renderSessionList();
   },
 });
 

@@ -39,6 +39,8 @@ JobSpy 多来源抓取
 | 14. 技术文档 | 已有 JobSpy 集成、数据 API、岗位分类/展示规范和项目状态文档 | `docs/` | 已完成 |
 | 15. 搜索和浏览页面 | 全英文搜索框、筛选器、职位卡片、详情弹窗、分页加载、原职位跳转和申请跟踪入口 | `web/`、`src/wecanfindintern/api/app.py` | 已完成 |
 | 16. Profile 与简历导入 | Profile 编辑、英文文本型 PDF/LaTeX 安全上传、结构化解析、审核确认、版本和原件管理 | `src/wecanfindintern/profile/`、`api/routes/profile.py`、`migrations/0011_user_profile.sql`、`web/` | 已完成本地 MVP |
+| 17. AI Agent | 自然语言对话控制：搜索岗位、查看 Tracker/Profile、添加/移除 Interested、修改 Tracker 阶段、Profile 字段级草稿与确认、基于 Profile 的岗位推荐；写操作一律先展示预览并等待用户确认 | `src/wecanfindintern/agent/`、`api/routes/agent.py`、`migrations/0014_ai_agent.sql`、`web/modules/agent.js`、`docs/ai-agent-requirements-and-plan.md` | 已完成本地 MVP |
+| 18. Agent 记忆 | 多会话管理（新建/切换/重命名/续聊）、短期记忆滑动窗口（token 预算 + 单条裁剪）、滚动摘要上下文压缩（版本化 + 水位线）、长期类型化记忆（提取/去重/召回）与显式用户偏好 | `src/wecanfindintern/agent/memory/`、`migrations/0015_agent_memory.sql`、`web/modules/agent.js`（会话栏 + 偏好面板） | 已完成本地 MVP |
 
 ## 三、当前做得怎么样
 
@@ -55,6 +57,13 @@ JobSpy 多来源抓取
 - 本轮已完成 Python/JavaScript 语法检查和 `git diff --check`。
 - 当前已有 Indeed 原始采集产物：1 个 CSV 和 1 个标准化 JSONL 文件。
 - 当前标准化 JSONL 样本为 5 条记录。
+- AI Agent 已实现完整工具链：`get_profile`、`search_jobs`、`get_job_details`、`list_tracker`、`recommend_jobs`、`propose_profile_update`、`add_interested`、`update_tracker_stage`、`remove_interested`、`update_profile`。
+- 所有 Agent 写操作（Interested 添加/移除、阶段修改、Profile 保存）都会先生成可读预览并等待确认；工具调用、审批和操作结果写入审计日志。
+- WaterlooWorks 岗位通过 `source_type + external_job_id` 来源引用进入 Tracker，不复制进公共岗位表、不与公共岗位跨源去重。
+- Agent 会话、消息、工具调用、审批和审计表已通过 `0014_ai_agent.sql` 迁移并完成本地验证；前端新增 `AI Agent` section（对话区、当前岗位上下文、确认卡片）。
+- Agent 记忆遵循 NoteFlow 的会话记忆模型：短期窗口（`window.py`）、滚动摘要（`summarizer.py`，增量合并 + 结构化校验重试）、长期记忆（`extraction.py` 类型白名单 + 置信度过滤 + 哈希去重，`recall.py` 词法/时效/置信度排序）、显式偏好（`preferences.py`，优先于推断记忆）。
+- 记忆维护（摘要压缩与记忆提取）在后台任务中运行（`AGENT_MEMORY_MAINTENANCE_INLINE` 可切为同步）；热路径 `build_context` 只做有界查询、不调用模型。
+- 跨会话记忆已验证：新会话可直接利用此前提取的偏好与背景（如“多伦多/远程/全栈”），推荐工具同时读取显式偏好做加分匹配。
 - 代码结构已覆盖从采集到 API 的主要后端链路。
 - 最近一次 staged campaign 完成 18 个来源查询，采集 482 条唯一来源记录；统一去重后新增 379、合并 28、已有 75。
 - 薪资严格在全量去重后执行：全量正则完成后新增 95 条，再由 DeepSeek 新增 72 条。
@@ -156,3 +165,7 @@ JobSpy 多来源抓取
 - [数据库写入仓库](../src/wecanfindintern/db/ingestion_repository.py)
 - [自动采集脚本](../scripts/collection/run_collection_campaign.py)
 - [API 应用](../src/wecanfindintern/api/app.py)
+- [AI Agent 需求文档与实现计划](ai-agent-requirements-and-plan.md)
+- [AI Agent 模块](../src/wecanfindintern/agent/)
+- [Agent 记忆模块](../src/wecanfindintern/agent/memory/)
+- [AI Agent 前端](../web/modules/agent.js)
