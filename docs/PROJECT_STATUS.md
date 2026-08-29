@@ -24,7 +24,7 @@ JobSpy 多来源抓取
 | 阶段 | 已完成内容 | 现有证据 | 状态 |
 |---|---|---|---|
 | 1. 项目骨架 | Python 包、配置、脚本、测试目录和 vendored JobSpy 已建立 | `src/`、`scripts/`、`tests/`、`vendor/JobSpy/` | 已完成 |
-| 2. 多来源采集接入 | 已按 JobSpy 结构接入 Indeed、LinkedIn、Glassdoor、ZipRecruiter、Google Jobs 等来源配置 | `src/wecanfindintern/ingestion/jobspy_adapter.py`、`config/collection_plans.json` | 已实现，真实覆盖仍需扩大 |
+| 2. 多来源采集接入 | 已按 JobSpy 结构接入 Indeed、LinkedIn、Glassdoor、ZipRecruiter、Google Jobs 五个来源（Google 通过 `source_overrides.google.google_search_term` 模板配置） | `src/wecanfindintern/ingestion/jobspy_adapter.py`、`config/collection_plans.json` | 已实现 |
 | 3. 原始数据保留 | 支持保存 JobSpy 原始 CSV | `data/raw/*_jobspy_raw.csv` | 已完成 |
 | 4. 数据标准化 | 将 DataFrame 转换为稳定的 `NormalizedJob`，处理空值、日期、URL、薪资、技能等字段 | `jobspy_adapter.py` | 已完成 |
 | 5. 业务岗位模型 | 已有 `CanonicalJobInput`、公司、地点、薪资和岗位字段模型 | `src/wecanfindintern/domain/jobs.py` | 已完成 |

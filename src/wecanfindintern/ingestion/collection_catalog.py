@@ -17,6 +17,13 @@ def expand_collection_catalog(raw: Any) -> list[dict[str, Any]]:
     defaults = raw.get("defaults", {})
     sites = raw.get("sites", ["indeed", "linkedin"])
     locations = raw.get("locations", [])
+    source_overrides = raw.get("source_overrides", {})
+    google_overrides = source_overrides.get("google", {})
+    if "google" in sites and not google_overrides.get("google_search_term"):
+        raise ValueError(
+            "Google Jobs requires a google_search_term in source_overrides.google "
+            "(e.g. \"{search_term} near {location}\")."
+        )
     plans: list[dict[str, Any]] = []
     for group in raw["keyword_groups"]:
         domain = group["domain"]
@@ -43,6 +50,7 @@ def expand_collection_catalog(raw: Any) -> list[dict[str, Any]]:
                             # its own validated annualization after deduplication.
                             "enforce_annual_salary": False,
                             "verbose": defaults.get("verbose", 1),
+                            "source_overrides": source_overrides,
                         },
                         "interval_seconds": defaults.get("interval_seconds", 14_400),
                         "page_size": defaults.get("page_size", 25),

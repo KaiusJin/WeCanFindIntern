@@ -1,5 +1,5 @@
 {
-  "sites": ["indeed", "linkedin"],
+  "sites": ["indeed", "linkedin", "glassdoor", "zip_recruiter", "google"],
   "locations": [
     {"country_code": "CA"},
     {"country_code": "US"}
@@ -40,6 +40,11 @@
       ]
     }
   ],
+  "source_overrides": {
+    "google": {
+      "google_search_term": "{search_term} near {location}"
+    }
+  },
   "defaults": {
     "interval_seconds": 14400,
     "page_size": 25,

@@ -88,9 +88,14 @@ PYTHONPATH=src .venv/bin/python scripts/collection/ingest_jobspy_to_db.py \
 
 ## 启动自动多来源采集
 
-采集关键词目录位于 `config/collection_plans.json`。当前范围严格限定为美国和加拿大的
+采集关键词目录位于 `config/collection_plans.json`。当前范围限定为美国和加拿大的
 Computer Science / Software、Data Science、Machine Learning / AI 实习与 Co-op，
-并使用已验证可用的 Indeed 和 LinkedIn。目录会自动展开为国家、关键词和来源查询。
+来源为 Indeed、LinkedIn、Glassdoor、ZipRecruiter 和 Google Jobs。目录会自动展开为
+国家、关键词和来源查询。
+
+Google Jobs 需要显式搜索串：`source_overrides.google.google_search_term` 提供模板，
+其中 `{search_term}` 和 `{location}` 会在每个计划运行时被关键词和地点替换
+（例如 `"{search_term} near {location}"`）。
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/collection/run_collection_campaign.py
