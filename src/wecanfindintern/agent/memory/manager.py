@@ -155,6 +155,11 @@ class AgentMemoryManager:
             return
         task = asyncio.create_task(self.run_maintenance(session_id, deps))
         self._maintenance_tasks[session_id] = task
+        # Drop the entry once the task settles, otherwise the dict grows by
+        # one dead entry per session for the lifetime of the process.
+        task.add_done_callback(
+            lambda _task: self._maintenance_tasks.pop(session_id, None)
+        )
 
     async def run_maintenance(
         self, session_id: UUID, deps: AgentDeps

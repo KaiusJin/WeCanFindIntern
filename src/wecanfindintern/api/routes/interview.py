@@ -158,7 +158,10 @@ async def analyze_answer(
         if audio_file.content_type:
             audio_mime = audio_file.content_type
 
-    response = analyze_interview_performance(
+    # Transcription plus the LLM round-trip can take minutes; run it in a
+    # worker thread so the event loop keeps serving other requests.
+    response = await asyncio.to_thread(
+        analyze_interview_performance,
         job_description=job_description,
         question_context=question_context,
         answer_text=answer_text,
