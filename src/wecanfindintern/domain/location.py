@@ -69,6 +69,20 @@ US_REGION_NAMES = {
     "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia",
     "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin",
     "WY": "Wyoming", "DC": "District of Columbia",
+    "PR": "Puerto Rico", "GU": "Guam", "VI": "U.S. Virgin Islands",
+    "AS": "American Samoa", "MP": "Northern Mariana Islands",
+}
+
+US_TERRITORY_CODES = {"PR", "GU", "VI", "AS", "MP"}
+
+# Tokens that mark a location as remote work rather than a city.
+REMOTE_PLACE_TOKENS = {
+    "remote",
+    "work from home",
+    "wfh",
+    "anywhere",
+    "work from anywhere",
+    "remote friendly",
 }
 
 US_REGION_ALIASES = {
@@ -139,6 +153,23 @@ def parse_location(value: str | None) -> Location:
 
     parts = [part.strip() for part in raw.split(",") if part.strip()]
     city_raw = parts[0] if parts else None
+
+    # "Remote, US" / "Work from home": no real city or region behind the token.
+    if city_raw and normalize_text(city_raw) in REMOTE_PLACE_TOKENS:
+        country = None
+        if len(parts) >= 2:
+            country = COUNTRY_ALIASES.get(normalize_text(parts[-1]))
+            if country is None and len(parts[-1]) == 2:
+                country = parts[-1].upper()
+        return Location(
+            raw=raw,
+            country_code=country,
+            country_name=COUNTRY_NAMES.get(country) if country else None,
+            normalized=(
+                f"remote|{normalize_text(country)}" if country else "remote"
+            ),
+        )
+
     region_raw = parts[-2] if len(parts) >= 2 else None
     country_token = normalize_text(parts[-1]) if len(parts) >= 2 else ""
     country = COUNTRY_ALIASES.get(country_token)
@@ -156,6 +187,19 @@ def parse_location(value: str | None) -> Location:
 
     region = normalize_region_code(region_raw, country)
     region_name = normalize_region_name(region_raw, region, country)
+
+    # "Greater Toronto Area, Canada": a two-part row whose second part is a
+    # descriptive area rather than a state/province code. The phrase belongs
+    # in the city slot, not region_code.
+    if (
+        len(parts) == 2
+        and country is not None
+        and region_raw is not None
+        and normalize_text(region_raw) not in _recognized_region_aliases(country)
+    ):
+        region = None
+        region_name = None
+
     region_type = derive_region_type(region, country)
     country_name = COUNTRY_NAMES.get(country) if country else None
     city = normalize_city_name(city_raw, region, country)
@@ -214,11 +258,19 @@ def normalize_region_name(
     return raw_value.strip() if raw_value else None
 
 
+def _recognized_region_aliases(country_code: str | None) -> set[str]:
+    if country_code == "CA":
+        return set(CANADIAN_REGION_ALIASES)
+    if country_code == "US":
+        return set(US_REGION_ALIASES)
+    return set()
+
+
 def derive_region_type(region_code: str | None, country_code: str | None) -> str | None:
     if not region_code:
         return None
     if country_code == "CA":
         return "territory" if region_code in {"NT", "NU", "YT"} else "province"
     if country_code == "US":
-        return "state"
+        return "territory" if region_code in US_TERRITORY_CODES else "state"
     return "region"

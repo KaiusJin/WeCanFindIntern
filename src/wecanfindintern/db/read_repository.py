@@ -540,8 +540,22 @@ def job_list_item(row: dict[str, Any]) -> JobListItem:
 
 
 def location_display_name(row: dict[str, Any]) -> str | None:
-    if row["location_text"]:
-        return row["location_text"]
-    parts = [row["city"], row["region_code"], row["country_code"]]
-    display = ", ".join(str(part) for part in parts if part)
-    return display or None
+    """Prefer the cleaned hierarchy over raw scraped text.
+
+    Composes ``City, Region Name, Country Name`` (e.g. "Toronto, Ontario,
+    Canada") so one place has one display spelling across sources. The raw
+    location_text is only a fallback for rows where parsing produced nothing.
+    """
+
+    parts = [
+        str(part)
+        for part in (
+            row["city"],
+            row["region_name"] or row["region_code"],
+            row["country_name"] or row["country_code"],
+        )
+        if part
+    ]
+    if parts:
+        return ", ".join(parts)
+    return row["location_text"]
