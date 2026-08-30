@@ -103,6 +103,15 @@ function renderJob(job) {
   </article>`;
 }
 
+function applyRegionFilter(countryCode, regionCode) {
+  const countrySelect = $("#country");
+  const regionSelect = $("#region");
+  if (countrySelect) countrySelect.value = countryCode;
+  if (regionSelect) regionSelect.value = regionCode;
+  loadJobs();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 async function loadJobs({ append = false } = {}) {
   const list = $("#job-list");
   const error = $("#error");
@@ -208,6 +217,7 @@ async function openJob(jobId) {
     // Store current job context for quick AI actions
     state.activeJobContext = {
       id: job.id,
+      source: "public",
       title: job.title,
       company: job.company_name,
       jd: fullJd,
@@ -385,4 +395,5 @@ export {
   updateSliderFill,
   setupInfiniteScroll,
   setupBackToTop,
+  applyRegionFilter,
 };

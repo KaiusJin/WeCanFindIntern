@@ -343,6 +343,36 @@ class JobReadRepository:
             ],
         )
 
+    async def geo_distribution(self) -> list[dict[str, Any]]:
+        """Active job counts per U.S. state and Canadian province."""
+
+        async with self.pool.connection() as connection:
+            rows = await (
+                await connection.execute(
+                    """
+                    SELECT country_code,
+                           region_code,
+                           coalesce(region_name, region_code) AS region_name,
+                           count(*) AS job_count
+                    FROM jobs
+                    WHERE status = 1
+                      AND country_code IN ('US', 'CA')
+                      AND region_code IS NOT NULL
+                    GROUP BY country_code, region_code, region_name
+                    ORDER BY job_count DESC
+                    """
+                )
+            ).fetchall()
+        return [
+            {
+                "country": row["country_code"],
+                "region_code": row["region_code"],
+                "region_name": row["region_name"],
+                "count": int(row["job_count"]),
+            }
+            for row in rows
+        ]
+
     async def job_facets(self) -> JobFacetsResponse:
         global _facets_cache_at, _facets_cache_payload
         now = time.monotonic()

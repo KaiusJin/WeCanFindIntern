@@ -4,10 +4,11 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig, EmbeddingGateway
@@ -177,6 +178,21 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/jobs/facets", response_model=JobFacetsResponse)
     async def job_facets(repo: RepositoryDependency) -> JobFacetsResponse:
         return await repo.job_facets()
+
+    @app.get("/api/v1/jobs/geo-distribution")
+    async def geo_distribution(repo: RepositoryDependency) -> dict[str, Any]:
+        """Active job counts per U.S. state and Canadian province."""
+        regions = await repo.geo_distribution()
+        by_country: dict[str, int] = {"US": 0, "CA": 0}
+        for region in regions:
+            by_country[region["country"]] = (
+                by_country.get(region["country"], 0) + region["count"]
+            )
+        return {
+            "regions": regions,
+            "total": sum(region["count"] for region in regions),
+            "by_country": by_country,
+        }
 
     @app.get("/api/v1/jobs/{job_id}", response_model=JobDetail)
     async def get_job(
