@@ -12,8 +12,11 @@ import json
 import os
 import re
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
+
+from wecanfindintern.llm import cache as llm_cache
 
 
 class LLMError(RuntimeError):
@@ -145,6 +148,7 @@ def complete_json(
     api_base: str | None = None,
     timeout_seconds: float = 60.0,
     max_retries: int = 1,
+    use_cache: bool = False,
 ) -> LLMResult:
     """Return parsed JSON from the selected provider with bounded latency.
 
@@ -156,6 +160,18 @@ def complete_json(
 
     if not model_name or not model_name.strip():
         raise LLMError(provider, "No AI model selected. Please select a model in Settings.")
+    cache_entry: str | None = None
+    cache_store_key: str | None = None
+    if use_cache and llm_cache.cache_enabled():
+        cache_store_key = llm_cache.cache_key(provider, model_name, system_prompt, user_prompt)
+        cache_entry = llm_cache.lookup(cache_store_key)
+        if cache_entry is not None:
+            return LLMResult(
+                data=parse_json(cache_entry),
+                usage={"cached": True},
+                provider=provider,
+                model=model_name,
+            )
     key = clean_api_key(api_key)
     if provider == "Ollama":
         key = "local"
@@ -173,7 +189,7 @@ def complete_json(
     for attempt in range(max_retries + 1):
         try:
             if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"):
-                return _openai_compatible(
+                result = _openai_compatible(
                     provider=provider,
                     api_key=key,
                     model=model,
@@ -183,13 +199,22 @@ def complete_json(
                     api_base=api_base,
                     timeout_seconds=timeout_seconds,
                 )
-            return _gemini(
-                api_key=key,
-                model=model,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                timeout_seconds=timeout_seconds,
-            )
+            else:
+                result = _gemini(
+                    api_key=key,
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    timeout_seconds=timeout_seconds,
+                )
+            if cache_store_key is not None:
+                llm_cache.store(
+                    cache_store_key,
+                    provider,
+                    model_name,
+                    json.dumps(result.data, ensure_ascii=False, default=str),
+                )
+            return result
         except LLMError:
             raise
         except Exception as error:  # Transport/rate-limit failures are retryable.
@@ -199,6 +224,171 @@ def complete_json(
             time.sleep(delay)
             delay *= 2
     raise LLMError(provider, str(last_error), model=model) from last_error
+
+
+def extract_json_array_objects(buffer: str) -> tuple[list[Any], str]:
+    """Pop complete top-level objects from a partially streamed JSON array.
+
+    Returns the finished objects and the remainder to keep buffering. Used
+    by streaming endpoints so each array element can be emitted the moment
+    its closing brace arrives.
+    """
+
+    start = buffer.find("[")
+    if start == -1:
+        return [], buffer
+    body = buffer[start + 1:]
+    objects: list[Any] = []
+    consumed = 0
+    index = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    object_start: int | None = None
+    while index < len(body):
+        char = body[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            if depth == 0:
+                object_start = index
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0 and object_start is not None:
+                try:
+                    objects.append(json.loads(body[object_start : index + 1]))
+                    consumed = index + 1
+                except json.JSONDecodeError:
+                    pass
+                object_start = None
+        index += 1
+    return objects, "[" + body[consumed:]
+
+
+def _openai_base_url(provider: str, api_base: str | None) -> str | None:
+    if api_base:
+        return api_base
+    if provider == "DeepSeek":
+        return os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+    if provider == "GLM":
+        return os.environ.get("GLM_API_BASE", "https://open.bigmodel.cn/api/paas/v4")
+    if provider == "Qwen":
+        return os.environ.get(
+            "QWEN_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        )
+    if provider == "Ollama":
+        return os.environ.get("OLLAMA_API_BASE", "http://localhost:11434/v1")
+    return None
+
+
+def stream_text(
+    *,
+    provider: str,
+    model_name: str,
+    api_key: str,
+    system_prompt: str,
+    user_prompt: str,
+    api_base: str | None = None,
+    timeout_seconds: float = 120.0,
+) -> Iterator[str]:
+    """Yield raw text deltas from the selected provider (no JSON handling).
+
+    Consumed for streaming UI responses; errors raise :class:`LLMError`
+    exactly like :func:`complete_json`. No retry: a stream that already
+    produced output cannot be safely replayed.
+    """
+
+    if not model_name or not model_name.strip():
+        raise LLMError(provider, "No AI model selected. Please select a model in Settings.")
+    key = clean_api_key(api_key)
+    if provider == "Ollama":
+        key = "local"
+    elif not key:
+        raise LLMError(
+            provider, f"Missing {provider} API key. Please enter your API key in Settings."
+        )
+    model = model_name.strip().replace("models/", "")
+    if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"):
+        yield from _openai_stream(
+            provider=provider,
+            api_key=key,
+            model=model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            api_base=api_base,
+            timeout_seconds=timeout_seconds,
+        )
+    elif provider == "Gemini":
+        yield from _gemini_stream(
+            api_key=key,
+            model=model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            timeout_seconds=timeout_seconds,
+        )
+    else:
+        raise LLMError(provider, f"Unsupported provider: {provider}", model=model)
+
+
+def _openai_stream(
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    api_base: str | None = None,
+    timeout_seconds: float,
+) -> Iterator[str]:
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=api_key,
+        base_url=_openai_base_url(provider, api_base),
+        timeout=timeout_seconds,
+        max_retries=0,
+    )
+    stream = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        stream=True,
+    )
+    for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
+
+
+def _gemini_stream(
+    *,
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    timeout_seconds: float,
+) -> Iterator[str]:
+    import google.generativeai as genai
+
+    genai.configure(api_key=api_key, transport="rest")
+    genai_model = genai.GenerativeModel(model)
+    stream = genai_model.generate_content(
+        f"{system_prompt}\n\n{user_prompt}",
+        stream=True,
+        request_options={"timeout": timeout_seconds},
+    )
+    for chunk in stream:
+        if chunk.text:
+            yield chunk.text
 
 
 def _openai_compatible(
@@ -214,20 +404,7 @@ def _openai_compatible(
 ) -> LLMResult:
     from openai import OpenAI
 
-    if api_base:
-        base_url = api_base
-    elif provider == "DeepSeek":
-        base_url = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
-    elif provider == "GLM":
-        base_url = os.environ.get("GLM_API_BASE", "https://open.bigmodel.cn/api/paas/v4")
-    elif provider == "Qwen":
-        base_url = os.environ.get(
-            "QWEN_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        )
-    elif provider == "Ollama":
-        base_url = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434/v1")
-    else:
-        base_url = None
+    base_url = _openai_base_url(provider, api_base)
     client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_seconds, max_retries=0)
     kwargs: dict[str, Any] = {}
     if response_format:
