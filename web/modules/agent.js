@@ -386,10 +386,22 @@ async function sendAgentMessage(text) {
   $("#agent-chat").appendChild(thinking);
   $("#agent-chat").scrollTop = $("#agent-chat").scrollHeight;
 
+  let bubble = null;
+  let accumulated = "";
+  const showDelta = (delta) => {
+    if (!bubble) {
+      thinking.remove();
+      bubble = appendMessage("assistant", "");
+    }
+    accumulated += delta;
+    bubble.querySelector(".agent-bubble").innerHTML = renderMarkdown(accumulated);
+    $("#agent-chat").scrollTop = $("#agent-chat").scrollHeight;
+  };
+
   try {
     const sessionId = await ensureSession();
     const res = await fetchWithTimeout(
-      `/api/v1/agent/sessions/${sessionId}/messages`,
+      `/api/v1/agent/sessions/${sessionId}/messages/stream`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -407,21 +419,55 @@ async function sendAgentMessage(text) {
           context: buildContext(),
         }),
       },
-      180000,
+      300000,
     );
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Agent request failed");
-    thinking.remove();
-    const messageEl = appendMessage("assistant", renderMarkdown(data.message.content));
-    renderRecommendationCards(data.tool_calls, messageEl);
-    if (data.pending_approval) {
-      renderApprovalCard(data.pending_approval);
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || "Agent request failed");
     }
-    clearAttachedJob();
-    renderSessionList();
-    loadMemoryStatus();
-  } catch (err) {
     thinking.remove();
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data: ")) continue;
+        let event;
+        try {
+          event = JSON.parse(line.slice(6));
+        } catch (_) {
+          continue;
+        }
+        if (event.type === "text_delta") {
+          showDelta(event.delta);
+        } else if (event.type === "tool") {
+          renderRecommendationCards([event.tool_call]);
+        } else if (event.type === "approval") {
+          renderApprovalCard(event.approval);
+        } else if (event.type === "error") {
+          throw new Error(event.detail || "Agent request failed");
+        } else if (event.type === "done") {
+          currentSessionId = event.result.session.id;
+          persistSession();
+          updateContextChip();
+          renderSessionList();
+          loadMemoryStatus();
+          if (bubble && event.result.message?.content) {
+            bubble.querySelector(".agent-bubble").innerHTML =
+              renderMarkdown(event.result.message.content);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (thinking.parentElement) thinking.remove();
     appendMessage("assistant", `<p class="md-p agent-error">⚠ ${escapeText(err.message)}</p>`);
   }
 }

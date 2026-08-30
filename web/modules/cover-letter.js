@@ -161,7 +161,7 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
 
   try {
     const res = await fetchWithTimeout(
-      "/api/v1/cover-letter/generate",
+      "/api/v1/cover-letter/generate/stream",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -185,7 +185,7 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
       },
       300000,
     );
-    if (!res.ok) {
+    if (!res.ok || !res.body) {
       const errText = await res.text();
       let msg = errText;
       try {
@@ -195,7 +195,42 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
       } catch { }
       throw new Error(msg || `Server error (${res.status})`);
     }
-    const data = await res.json();
+
+    const stageLabels = {
+      writer: "Writer AI is drafting your cover letter…",
+      writer_done: "Draft complete — Reviewer AI is checking every factual claim…",
+      reviewer: "Reviewer AI is auditing factual grounding…",
+    };
+    const message = $("#cl-loading-message");
+    let data = null;
+    const handleEvent = (event) => {
+      if (event.type === "stage" && message) {
+        message.textContent = stageLabels[event.stage]
+          ? `${stageLabels[event.stage]}${event.attempt ? ` (attempt ${event.attempt}/5)` : ""}`
+          : message.textContent;
+      } else if (event.type === "done") {
+        data = event.result;
+      }
+    };
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data: ")) continue;
+        try {
+          handleEvent(JSON.parse(line.slice(6)));
+        } catch (_) { }
+      }
+    }
+    if (!data) throw new Error("Generation ended without a result");
     if (!data.ok) throw new Error(data.error || "Generation failed");
 
     $("#cl-editor-text").value = data.text;
@@ -214,11 +249,6 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
     $("#cl-loading").hidden = true;
     $("#cl-result-card").hidden = false;
     $("#cl-export-group").hidden = false;
-  } catch (err) {
-    stopCoverLetterProgress();
-    $("#cl-loading").hidden = true;
-    $("#cl-empty").hidden = false;
-    alert(`Cover Letter Error: ${err.message}`);
   }
 });
 

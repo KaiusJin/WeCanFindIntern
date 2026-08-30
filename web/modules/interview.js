@@ -152,7 +152,7 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
 
   try {
     const res = await fetchWithTimeout(
-      "/api/v1/interview/sessions",
+      "/api/v1/interview/sessions/stream",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -165,24 +165,57 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
           api_base: config.api_base || "",
         }),
       },
-      120000,
+      180000,
     );
-    const data = await res.json();
-    if (!res.ok || !data.questions?.length) {
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => ({}));
       throw new Error(data.detail || data.error || "Failed to generate questions");
     }
 
-    interviewState.questions = data.questions;
-    interviewState.sessionId = data.session_id || null;
-    interviewState.answered = new Set();
-    renderActiveQuestion(0);
-
-    $("#interview-loading").hidden = true;
-    $("#interview-active-card").hidden = false;
-  } catch (err) {
-    $("#interview-loading").hidden = true;
-    $("#interview-empty").hidden = false;
-    alert(`Question generation failed: ${err.message}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let questions = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data: ")) continue;
+        let event;
+        try {
+          event = JSON.parse(line.slice(6));
+        } catch (_) {
+          continue;
+        }
+        if (event.type === "question") {
+          questions.push(event.question);
+          interviewState.questions = questions;
+          if (questions.length === 1) {
+            interviewState.sessionId = null;
+            interviewState.answered = new Set();
+            $("#interview-loading").hidden = true;
+            $("#interview-active-card").hidden = false;
+            renderActiveQuestion(0);
+          } else {
+            renderStepper();
+          }
+        } else if (event.type === "error") {
+          throw new Error(event.detail || "Question generation failed");
+        } else if (event.type === "done") {
+          questions = event.questions;
+          interviewState.questions = questions;
+          interviewState.sessionId = event.session_id || null;
+          renderActiveQuestion(Math.min(interviewState.currentIndex, questions.length - 1));
+        }
+      }
+    }
+    if (!interviewState.questions.length) {
+      throw new Error("Model returned no questions");
+    }
   }
 });
 

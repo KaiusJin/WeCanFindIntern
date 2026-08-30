@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from wecanfindintern.agent.memory.manager import AgentMemoryManager
 from wecanfindintern.agent.memory.preferences import PREFERENCE_KEYS
@@ -269,6 +271,42 @@ async def send_agent_message(
             else 422
         )
         raise HTTPException(status_code=status_code, detail=str(error)) from error
+
+
+@agent_router.post("/sessions/{session_id}/messages/stream")
+async def send_agent_message_stream(
+    session_id: UUID,
+    payload: AgentMessageRequest,
+    repo: AgentRepoDep,
+    request: Request,
+):
+    """SSE variant of the message endpoint: tool, approval, text and done
+    events are pushed as they happen instead of after the whole turn."""
+
+    session = await repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Agent session not found")
+    orchestrator = AgentOrchestrator(repo, _deps(request, payload))
+
+    async def event_stream():
+        try:
+            async for event in orchestrator.process_message_stream(
+                session_id, payload.content, context=payload.context
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except ToolError as error:
+            status = 502 if error.error_type in {"llm_failed", "llm_config_missing"} else 422
+            payload = {"type": "error", "status": status, "detail": str(error)}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        except Exception as error:  # pragma: no cover - defensive
+            payload = {"type": "error", "status": 502, "detail": str(error)}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @agent_router.get(

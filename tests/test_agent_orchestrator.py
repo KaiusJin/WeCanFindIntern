@@ -224,6 +224,19 @@ def make_repo_with_session():
 JOB_ID = str(uuid4())
 
 
+def fake_stream_reply(reply):
+    """Replace the streaming composer with one that emits a fixed reply."""
+
+    def fake(self, **kwargs):
+        async def gen():
+            kwargs["sink"]["reply"] = reply
+            yield {"type": "text_delta", "delta": reply}
+
+        return gen()
+
+    return fake
+
+
 def test_read_only_turn_records_tool_call_and_reply(monkeypatch):
     repo, session = make_repo_with_session()
     domain = FakeDomain()
@@ -240,9 +253,9 @@ def test_read_only_turn_records_tool_call_and_reply(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        orchestrator_module,
-        "compose_reply",
-        lambda **kwargs: "I found no jobs.",
+        orchestrator_module.AgentOrchestrator,
+        "_stream_reply_events",
+        fake_stream_reply("I found no jobs."),
     )
 
     orchestrator = AgentOrchestrator(repo, deps)
@@ -464,7 +477,11 @@ def test_loop_stops_at_round_cap(monkeypatch):
         }
 
     monkeypatch.setattr(orchestrator_module, "plan_turn", fake_plan)
-    monkeypatch.setattr(orchestrator_module, "compose_reply", lambda **kwargs: "done")
+    monkeypatch.setattr(
+        orchestrator_module.AgentOrchestrator,
+        "_stream_reply_events",
+        fake_stream_reply("done"),
+    )
     orchestrator = AgentOrchestrator(repo, deps)
     result = asyncio.run(orchestrator.process_message(session.id, "keep searching"))
     assert counter["count"] == orchestrator_module.MAX_PLANNING_ROUNDS
@@ -514,7 +531,11 @@ def test_continuation_round_llm_failure_degrades_to_summary(monkeypatch):
         raise LLMError("OpenAI", "flaky provider")
 
     monkeypatch.setattr(orchestrator_module, "plan_turn", fake_plan)
-    monkeypatch.setattr(orchestrator_module, "compose_reply", lambda **kwargs: "summarized")
+    monkeypatch.setattr(
+        orchestrator_module.AgentOrchestrator,
+        "_stream_reply_events",
+        fake_stream_reply("summarized"),
+    )
     orchestrator = AgentOrchestrator(repo, deps)
     result = asyncio.run(orchestrator.process_message(session.id, "find python jobs"))
     assert calls["count"] == 2
@@ -602,7 +623,11 @@ def test_audit_accumulates_all_rounds(monkeypatch):
         }
 
     monkeypatch.setattr(orchestrator_module, "plan_turn", fake_plan)
-    monkeypatch.setattr(orchestrator_module, "compose_reply", lambda **kwargs: "all done")
+    monkeypatch.setattr(
+        orchestrator_module.AgentOrchestrator,
+        "_stream_reply_events",
+        fake_stream_reply("all done"),
+    )
     orchestrator = AgentOrchestrator(repo, deps)
     asyncio.run(orchestrator.process_message(session.id, "summarize my state"))
     audit = repo.audit[-1]

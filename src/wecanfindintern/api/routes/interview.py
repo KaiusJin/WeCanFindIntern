@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import threading
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import StreamingResponse
 
 from wecanfindintern.interview.models import (
     InterviewAnalyzeResponse,
+    InterviewQuestionItem,
     InterviewQuestionsResponse,
     InterviewSessionCreateRequest,
     InterviewSessionDetail,
@@ -21,6 +25,18 @@ from wecanfindintern.interview.service import (
     generate_interview_questions,
 )
 from wecanfindintern.interview.tts import TTSError, generate_tts_audio
+from wecanfindintern.llm.gateway import (
+    LLMError,
+    extract_json_array_objects,
+    parse_json,
+    resolve_api_key,
+    stream_text,
+)
+from wecanfindintern.llm.prompts.interview import build_questions_prompt
+
+INTERVIEWER_SYSTEM_PROMPT = (
+    "You are a professional technical interviewer. Output valid JSON."
+)
 
 interview_router = APIRouter(prefix="/api/v1/interview", tags=["Mock Interview Coach"])
 
@@ -107,6 +123,126 @@ async def delete_interview_session(session_id: UUID, request: Request) -> dict[s
 @interview_router.get("/trend")
 async def interview_trend(request: Request) -> dict:
     return await _repo(request).practice_trend()
+
+
+@interview_router.post("/sessions/stream")
+async def create_interview_session_stream(
+    payload: InterviewSessionCreateRequest, request: Request
+):
+    """SSE variant of session creation: emits a ``question`` event the moment
+    each object closes in the model's JSON array, then ``done`` with the
+    persisted session id and the validated question set."""
+
+    async def event_stream():
+        async def run():
+            if not payload.job_description.strip():
+                yield {"type": "error", "status": 422, "detail": "Job description cannot be empty."}
+                return
+            if not payload.resume_text.strip():
+                yield {
+                    "type": "error",
+                    "status": 422,
+                    "detail": "Candidate context is required: upload a resume or use your Profile.",
+                }
+                return
+            try:
+                resolved_key = resolve_api_key(payload.provider, payload.api_key)
+            except LLMError as exc:
+                yield {"type": "error", "status": 422, "detail": str(exc)}
+                return
+
+            queue: asyncio.Queue[dict | None] = asyncio.Queue()
+            loop = asyncio.get_running_loop()
+            buffer = ""
+            questions: list[dict] = []
+            errors: list[Exception] = []
+
+            def produce() -> None:
+                nonlocal buffer
+                try:
+                    for chunk in stream_text(
+                        provider=payload.provider,
+                        model_name=payload.model_name or "",
+                        api_key=resolved_key,
+                        api_base=payload.api_base,
+                        system_prompt=INTERVIEWER_SYSTEM_PROMPT,
+                        user_prompt=build_questions_prompt(
+                            payload.job_description, payload.resume_text
+                        ),
+                    ):
+                        buffer += chunk
+                        objects, buffer = extract_json_array_objects(buffer)
+                        for item in objects:
+                            try:
+                                question = InterviewQuestionItem.model_validate(item)
+                            except (ValueError, TypeError):
+                                continue
+                            questions.append(question.model_dump(mode="json"))
+                            loop.call_soon_threadsafe(
+                                queue.put_nowait,
+                                {"type": "question", "question": question.model_dump(mode="json")},
+                            )
+                except Exception as error:
+                    errors.append(error)
+                finally:
+                    loop.call_soon_threadsafe(queue.put_nowait, None)
+
+            threading.Thread(target=produce, daemon=True).start()
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+            if errors and not questions:
+                yield {
+                    "type": "error",
+                    "status": 502,
+                    "detail": f"{payload.provider} questions error: {errors[0]}",
+                }
+                return
+
+            if not questions:
+                # Envelope fallback: the model wrapped the array in an object
+                # instead of streaming a bare array.
+                try:
+                    data = parse_json(buffer)
+                    if isinstance(data, dict) and "questions" in data:
+                        data = data["questions"]
+                    questions = [
+                        InterviewQuestionItem.model_validate(item).model_dump(mode="json")
+                        for item in data
+                    ]
+                except (LLMError, ValueError, TypeError, KeyError):
+                    pass
+            if not questions:
+                yield {
+                    "type": "error",
+                    "status": 502,
+                    "detail": "Model returned no parseable questions.",
+                }
+                return
+
+            session = await _repo(request).create_session(
+                job_description=payload.job_description,
+                provider=payload.provider,
+                model_name=payload.model_name or "",
+                questions=questions,
+            )
+            yield {
+                "type": "done",
+                "session_id": str(session["id"]),
+                "questions": questions,
+            }
+
+        async for event in run():
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @interview_router.post("/questions", response_model=InterviewQuestionsResponse)

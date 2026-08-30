@@ -26,8 +26,14 @@ def generate_cover_letter(
     model_name: str | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
+    on_stage=None,
 ) -> CoverLetterResponse:
-    """Generate tailored cover letter."""
+    """Generate tailored cover letter.
+
+    ``on_stage(stage, **detail)`` is invoked with pipeline progress events
+    (writer/writer_done/reviewer/reviewer_done) when supplied, so callers
+    can stream progress without changing the return contract.
+    """
     if not resume_text.strip():
         return CoverLetterResponse(ok=False, error="Resume text cannot be empty.")
     if not job_description.strip():
@@ -61,6 +67,7 @@ def generate_cover_letter(
     previous_draft = ""
     revision_feedback = ""
     writer_tokens_total = reviewer_tokens_total = 0
+    on_stage = on_stage or (lambda _stage, **_detail: None)
     last_data: dict[str, Any] = {}
     last_letter = ""
     last_issues: list[str] = []
@@ -81,6 +88,7 @@ def generate_cover_letter(
             previous_draft=previous_draft,
             revision_feedback=revision_feedback,
         )
+        on_stage("writer", attempt=attempt)
         try:
             data, writer_tokens = _call_json_model(
                 provider=provider,
@@ -99,12 +107,14 @@ def generate_cover_letter(
         if not letter_text:
             return CoverLetterResponse(ok=False, error="Writer AI returned an empty cover letter.")
 
+        on_stage("writer_done", attempt=attempt)
         review_prompt = build_review_prompt(
             resume_text=resume_text,
             job_description=job_description,
             company_information=company_information,
             cover_letter=letter_text,
         )
+        on_stage("reviewer", attempt=attempt, approved=None)
         try:
             review, reviewer_tokens = _call_json_model(
                 provider=provider,
@@ -133,6 +143,12 @@ def generate_cover_letter(
         reviewer_tokens_total += reviewer_tokens
         last_data, last_letter = data, letter_text
         last_issues, last_unsupported, last_summary = issues, unsupported, summary
+        on_stage(
+            "reviewer_done",
+            attempt=attempt,
+            approved=approved,
+            issues=issues,
+        )
         if approved:
             return CoverLetterResponse(
                 ok=True,

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
+import threading
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -29,13 +31,20 @@ from wecanfindintern.agent.tools import (
     run_tool,
     summarize_for_llm,
 )
-from wecanfindintern.llm.gateway import LLMError, complete_json, json_response_format
+from wecanfindintern.llm.gateway import (
+    LLMError,
+    complete_json,
+    json_response_format,
+    stream_text,
+)
 
 # Bounded plan–execute loop: each round plans one step, read-tool results are
 # fed back delimited, and the loop ends on a final reply, a write approval, a
 # repeated identical call, the round cap, or the feedback budget.
 MAX_PLANNING_ROUNDS = 4
 MAX_FEEDBACK_CHARS = 6000
+
+logger = logging.getLogger(__name__)
 
 APPROVE_PATTERNS = re.compile(
     r"^(yes|yeah|yep|y|confirm|confirmed|approve|go ahead|do it|ok|okay|sure|"
@@ -265,20 +274,22 @@ def plan_turn(
     return {"reply": reply, "tool_calls": tool_calls}
 
 
-def compose_reply(
+def _compose_prompts(
     *,
-    llm_config: AgentDeps,
     user_message: str,
     tool_summaries: list[str],
     context: dict[str, Any] | None,
     awaiting_approval: bool,
     working_context: WorkingContext | None = None,
-) -> str:
-    """Generate the final assistant reply from executed read-tool results."""
+    streaming: bool = False,
+) -> tuple[str, str]:
+    """Shared prompt pair for the JSON and streaming reply composers."""
 
-    if llm_config.llm_config is None:
-        raise ToolError("llm_config_missing", "AI model configuration is required.")
-    config = llm_config.llm_config
+    output_rule = (
+        "Write the reply directly as plain text."
+        if streaming
+        else 'Output ONLY JSON: {\"reply\": string}.'
+    )
     system_prompt = (
         "You are the AI Agent inside WeCanFindIntern. Summarize tool results for the "
         "user in a concise, friendly way. Be honest about limitations: if a job "
@@ -287,7 +298,7 @@ def compose_reply(
         "results, cards, or lists 'are shown below' or elsewhere — the interface may "
         "render structured results itself, and you cannot know what it shows. If a "
         "search returned jobs, name the strongest few with one-line reasons instead of "
-        "promising a list. Output ONLY JSON: {\"reply\": string}."
+        "promising a list. " + output_rule
     )
     user_prompt = (
         f"Open job context: {_context_text(context)}\n\n"
@@ -306,6 +317,30 @@ def compose_reply(
             if awaiting_approval
             else ""
         )
+    )
+    return system_prompt, user_prompt
+
+
+def compose_reply(
+    *,
+    llm_config: AgentDeps,
+    user_message: str,
+    tool_summaries: list[str],
+    context: dict[str, Any] | None,
+    awaiting_approval: bool,
+    working_context: WorkingContext | None = None,
+) -> str:
+    """Generate the final assistant reply from executed read-tool results."""
+
+    if llm_config.llm_config is None:
+        raise ToolError("llm_config_missing", "AI model configuration is required.")
+    config = llm_config.llm_config
+    system_prompt, user_prompt = _compose_prompts(
+        user_message=user_message,
+        tool_summaries=tool_summaries,
+        context=context,
+        awaiting_approval=awaiting_approval,
+        working_context=working_context,
     )
     result = complete_json(
         provider=config.provider,
@@ -379,6 +414,30 @@ class AgentOrchestrator:
         *,
         context: dict[str, Any] | None = None,
     ) -> AgentTurnResult:
+        """Run one turn to completion; consumes the streaming generator."""
+
+        result: AgentTurnResult | None = None
+        async for event in self.process_message_stream(session_id, content, context=context):
+            if event["type"] == "done":
+                result = AgentTurnResult(**event["result"])
+        if result is None:
+            raise ToolError("llm_failed", "Agent turn ended without a result.")
+        return result
+
+    async def process_message_stream(
+        self,
+        session_id: UUID,
+        content: str,
+        *,
+        context: dict[str, Any] | None = None,
+    ):
+        """Yield turn events as they happen.
+
+        Event types: ``tool`` (a tool call finished), ``approval`` (a write
+        preview is waiting), ``text_delta`` (a chunk of the assistant reply),
+        ``done`` (the full AgentTurnResult payload).
+        """
+
         session = await self._require_session(session_id)
         user_message = await self.repo.add_message(
             session_id, "user", content, token_count=estimate_tokens(content)
@@ -391,17 +450,20 @@ class AgentOrchestrator:
         pending = await self.repo.list_pending_approvals(session_id)
         decision = _detect_decision(content) if pending else None
         if decision is not None:
-            return await self._decide(
+            decision_result = await self._decide(
                 pending[0].id,
                 decision,
                 user_message=user_message,
                 session=session,
             )
+            yield {"type": "done", "result": decision_result.model_dump(mode="json")}
+            return
 
         history = await self.repo.list_messages(session_id, limit=40)
         working_context = None
         if self.deps.memory is not None:
             working_context = await self.deps.memory.build_context(session_id, content)
+
         tool_call_records: list[dict[str, Any]] = []
         pending_approval: AgentApproval | None = None
         tool_summaries: list[str] = []
@@ -460,9 +522,22 @@ class AgentOrchestrator:
             if not fresh_calls:
                 break  # empty plan (final reply) or all calls were duplicates
 
+            # Independent read tools run concurrently; writes stay sequential.
+            read_calls = [call for call in fresh_calls if not is_write_tool(call["name"])]
+            write_calls = [call for call in fresh_calls if is_write_tool(call["name"])]
+            read_results = await asyncio.gather(
+                *(
+                    run_tool(call["name"], call["arguments"], self.deps, phase="plan")
+                    for call in read_calls
+                ),
+                return_exceptions=True,
+            )
+
             write_pending = False
             recommend_done = False
-            for call in fresh_calls:
+            planned_results = list(zip(read_calls, read_results, strict=True))
+            planned_results += [(call, None) for call in write_calls]
+            for call, gathered in planned_results:
                 name = call["name"]
                 arguments = call["arguments"]
                 try:
@@ -478,30 +553,32 @@ class AgentOrchestrator:
                             tool_summaries.append(
                                 f"{name}: {result.get('summary', '')} (awaiting approval)"
                             )
-                            tool_call_records.append(
-                                {
-                                    "tool_name": name,
-                                    "arguments": arguments,
-                                    "status": "awaiting_approval",
-                                    "result": result.get("preview", {}),
-                                }
-                            )
+                            record = {
+                                "tool_name": name,
+                                "arguments": arguments,
+                                "status": "awaiting_approval",
+                                "result": result.get("preview", {}),
+                            }
+                            tool_call_records.append(record)
+                            yield {"type": "tool", "tool_call": record}
                             write_pending = True
                             continue
                     else:
-                        result = await run_tool(name, arguments, self.deps, phase="plan")
+                        result = gathered
+                    if isinstance(result, BaseException):
+                        raise result
                     tool_summaries.append(
                         f"{name}: {result.get('summary', '')} | {summarize_for_llm(result)}"
                     )
-                    tool_call_records.append(
-                        {
-                            "tool_name": name,
-                            "arguments": arguments,
-                            "status": "succeeded",
-                            "result": result,
-                        }
-                    )
+                    record = {
+                        "tool_name": name,
+                        "arguments": arguments,
+                        "status": "succeeded",
+                        "result": result,
+                    }
+                    tool_call_records.append(record)
                     feedback_blocks.append(_tool_feedback(name, result))
+                    yield {"type": "tool", "tool_call": record}
                     if name == "recommend_jobs":
                         direct_reply = recommendation_reply(result, content)
                         recommend_done = True
@@ -515,6 +592,7 @@ class AgentOrchestrator:
                         }
                     )
                     tool_summaries.append(f"{name}: failed ({error.error_type}: {error})")
+                    yield {"type": "tool", "tool_call": tool_call_records[-1]}
                 except Exception as error:  # pragma: no cover - defensive
                     tool_call_records.append(
                         {
@@ -525,45 +603,62 @@ class AgentOrchestrator:
                         }
                     )
                     tool_summaries.append(f"{name}: failed ({error})")
+                    yield {"type": "tool", "tool_call": tool_call_records[-1]}
 
             if write_pending or recommend_done:
                 break
             if sum(len(block) for block in feedback_blocks) > MAX_FEEDBACK_CHARS:
                 break
 
+        sink: dict[str, str] = {}
         if pending_approval is not None:
+            fallback = (
+                "I've prepared the following change for your confirmation. "
+                "Please review the preview and confirm or cancel."
+            )
             try:
-                reply = await asyncio.to_thread(
-                    compose_reply,
-                    llm_config=self.deps,
+                async for event in self._stream_reply_events(
                     user_message=content,
                     tool_summaries=tool_summaries,
                     context=context,
                     awaiting_approval=True,
                     working_context=working_context,
-                )
+                    fallback=fallback,
+                    sink=sink,
+                ):
+                    yield event
             except (ToolError, LLMError):
-                reply = (
-                    "I've prepared the following change for your confirmation. "
-                    "Please review the preview and confirm or cancel."
-                )
+                reply = fallback
+                yield {"type": "text_delta", "delta": fallback}
+            else:
+                reply = sink["reply"]
         elif direct_reply is not None and len(tool_call_records) == 1:
             reply = direct_reply
+            for index in range(0, len(reply), 120):
+                yield {"type": "text_delta", "delta": reply[index : index + 120]}
         elif tool_summaries:
+            fallback = last_plan_reply
             try:
-                reply = await asyncio.to_thread(
-                    compose_reply,
-                    llm_config=self.deps,
+                async for event in self._stream_reply_events(
                     user_message=content,
                     tool_summaries=tool_summaries,
                     context=context,
                     awaiting_approval=False,
                     working_context=working_context,
-                )
+                    fallback=fallback,
+                    sink=sink,
+                ):
+                    yield event
             except (ToolError, LLMError):
-                reply = last_plan_reply
+                reply = fallback
+                if fallback:
+                    yield {"type": "text_delta", "delta": fallback}
+            else:
+                reply = sink["reply"]
         else:
             reply = last_plan_reply
+            if reply:
+                yield {"type": "text_delta", "delta": reply}
 
         assistant = await self.repo.add_message(
             session_id, "assistant", reply, token_count=estimate_tokens(reply)
@@ -594,12 +689,79 @@ class AgentOrchestrator:
             approval_status=pending_approval.status if pending_approval else None,
             result_summary="; ".join(tool_summaries)[:500],
         )
-        return AgentTurnResult(
+        turn_result = AgentTurnResult(
             message=assistant,
             tool_calls=tool_calls,
             pending_approval=pending_approval,
             session=session,
         )
+        yield {"type": "done", "result": turn_result.model_dump(mode="json")}
+
+    async def _stream_reply_events(
+        self,
+        *,
+        user_message: str,
+        tool_summaries: list[str],
+        context: dict[str, Any] | None,
+        awaiting_approval: bool,
+        working_context: WorkingContext | None,
+        fallback: str,
+        sink: dict[str, str],
+    ):
+        """Yield ``text_delta`` events from a streaming compose call.
+
+        The provider SDK is synchronous, so the stream is consumed on a
+        worker thread and forwarded through an asyncio queue. Raises when
+        nothing was produced; ``sink["reply"]`` always receives the full
+        reply text.
+        """
+
+        config = self.deps.llm_config
+        if config is None:
+            raise ToolError("llm_config_missing", "AI model configuration is required.")
+        system_prompt, user_prompt = _compose_prompts(
+            user_message=user_message,
+            tool_summaries=tool_summaries,
+            context=context,
+            awaiting_approval=awaiting_approval,
+            working_context=working_context,
+            streaming=True,
+        )
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        chunks: list[str] = []
+        errors: list[Exception] = []
+
+        def produce() -> None:
+            try:
+                for piece in stream_text(
+                    provider=config.provider,
+                    model_name=config.model_name,
+                    api_key=config.api_key,
+                    api_base=config.api_base,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                ):
+                    chunks.append(piece)
+                    loop.call_soon_threadsafe(queue.put_nowait, piece)
+            except Exception as error:  # re-raised after the queue drains
+                errors.append(error)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        threading.Thread(target=produce, daemon=True).start()
+        while True:
+            piece = await queue.get()
+            if piece is None:
+                break
+            yield {"type": "text_delta", "delta": piece}
+        if errors and not chunks:
+            raise errors[0]
+        if errors:
+            logger.warning("Reply stream failed mid-generation: %s", errors[0])
+        sink["reply"] = "".join(chunks).strip() or fallback
+        if sink["reply"] == fallback and fallback:
+            yield {"type": "text_delta", "delta": fallback}
 
     async def _record_turn_and_maintenance(self, session_id: UUID) -> None:
         if self.deps.memory is None:
