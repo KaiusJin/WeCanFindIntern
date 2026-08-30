@@ -36,6 +36,20 @@ function heatColor(count, maxCount) {
   return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
 }
 
+let d3 = null;
+let topojsonLib = null;
+
+async function ensureD3() {
+  if (d3) return d3;
+  const [geo, selection] = await Promise.all([
+    import("/vendor/d3-geo.esm.js"),
+    import("/vendor/d3-selection.esm.js"),
+  ]);
+  d3 = { ...geo, ...selection };
+  await loadScript("/vendor/topojson-client.min.js");
+  return d3;
+}
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[src="${src}"]`);
@@ -56,9 +70,9 @@ function loadScript(src) {
   });
 }
 
-async function ensureD3() {
-  await loadScript("/vendor/d3.min.js");
-  await loadScript("/vendor/topojson-client.min.js");
+function getTopojson() {
+  if (!topojsonLib) topojsonLib = window.topojson;
+  return topojsonLib;
 }
 
 function showTooltip(event, text) {
@@ -199,7 +213,7 @@ async function loadHeatmap() {
     await ensureD3();
     const usTopo = await (await fetch("/vendor/us-states-10m.json")).json();
     const caGeo = await (await fetch("/vendor/canada-provinces.geojson")).json();
-    renderUsMap(topojson.feature(usTopo, usTopo.objects.states), counts, nameLookup, maxCount);
+    renderUsMap(getTopojson().feature(usTopo, usTopo.objects.states), counts, nameLookup, maxCount);
     renderCaMap(caGeo, counts, nameLookup, maxCount);
   } catch (err) {
     const us = $("#heatmap-us");

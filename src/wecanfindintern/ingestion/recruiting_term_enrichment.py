@@ -15,6 +15,7 @@ from wecanfindintern.domain.recruiting_term import (
 )
 from wecanfindintern.domain.recruiting_term_llm import (
     extract_recruiting_term_with_deepseek,
+    extract_recruiting_terms_batch,
 )
 
 
@@ -79,51 +80,87 @@ async def enrich_recruiting_terms(
 
     model = os.getenv("DEEPSEEK_TERM_MODEL", "deepseek-chat")
     total_unresolved = len(unresolved)
-    semaphore = asyncio.Semaphore(5)
-    lock = asyncio.Lock()
-    processed_count = 0
+    batch_size = int(os.getenv("DEEPSEEK_TERM_BATCH_SIZE", "8"))
 
-    async def _process_candidate(candidate, input_hash: str, context: str) -> None:
-        nonlocal llm_count, not_found_count, failed_count, processed_count
-        async with semaphore:
-            generation_id = await repository.start_recruiting_term_generation(
-                job_id=candidate.job_id,
-                input_hash=input_hash,
-                input_context=context,
-                model=model,
-            )
-            call = await asyncio.to_thread(extract_recruiting_term_with_deepseek, context)
-            await repository.finish_recruiting_term_generation(
-                generation_id,
-                response_json=call.response_json,
-                prompt_tokens=call.prompt_tokens,
-                completion_tokens=call.completion_tokens,
-                error_type=call.error_type,
-            )
-            async with lock:
-                processed_count += 1
-                cur_idx = processed_count
-                if call.error_type is not None:
-                    failed_count += 1
-                else:
-                    if await repository.persist_recruiting_term(
-                        job_id=candidate.job_id,
-                        input_hash=input_hash,
-                        term=call.extraction,
-                        model=call.model,
-                    ):
-                        if call.extraction is None:
-                            not_found_count += 1
-                        else:
-                            llm_count += 1
-                if cur_idx % 10 == 0 or cur_idx == total_unresolved:
-                    print(
-                        f"recruiting term DeepSeek progress: {cur_idx}/{total_unresolved}, "
-                        f"matched={llm_count}, failed={failed_count}",
-                        flush=True,
-                    )
+    async def _record(candidate, input_hash: str, context: str, call, generation_id) -> None:
+        nonlocal llm_count, not_found_count, failed_count
+        await repository.finish_recruiting_term_generation(
+            generation_id,
+            response_json=call.response_json,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+            error_type=call.error_type,
+        )
+        if call.error_type is not None:
+            failed_count += 1
+            return
+        if await repository.persist_recruiting_term(
+            job_id=candidate.job_id,
+            input_hash=input_hash,
+            term=call.extraction,
+            model=call.model,
+        ):
+            if call.extraction is None:
+                not_found_count += 1
+            else:
+                llm_count += 1
 
-    await asyncio.gather(*[_process_candidate(c, h, ctx) for c, h, ctx in unresolved])
+    if batch_size > 0:
+        # One DeepSeek call per group of contexts; per-job generation records
+        # are created up front and completed after the batch call returns.
+        for batch_start in range(0, len(unresolved), batch_size):
+            batch = unresolved[batch_start : batch_start + batch_size]
+            generation_ids = [
+                await repository.start_recruiting_term_generation(
+                    job_id=candidate.job_id,
+                    input_hash=input_hash,
+                    input_context=context,
+                    model=model,
+                )
+                for candidate, input_hash, context in batch
+            ]
+            calls = await asyncio.to_thread(
+                extract_recruiting_terms_batch, [context for _, _, context in batch]
+            )
+            for (candidate, input_hash, context), call, generation_id in zip(
+                batch, calls, generation_ids, strict=True
+            ):
+                await _record(candidate, input_hash, context, call, generation_id)
+            print(
+                f"recruiting term DeepSeek batch progress: "
+                f"{min(batch_start + batch_size, total_unresolved)}/{total_unresolved}, "
+                f"matched={llm_count}, failed={failed_count}",
+                flush=True,
+            )
+    else:
+        semaphore = asyncio.Semaphore(5)
+        lock = asyncio.Lock()
+        processed_count = 0
+
+        async def _process_candidate(candidate, input_hash: str, context: str) -> None:
+            nonlocal llm_count, not_found_count, failed_count, processed_count
+            async with semaphore:
+                generation_id = await repository.start_recruiting_term_generation(
+                    job_id=candidate.job_id,
+                    input_hash=input_hash,
+                    input_context=context,
+                    model=model,
+                )
+                call = await asyncio.to_thread(
+                    extract_recruiting_term_with_deepseek, context
+                )
+                async with lock:
+                    await _record(candidate, input_hash, context, call, generation_id)
+                    processed_count += 1
+                    if processed_count % 10 == 0 or processed_count == total_unresolved:
+                        print(
+                            f"recruiting term DeepSeek progress: "
+                            f"{processed_count}/{total_unresolved}, "
+                            f"matched={llm_count}, failed={failed_count}",
+                            flush=True,
+                        )
+
+        await asyncio.gather(*[_process_candidate(c, h, ctx) for c, h, ctx in unresolved])
 
     return RecruitingTermEnrichmentStats(
         regex=regex_count,
