@@ -1516,35 +1516,81 @@ main {
   gap: 12px;
 }
 
-.video-preview-wrapper {
+.audio-recording-status {
+  align-items: center;
   background: #111a14;
   border-radius: 14px;
-  height: 240px;
-  overflow: hidden;
-  position: relative;
-  width: 100%;
-}
-
-.webcam-video {
-  height: 100%;
-  object-fit: cover;
-  width: 100%;
-}
-
-.webcam-overlay {
-  align-items: center;
-  background: rgba(17, 26, 20, 0.7);
-  bottom: 0;
   color: #ffffff;
   display: flex;
+  gap: 14px;
+  padding: 24px 18px;
+  width: 100%;
+}
+
+.audio-status-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.audio-status-text {
   font-size: 13px;
-  justify-content: center;
-  left: 0;
-  padding: 16px;
-  position: absolute;
-  right: 0;
-  text-align: center;
-  top: 0;
+  line-height: 1.5;
+}
+
+.interview-trend-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.trend-stat {
+  background: #f4f6f4;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.trend-stat strong {
+  display: block;
+  font-size: 20px;
+}
+
+.interview-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.interview-session-item {
+  align-items: center;
+  background: #f8faf8;
+  border: 1px solid #e4eae4;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.interview-session-item:hover {
+  border-color: #9db89d;
+}
+
+.interview-session-score {
+  font-weight: 700;
+}
+
+.interview-session-detail {
+  margin-top: 14px;
+}
+
+.interview-detail-answer {
+  border-top: 1px solid #e4eae4;
+  padding: 10px 0;
+  font-size: 13px;
 }
 
 .recording-view-header {

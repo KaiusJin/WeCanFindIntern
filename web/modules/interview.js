@@ -2,12 +2,13 @@ import { $, escapeHtml, fetchWithTimeout } from "./helpers.js";
 import { validateAiConfig } from "./settings.js";
 
 // =========================================================
-// SECTION 3: AI INTERVIEW COACH & VIDEO RECORDER
+// SECTION 3: AI INTERVIEW COACH & AUDIO RECORDER
 // =========================================================
 
 const interviewState = {
   questions: [],
   currentIndex: 0,
+  sessionId: null,
   mediaRecorder: null,
   recordedChunks: [],
   recordedBlob: null,
@@ -58,7 +59,7 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
 
   try {
     const res = await fetchWithTimeout(
-      "/api/v1/interview/questions",
+      "/api/v1/interview/sessions",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,6 +77,7 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
     if (!data.ok || !data.questions?.length) throw new Error(data.error || "Failed to generate questions");
 
     interviewState.questions = data.questions;
+    interviewState.sessionId = data.session_id || null;
     renderActiveQuestion(0);
 
     $("#interview-loading").hidden = true;
@@ -116,45 +118,47 @@ $("#btn-play-tts")?.addEventListener("click", async () => {
   }
 });
 
-// Camera & Recording
-async function initWebcam() {
-  try {
-    if (interviewState.stream) return;
-    interviewState.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    const video = $("#webcam-preview");
-    video.srcObject = interviewState.stream;
-    $("#webcam-overlay").hidden = true;
-  } catch (err) {
-    $("#webcam-overlay").textContent = `Camera access: ${err.message}. You can still type your answer below.`;
-  }
+// Microphone Recording (audio only; transcription happens locally on the server)
+async function initMicrophone() {
+  if (interviewState.stream) return interviewState.stream;
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  interviewState.stream = stream;
+  return stream;
 }
 
-$("#btn-toggle-cam")?.addEventListener("click", () => {
-  if (interviewState.stream) {
-    interviewState.stream.getTracks().forEach((t) => t.stop());
-    interviewState.stream = null;
-    $("#webcam-preview").srcObject = null;
-    $("#webcam-overlay").textContent = "Camera paused. Click to restart.";
-    $("#webcam-overlay").hidden = false;
-  } else {
-    initWebcam();
-  }
-});
+function setAudioStatus(icon, text) {
+  $("#audio-status-icon").textContent = icon;
+  $("#audio-status-text").textContent = text;
+}
 
 $("#btn-start-record")?.addEventListener("click", async () => {
-  await initWebcam();
-  if (!interviewState.stream) return;
-  interviewState.recordedChunks = [];
   try {
-    interviewState.mediaRecorder = new MediaRecorder(interviewState.stream);
+    const stream = await initMicrophone();
+    interviewState.recordedChunks = [];
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+      ? "audio/webm"
+      : "";
+    interviewState.mediaRecorder = new MediaRecorder(
+      stream,
+      mimeType ? { mimeType } : undefined,
+    );
     interviewState.mediaRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) interviewState.recordedChunks.push(e.data);
     };
     interviewState.mediaRecorder.onstop = () => {
-      interviewState.recordedBlob = new Blob(interviewState.recordedChunks, { type: "video/webm" });
+      interviewState.recordedBlob = new Blob(interviewState.recordedChunks, {
+        type: mimeType || "audio/webm",
+      });
+      stream.getTracks().forEach((t) => t.stop());
+      interviewState.stream = null;
+      setAudioStatus(
+        "🎙️",
+        "Recording saved. Click 'Analyze' to transcribe locally and get feedback, or re-record.",
+      );
     };
     interviewState.mediaRecorder.start();
 
+    setAudioStatus("🔴", "Recording… speak your answer clearly.");
     $("#btn-start-record").hidden = true;
     $("#btn-stop-record").hidden = false;
     $("#recording-timer").hidden = false;
@@ -168,7 +172,10 @@ $("#btn-start-record")?.addEventListener("click", async () => {
       $("#recording-time-text").textContent = `${m}:${s}`;
     }, 1000);
   } catch (err) {
-    alert(`Recording could not start: ${err.message}`);
+    setAudioStatus(
+      "🎤",
+      `Microphone access failed (${err.message}). You can still type your answer below.`,
+    );
   }
 });
 
@@ -177,6 +184,7 @@ $("#btn-stop-record")?.addEventListener("click", () => {
     interviewState.mediaRecorder.stop();
   }
   clearInterval(interviewState.timerInterval);
+  $("#recording-timer").hidden = true;
   $("#btn-start-record").hidden = false;
   $("#btn-stop-record").hidden = true;
   $("#btn-start-record").textContent = "Re-record Answer";
@@ -189,6 +197,10 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
 
   if (!jdText) {
     alert("Missing job description.");
+    return;
+  }
+  if (!answerText && !interviewState.recordedBlob) {
+    alert("Record an audio answer or type your answer first.");
     return;
   }
 
@@ -210,12 +222,18 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
   formData.append("api_base", config.api_base || "");
 
   if (interviewState.recordedBlob) {
-    formData.append("video_file", interviewState.recordedBlob, "answer.webm");
+    formData.append("audio_file", interviewState.recordedBlob, "answer.webm");
+  }
+  if (interviewState.sessionId) {
+    formData.append("session_id", interviewState.sessionId);
+    formData.append("question_index", String(interviewState.currentIndex));
   }
 
   const btn = $("#btn-analyze-answer");
   btn.disabled = true;
-  btn.textContent = "Analyzing Performance with AI…";
+  btn.textContent = answerText
+    ? "Analyzing Performance with AI…"
+    : "Transcribing audio locally, then analyzing…";
 
   try {
     const res = await fetchWithTimeout("/api/v1/interview/analyze", { method: "POST", body: formData }, 180000);
@@ -232,6 +250,23 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
       $("#star-feedback-text").textContent = data.star_feedback;
     } else {
       $("#star-feedback-block").hidden = true;
+    }
+
+    const transcriptBlock = $("#transcript-block");
+    if (data.transcript) {
+      transcriptBlock.hidden = false;
+      const duration = Number(data.answer_duration_seconds) || 0;
+      const lang = data.transcript_language ? ` (${data.transcript_language})` : "";
+      const durationNote = duration ? ` — ${Math.round(duration)}s` : "";
+      $("#interview-transcript-text").textContent =
+        `${data.transcript}${lang}${durationNote}`;
+      if (!answerText) {
+        // Surface the locally transcribed answer so the user can correct it
+        // for the next round.
+        $("#interview-answer-text").value = data.transcript;
+      }
+    } else {
+      transcriptBlock.hidden = true;
     }
 
     const timelineWrap = $("#interview-timeline-wrap");
@@ -261,8 +296,101 @@ $("#btn-next-question")?.addEventListener("click", () => {
     $("#interview-active-card").scrollIntoView({ behavior: "smooth" });
   } else {
     alert("Great job! You have completed all 3 mock interview rounds.");
+    refreshHistory();
   }
 });
+
+// Practice history & progress
+async function refreshHistory() {
+  const summaryWrap = $("#interview-trend-summary");
+  const listWrap = $("#interview-session-list");
+  try {
+    const [trendRes, sessionsRes] = await Promise.all([
+      fetch("/api/v1/interview/trend"),
+      fetch("/api/v1/interview/sessions"),
+    ]);
+    const trend = await trendRes.json();
+    const sessions = await sessionsRes.json();
+
+    summaryWrap.innerHTML = `
+      <div class="trend-stat"><strong>${trend.session_count ?? 0}</strong>practice sessions</div>
+      <div class="trend-stat"><strong>${trend.answer_count ?? 0}</strong>answers analyzed</div>
+      <div class="trend-stat"><strong>${trend.average_score ?? 0}</strong>average score</div>
+      <div class="trend-stat"><strong>${(trend.improvement ?? 0) >= 0 ? "+" : ""}${trend.improvement ?? 0}</strong>change since first session</div>
+    `;
+
+    if (!sessions.length) {
+      listWrap.innerHTML = "<p class='detail-description'>No practice sessions yet. Generate questions to start.</p>";
+      return;
+    }
+    listWrap.innerHTML = sessions.map((session) => `
+      <div class="interview-session-item" data-session-id="${escapeHtml(session.id)}">
+        <span>${new Date(session.created_at).toLocaleString()} · ${escapeHtml(session.provider)}</span>
+        <span>${session.answer_count}/${session.question_count} answered ·
+          <span class="interview-session-score">${session.avg_score}/100</span></span>
+        <button type="button" class="agent-memory-delete" data-delete-session="${escapeHtml(session.id)}">✕</button>
+      </div>
+    `).join("");
+    listWrap.querySelectorAll("[data-session-id]").forEach((item) => {
+      item.addEventListener("click", () => loadSessionDetail(item.dataset.sessionId));
+    });
+    listWrap.querySelectorAll("[data-delete-session]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteSession(button.dataset.deleteSession);
+      });
+    });
+  } catch (err) {
+    summaryWrap.innerHTML = "";
+    listWrap.innerHTML = `<p class='detail-description'>History unavailable: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function loadSessionDetail(sessionId) {
+  const detailWrap = $("#interview-session-detail");
+  try {
+    const res = await fetch(`/api/v1/interview/sessions/${sessionId}`);
+    if (!res.ok) throw new Error("Could not load session");
+    const session = await res.json();
+    const answersByIndex = new Map(
+      (session.answers || []).map((answer) => [answer.question_index, answer]),
+    );
+    detailWrap.hidden = false;
+    detailWrap.innerHTML = `
+      <h4>Session detail</h4>
+      <p class="detail-description">${escapeHtml((session.job_description || "").slice(0, 240))}…</p>
+      ${(session.questions || []).map((question, index) => {
+        const answer = answersByIndex.get(index);
+        return `
+          <div class="interview-detail-answer">
+            <strong>Q${index + 1} (${escapeHtml(question.category_label || "")}):</strong>
+            ${escapeHtml(question.question)}<br/>
+            ${answer
+              ? `Score <strong>${answer.score}/100</strong> · ${escapeHtml(answer.summary || "")}`
+              : "Not practiced yet"}
+          </div>
+        `;
+      }).join("")}
+    `;
+    detailWrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (err) {
+    alert(`Session detail error: ${err.message}`);
+  }
+}
+
+async function deleteSession(sessionId) {
+  try {
+    const res = await fetch(`/api/v1/interview/sessions/${sessionId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Could not delete session");
+    if (interviewState.sessionId === sessionId) interviewState.sessionId = null;
+    refreshHistory();
+  } catch (err) {
+    alert(`Delete error: ${err.message}`);
+  }
+}
+
+$("#btn-refresh-history")?.addEventListener("click", refreshHistory);
+refreshHistory();
 
 $("#clear-interview")?.addEventListener("click", () => {
   $("#interview-jd-text").value = "";

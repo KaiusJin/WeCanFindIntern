@@ -369,7 +369,7 @@
         <section class="hero">
           <p class="eyebrow">MOCK INTERVIEW COACH / 03</p>
           <h1>Master your interview.</h1>
-          <p class="hero-copy">Dynamic question generation, voice interviewer, live video/audio answer recording, and STAR performance feedback.</p>
+          <p class="hero-copy">Dynamic question generation, voice interviewer, audio answer recording with local transcription, and STAR performance feedback — works with every AI provider.</p>
         </section>
 
         <section class="career-workspace">
@@ -402,7 +402,7 @@
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
               </div>
               <h3>Prepare for interview practice</h3>
-              <p>Generate a 3-question loop tailored to your target job to begin round-by-round audio/video practice.</p>
+              <p>Generate a 3-question loop tailored to your target job to begin round-by-round spoken practice.</p>
             </div>
 
             <div id="interview-loading" class="loading-state" hidden>
@@ -429,7 +429,7 @@
                 </div>
               </div>
 
-              <!-- Answer Input: Camera / Mic / Text -->
+              <!-- Answer Input: Mic / Text -->
               <div class="answer-recording-container">
                 <div class="recording-view-header">
                   <h4>Your Response</h4>
@@ -439,22 +439,21 @@
                   </div>
                 </div>
 
-                <div class="video-preview-wrapper" id="video-preview-wrapper">
-                  <video id="webcam-preview" class="webcam-video" autoplay muted playsinline></video>
-                  <div class="webcam-overlay" id="webcam-overlay">
-                    <span>Camera ready. Click 'Start Recording' when prepared.</span>
+                <div class="audio-recording-status" id="audio-recording-status">
+                  <div class="audio-status-icon" id="audio-status-icon">🎤</div>
+                  <div class="audio-status-text" id="audio-status-text">
+                    Microphone ready. Click 'Start Audio Recording' and speak your answer.
                   </div>
                 </div>
 
                 <div class="recorder-controls">
-                  <button id="btn-start-record" class="primary-button" type="button">Start Video/Audio Recording</button>
+                  <button id="btn-start-record" class="primary-button" type="button">Start Audio Recording</button>
                   <button id="btn-stop-record" class="secondary-button" type="button" hidden>Stop Recording</button>
-                  <button id="btn-toggle-cam" class="text-button" type="button">Toggle Camera</button>
                 </div>
 
                 <div class="field-group" style="margin-top: 16px;">
                   <label class="field-label" for="interview-answer-text">Or Type / Edit Your Answer Transcript</label>
-                  <textarea id="interview-answer-text" class="career-textarea" rows="4" placeholder="Speak your answer, or type your answer here if camera/microphone is unavailable..."></textarea>
+                  <textarea id="interview-answer-text" class="career-textarea" rows="4" placeholder="Speak your answer, or type your answer here if no microphone is available..."></textarea>
                 </div>
 
                 <button id="btn-analyze-answer" class="primary-button career-btn" type="button">
@@ -481,6 +480,11 @@
                 <p id="star-feedback-text" class="detail-description"></p>
               </div>
 
+              <div id="transcript-block" class="report-block" hidden>
+                <h4>Your Answer Transcript</h4>
+                <p id="interview-transcript-text" class="detail-description"></p>
+              </div>
+
               <div class="report-block">
                 <h4>Timeline Analysis</h4>
                 <div id="interview-timeline-wrap" class="timeline-list"></div>
@@ -494,6 +498,17 @@
               <div class="interview-next-actions">
                 <button id="btn-next-question" class="primary-button" type="button">Next Question →</button>
               </div>
+            </div>
+
+            <!-- Practice History & Progress -->
+            <div id="interview-history-card" class="career-card" style="margin-top: 16px;">
+              <div class="filter-heading">
+                <h2>Practice History & Progress</h2>
+                <button id="btn-refresh-history" class="text-button" type="button">Refresh</button>
+              </div>
+              <div id="interview-trend-summary" class="interview-trend-summary"></div>
+              <div id="interview-session-list" class="interview-session-list"></div>
+              <div id="interview-session-detail" hidden></div>
             </div>
           </div>
         </section>

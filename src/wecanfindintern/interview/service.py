@@ -1,4 +1,9 @@
-"""Mock interview question generation and answer evaluation service."""
+"""Mock interview question generation and answer evaluation service.
+
+Answers are analyzed as text for every provider. A recorded audio answer is
+transcribed locally first (``interview/stt.py``), so the whole feature is
+provider-agnostic — no multimodal lock-in.
+"""
 
 from __future__ import annotations
 
@@ -9,10 +14,11 @@ from wecanfindintern.interview.models import (
     InterviewQuestionItem,
     InterviewQuestionsResponse,
 )
+from wecanfindintern.interview.stt import STTError, transcribe_audio
 from wecanfindintern.llm.gateway import (
     LLMError,
     complete_json,
-    parse_json,
+    json_response_format,
     resolve_api_key,
 )
 from wecanfindintern.llm.prompts.interview import (
@@ -45,6 +51,7 @@ def generate_interview_questions(
             api_base=api_base,
             system_prompt="You are a professional technical interviewer. Output valid JSON.",
             user_prompt=build_questions_prompt(job_description),
+            response_format=json_response_format(provider),
         )
         data = result.data
         if isinstance(data, dict) and "questions" in data:
@@ -59,38 +66,41 @@ def analyze_interview_performance(
     job_description: str,
     question_context: str,
     answer_text: str = "",
-    video_bytes: bytes | None = None,
+    audio_bytes: bytes | None = None,
+    audio_mime: str = "audio/webm",
     provider: str = "Gemini",
     model_name: str | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
 ) -> InterviewAnalyzeResponse:
-    """Analyze mock interview answer performance."""
+    """Analyze mock interview answer performance (typed text or audio answer)."""
 
     try:
         resolved_key = resolve_api_key(provider, api_key)
     except LLMError as exc:
         return InterviewAnalyzeResponse(ok=False, error=str(exc))
 
-    prompt_text = build_analysis_prompt(job_description, question_context, answer_text)
-
-    if video_bytes and provider == "Gemini":
+    transcript_text = ""
+    transcript_language = ""
+    answer_duration = 0.0
+    if audio_bytes:
         try:
-            import google.generativeai as genai
+            transcript = transcribe_audio(audio_bytes, mime=audio_mime)
+        except STTError as exc:
+            return InterviewAnalyzeResponse(ok=False, error=str(exc))
+        transcript_text = transcript.text
+        transcript_language = transcript.language
+        answer_duration = transcript.duration_seconds
+        if not answer_text.strip():
+            answer_text = transcript_text
 
-            clean_key = resolve_api_key("Gemini", api_key)
-            genai.configure(api_key=clean_key, transport="rest")
-            target_model = model_name.strip().replace("models/", "")
-            model = genai.GenerativeModel(target_model)
-            contents = [
-                {"mime_type": "video/webm", "data": video_bytes},
-                prompt_text,
-            ]
-            resp = model.generate_content(contents, request_options={"timeout": 180.0})
-            data = parse_json(resp.text)
-            return _analysis_from_data(data)
-        except (LLMError, ValueError, TypeError, KeyError) as exc:
-            return InterviewAnalyzeResponse(ok=False, error=f"Gemini video analysis error: {exc}")
+    if not answer_text.strip():
+        return InterviewAnalyzeResponse(
+            ok=False,
+            error="Provide a typed answer or record an audio answer to analyze.",
+        )
+
+    prompt_text = build_analysis_prompt(job_description, question_context, answer_text)
 
     try:
         result = complete_json(
@@ -100,13 +110,15 @@ def analyze_interview_performance(
             api_base=api_base,
             system_prompt="You are a professional interview coach. Output valid JSON.",
             user_prompt=prompt_text,
-            response_format=(
-                {"type": "json_object"}
-                if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama")
-                else None
-            ),
+            response_format=json_response_format(provider),
         )
-        return _analysis_from_data(result.data, usage=result.usage)
+        return _analysis_from_data(
+            result.data,
+            usage=result.usage,
+            transcript=transcript_text,
+            transcript_language=transcript_language,
+            answer_duration_seconds=answer_duration,
+        )
     except (LLMError, ValueError, TypeError, KeyError) as exc:
         return InterviewAnalyzeResponse(ok=False, error=f"{provider} answer analysis error: {exc}")
 
@@ -115,6 +127,9 @@ def _analysis_from_data(
     data: dict[str, Any],
     *,
     usage: dict[str, Any] | None = None,
+    transcript: str = "",
+    transcript_language: str = "",
+    answer_duration_seconds: float = 0.0,
 ) -> InterviewAnalyzeResponse:
     """Build the public analysis response from an LLM JSON payload."""
 
@@ -125,5 +140,8 @@ def _analysis_from_data(
         star_feedback=data.get("star_feedback", ""),
         timeline=data.get("timeline", []),
         advice=data.get("advice", []),
+        transcript=transcript,
+        transcript_language=transcript_language,
+        answer_duration_seconds=answer_duration_seconds,
         usage=usage or {},
     )

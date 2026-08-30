@@ -98,4 +98,9 @@ def test_openapi_contract_covers_frontend_endpoints():
     ]["schema"]
     schema_ref = analyze["$ref"].split("/")[-1]
     properties = spec["components"]["schemas"][schema_ref]["properties"]
-    assert "video_file" in properties
+    assert "audio_file" in properties
+    assert "post" in paths["/api/v1/interview/sessions"]
+    assert "get" in paths["/api/v1/interview/sessions"]
+    assert "get" in paths["/api/v1/interview/sessions/{session_id}"]
+    assert "delete" in paths["/api/v1/interview/sessions/{session_id}"]
+    assert "get" in paths["/api/v1/interview/trend"]
