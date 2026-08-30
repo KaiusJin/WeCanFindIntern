@@ -35,13 +35,15 @@ async def create_interview_session(payload: InterviewSessionCreateRequest, reque
     questions_response = await asyncio.to_thread(
         generate_interview_questions,
         job_description=payload.job_description,
+        resume_text=payload.resume_text,
         provider=payload.provider,
         model_name=payload.model_name,
         api_key=payload.api_key,
         api_base=payload.api_base,
     )
     if not questions_response.ok:
-        raise HTTPException(status_code=502, detail=questions_response.error)
+        status_code = 422 if "required" in (questions_response.error or "") else 502
+        raise HTTPException(status_code=status_code, detail=questions_response.error)
     session = await _repo(request).create_session(
         job_description=payload.job_description,
         provider=payload.provider,
@@ -109,9 +111,10 @@ async def interview_trend(request: Request) -> dict:
 
 @interview_router.post("/questions", response_model=InterviewQuestionsResponse)
 def get_questions(payload: InterviewSessionCreateRequest):
-    """Generate 3 tailored interview questions without creating a session."""
+    """Generate 7 tailored technical interview questions without a session."""
     return generate_interview_questions(
         job_description=payload.job_description,
+        resume_text=payload.resume_text,
         provider=payload.provider,
         model_name=payload.model_name,
         api_key=payload.api_key,
@@ -144,6 +147,7 @@ async def analyze_answer(
     audio_file: Annotated[UploadFile | None, File()] = None,
     session_id: Annotated[UUID | None, Form()] = None,
     question_index: Annotated[int | None, Form()] = None,
+    question_criteria: Annotated[str, Form()] = "",
 ):
     """Analyze a mock interview answer; persists the report when a practice
     session and question index are supplied."""
@@ -160,6 +164,7 @@ async def analyze_answer(
         answer_text=answer_text,
         audio_bytes=audio_bytes,
         audio_mime=audio_mime,
+        evaluation_criteria=question_criteria,
         provider=provider,
         model_name=model_name,
         api_key=api_key,

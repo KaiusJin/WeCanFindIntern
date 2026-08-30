@@ -1399,7 +1399,10 @@ async def tool_generate_interview_questions(
 ) -> dict[str, Any]:
     """Generate mock interview questions for one job or a raw description."""
 
-    from wecanfindintern.interview.service import generate_interview_questions
+    from wecanfindintern.interview.service import (
+        build_resume_text,
+        generate_interview_questions,
+    )
 
     parsed = GenerateInterviewQuestionsArgs.model_validate(args)
     if deps.llm_config is None:
@@ -1425,10 +1428,19 @@ async def tool_generate_interview_questions(
                 "description_missing",
                 f"{resolved_label} has no stored job description to derive questions from.",
             )
+    profile = await deps.profile_repo.get_profile()
+    resume_text = build_resume_text(profile)
+    if not resume_text:
+        raise ToolError(
+            "profile_missing",
+            "Interview questions need candidate context, but the Profile is empty. "
+            "Ask the user to fill their Profile first.",
+        )
     try:
         response = await asyncio.to_thread(
             generate_interview_questions,
             job_description=description,
+            resume_text=resume_text,
             provider=deps.llm_config.provider,
             model_name=deps.llm_config.model_name,
             api_key=deps.llm_config.api_key,

@@ -8,7 +8,7 @@ import { validateAiConfig } from "./settings.js";
 let coverLetterProfile = null;
 let coverLetterProgressTimer = null;
 
-function profileToCoverLetterText(profile) {
+export function profileToCoverLetterText(profile) {
   const lines = [];
   const basics = profile?.basics || {};
   if (basics.full_name) lines.push(basics.full_name);
@@ -128,7 +128,6 @@ async function extractCoverLetterPdf(file) {
 
 document.querySelectorAll("input[name='cl-resume-source']").forEach((input) => input.addEventListener("change", (event) => {
   const isPdf = event.target.value === "pdf";
-  $("#cl-profile-source").hidden = isPdf;
   $("#cl-pdf-source").hidden = !isPdf;
   $("#cl-contact-section").hidden = !isPdf;
   if (isPdf) {
@@ -261,7 +260,6 @@ $("#btn-export-pdf")?.addEventListener("click", () => downloadExport("pdf"));
 $("#clear-cover-letter")?.addEventListener("click", () => {
   const profileRadio = $("input[name='cl-resume-source'][value='profile']");
   if (profileRadio) profileRadio.checked = true;
-  $("#cl-profile-source").hidden = false;
   $("#cl-pdf-source").hidden = true;
   $("#cl-contact-section").hidden = true;
   const fileInput = $("#cl-resume-pdf");

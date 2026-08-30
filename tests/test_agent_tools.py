@@ -589,3 +589,33 @@ def test_generate_interview_questions_uses_raw_description():
     assert mock_generate.call_args.kwargs["provider"] == "Ollama"
     assert result["ok"] is True
     assert result["data"]["job"] == "the provided description"
+
+
+def test_generate_interview_questions_requires_profile_context():
+    from datetime import UTC, datetime
+
+    from wecanfindintern.agent.tools import LlmConfig
+    from wecanfindintern.profile.models import ProfileBasics, UserProfile
+
+    class EmptyProfileRepo:
+        async def get_profile(self):
+            return UserProfile(
+                id=uuid4(),
+                schema_version="profile.v1",
+                basics=ProfileBasics(),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+
+    deps = _deps(profile=EmptyProfileRepo())
+    deps.llm_config = LlmConfig(provider="OpenAI", model_name="gpt-4o", api_key="key")
+    with pytest.raises(ToolError) as exc:
+        asyncio.run(
+            run_tool(
+                "generate_interview_questions",
+                {"job_description": "Backend intern role."},
+                deps,
+                phase="plan",
+            )
+        )
+    assert exc.value.error_type == "profile_missing"

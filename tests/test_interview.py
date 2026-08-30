@@ -1,7 +1,9 @@
 """Unit tests for Mock Interview coaching module."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 
@@ -36,12 +38,103 @@ def test_interview_models():
 def test_interview_missing_api_key():
     resp = generate_interview_questions(
         job_description="Software engineer intern",
+        resume_text="Alex Chen — Python, FastAPI.",
         provider="OpenAI",
         model_name="gpt-4o",
         api_key=None,
     )
     assert not resp.ok
     assert "Missing OpenAI API key" in resp.error
+
+
+def test_questions_require_candidate_context():
+    resp = generate_interview_questions(
+        job_description="Software engineer intern",
+        resume_text="   ",
+        provider="OpenAI",
+        model_name="gpt-4o",
+        api_key="key",
+    )
+    assert not resp.ok
+    assert "Candidate context is required" in resp.error
+
+
+def test_questions_prompt_embeds_resume_and_fixed_structure():
+    captured = {}
+
+    def fake_complete_json(**kwargs):
+        captured["user_prompt"] = kwargs["user_prompt"]
+        return SimpleNamespace(
+            data=[
+                {
+                    "id": index + 1,
+                    "category": "intro",
+                    "category_label": f"{index + 1}. Q",
+                    "question": f"Q{index + 1}",
+                    "eval_criteria": ["c"],
+                }
+                for index in range(7)
+            ],
+            usage={},
+        )
+
+    with patch(
+        "wecanfindintern.interview.service.complete_json",
+        side_effect=fake_complete_json,
+    ):
+        resp = generate_interview_questions(
+            job_description="Backend intern at Acme.",
+            resume_text="Alex Chen | Python | Billing service at Shopify.",
+            provider="OpenAI",
+            model_name="gpt-4o",
+            api_key="key",
+        )
+    assert resp.ok
+    assert len(resp.questions) == 7
+    prompt = captured["user_prompt"]
+    assert "EXACTLY 7" in prompt
+    assert "Self-introduction" in prompt
+    assert "Work experience follow-up" in prompt
+    assert "Project follow-up" in prompt
+    assert "Do NOT include behavioral or HR" in prompt
+    assert "Alex Chen | Python | Billing service at Shopify." in prompt
+
+
+def test_build_resume_text_flattens_profile():
+    from wecanfindintern.interview.service import build_resume_text
+    from wecanfindintern.profile.models import (
+        ProfileBasics,
+        ProjectEntry,
+        SkillEntry,
+        UserProfile,
+        WorkEntry,
+    )
+
+    profile = UserProfile(
+        id=uuid4(),
+        schema_version="profile.v1",
+        basics=ProfileBasics(full_name="Alex Chen", email="alex@example.com"),
+        work_experience=[
+            WorkEntry(
+                company="Shopify",
+                title="Backend Intern",
+                description="Built billing APIs.",
+                skills=["python"],
+            )
+        ],
+        projects=[
+            ProjectEntry(name="Billing Service", description="FastAPI + Postgres.")
+        ],
+        skills=[SkillEntry(name="python"), SkillEntry(name="fastapi")],
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    text = build_resume_text(profile)
+    assert "Alex Chen" in text
+    assert "Work Experience" in text
+    assert "Shopify" in text and "Built billing APIs." in text
+    assert "Projects" in text and "Billing Service" in text
+    assert "Skills" in text and "fastapi" in text
 
 
 def test_tts_audio_empty():
@@ -289,3 +382,102 @@ def test_transcription_failure_returns_actionable_error():
         )
     assert not response.ok
     assert "No speech was detected" in response.error
+
+
+# ---------------------------------------------------------------------------
+# Rubric-based scoring with evaluation criteria
+# ---------------------------------------------------------------------------
+
+
+def test_analysis_prompt_embeds_criteria_and_honest_timeline():
+    from wecanfindintern.llm.prompts.interview import build_analysis_prompt
+
+    prompt = build_analysis_prompt(
+        "Backend intern at Acme.",
+        "Describe a migration you led.",
+        "I migrated billing to Go.",
+        "- Naming and structure\n- Rollout safety",
+    )
+    assert "Evaluation Criteria for this question" in prompt
+    assert "- Naming and structure" in prompt
+    assert "90-100" in prompt and "0-39" in prompt
+    assert "NEVER invent clock timestamps" in prompt
+    assert '"section"' in prompt and '"timestamp"' not in prompt
+
+
+def test_analysis_without_criteria_omits_criteria_block():
+    from wecanfindintern.llm.prompts.interview import build_analysis_prompt
+
+    prompt = build_analysis_prompt("jd", "q", "answer")
+    assert "Evaluation Criteria for this question" not in prompt
+
+
+def test_criteria_results_are_parsed_and_validated():
+    with patch(
+        "wecanfindintern.interview.service.complete_json",
+        return_value=_fake_llm_result(
+            criteria_results=[
+                {
+                    "criterion": "Rollout safety",
+                    "verdict": "met",
+                    "note": "Described canary rollout.",
+                },
+                {"criterion": "Naming", "verdict": "partial", "note": "Vague."},
+                "garbage-entry",
+            ],
+        ),
+    ):
+        response = analyze_interview_performance(
+            job_description="Backend intern role",
+            question_context="q",
+            answer_text="Typed answer.",
+            evaluation_criteria="- Rollout safety\n- Naming",
+            provider="OpenAI",
+            model_name="gpt-4o",
+            api_key="key",
+        )
+    assert response.ok
+    assert len(response.criteria_results) == 2
+    assert response.criteria_results[0].verdict == "met"
+    assert response.criteria_results[1].verdict == "partial"
+
+
+def test_missing_score_defaults_to_zero_not_passed():
+    with patch(
+        "wecanfindintern.interview.service.complete_json",
+        return_value=_fake_llm_result(score=None),
+    ):
+        response = analyze_interview_performance(
+            job_description="Backend intern role",
+            question_context="q",
+            answer_text="Typed answer.",
+            provider="OpenAI",
+            model_name="gpt-4o",
+            api_key="key",
+        )
+    assert response.ok
+    assert response.score == 0
+
+
+def test_timeline_timestamps_are_dropped_and_mapped_to_sections():
+    with patch(
+        "wecanfindintern.interview.service.complete_json",
+        return_value=_fake_llm_result(
+            timeline=[
+                {"timestamp": "0:15", "type": "Opening", "observation": "clear"},
+                {"section": "Evidence", "observation": "concrete metrics"},
+            ],
+        ),
+    ):
+        response = analyze_interview_performance(
+            job_description="Backend intern role",
+            question_context="q",
+            answer_text="Typed answer.",
+            provider="OpenAI",
+            model_name="gpt-4o",
+            api_key="key",
+        )
+    sections = [event.section for event in response.timeline]
+    assert sections == ["0:15", "Evidence"]  # legacy timestamp mapped, never kept twice
+    assert all(event.timestamp == "" for event in response.timeline)
+    assert response.timeline[1].observation == "concrete metrics"

@@ -1,14 +1,18 @@
-import { $, escapeHtml, fetchWithTimeout } from "./helpers.js";
+import { $, escapeHtml, fetchWithTimeout, setupDropzone } from "./helpers.js";
 import { validateAiConfig } from "./settings.js";
+import { profileToCoverLetterText as profileToResumeText } from "./cover-letter.js";
 
 // =========================================================
 // SECTION 3: AI INTERVIEW COACH & AUDIO RECORDER
 // =========================================================
 
+let interviewProfile = null;
+
 const interviewState = {
   questions: [],
   currentIndex: 0,
   sessionId: null,
+  answered: new Set(),
   mediaRecorder: null,
   recordedChunks: [],
   recordedBlob: null,
@@ -17,30 +21,119 @@ const interviewState = {
   secondsElapsed: 0,
 };
 
+// Compact stepper labels keyed by question category.
+const STEP_LABELS = {
+  intro: "Self Intro",
+  experience: "Work Experience",
+  experience_followup: "Experience Probe",
+  project: "Project Deep-Dive",
+  project_followup: "Project Probe",
+};
+
+function stepLabel(question, index) {
+  return (
+    STEP_LABELS[question.category]
+    || (question.category_label || `Q${index + 1}`).replace(/^\d+\.\s*/, "")
+  );
+}
+
 function renderActiveQuestion(index) {
   if (!interviewState.questions[index]) return;
   interviewState.currentIndex = index;
   const q = interviewState.questions[index];
   $("#interview-q-category").textContent = q.category_label || `Question ${index + 1}`;
   $("#interview-q-text").textContent = q.question;
-  document.querySelectorAll(".step-badge").forEach((badge, idx) => {
-    badge.classList.toggle("active", idx === index);
-  });
+  renderStepper();
   $("#interview-report-card").hidden = true;
   $("#interview-answer-text").value = "";
 }
 
-document.querySelectorAll(".step-badge").forEach((badge) => {
-  badge.addEventListener("click", () => {
-    const idx = Number(badge.dataset.q);
-    renderActiveQuestion(idx);
+function renderStepper() {
+  const stepper = $("#interview-stepper");
+  if (!stepper) return;
+  stepper.innerHTML = interviewState.questions
+    .map((question, idx) => {
+      const done = interviewState.answered.has(idx);
+      const state = idx === interviewState.currentIndex ? " active" : done ? " done" : "";
+      const num = done ? "✓" : idx + 1;
+      return `<button class="step-badge${state}" data-q="${idx}" type="button" title="${escapeHtml(question.question)}"><span class="step-num">${num}</span>${escapeHtml(stepLabel(question, idx))}</button>`;
+    })
+    .join("");
+  stepper.querySelectorAll(".step-badge").forEach((badge) => {
+    badge.addEventListener("click", () => renderActiveQuestion(Number(badge.dataset.q)));
   });
-});
+}
+
+// Candidate source: saved Profile or uploaded resume PDF (same flow as the
+// Cover Letter section).
+async function loadInterviewProfile() {
+  const status = $("#int-profile-source-status");
+  try {
+    const response = await fetch("/api/v1/profile");
+    if (!response.ok) throw new Error("Could not load Profile.");
+    interviewProfile = await response.json();
+    const text = profileToResumeText(interviewProfile);
+    $("#int-resume-text").value = text;
+    if (status) {
+      status.textContent = text
+        ? "Using saved Profile as candidate context"
+        : "Your Profile is empty. Add Profile data or upload a resume.";
+    }
+  } catch (error) {
+    if (status) status.textContent = error.message;
+    $("#int-resume-text").value = "";
+  }
+}
+
+function isPdfResumeSource() {
+  return $("input[name='int-resume-source'][value='pdf']")?.checked ?? false;
+}
+
+function currentResumeText() {
+  return $("#int-resume-text").value.trim();
+}
+
+async function extractInterviewPdf(file) {
+  if (!file) return;
+  const label = $("#int-file-label");
+  if (label) label.textContent = `Extracting from ${file.name}…`;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const response = await fetch("/api/v1/ats/extract-pdf", { method: "POST", body: form });
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.error || "Resume extraction failed.");
+    $("#int-resume-text").value = result.text;
+    if (label) label.textContent = `✓ Extracted from ${file.name}`;
+  } catch (error) {
+    if (label) label.textContent = `Upload error: ${error.message}`;
+    $("#int-resume-text").value = "";
+  }
+}
+
+document.querySelectorAll("input[name='int-resume-source']").forEach((input) => input.addEventListener("change", (event) => {
+  const isPdf = event.target.value === "pdf";
+  $("#int-pdf-source").hidden = !isPdf;
+  if (isPdf) {
+    $("#int-resume-text").value = "";
+    $("#int-file-label").textContent = "Click or drag & drop resume PDF";
+  } else loadInterviewProfile();
+}));
+$("#int-resume-pdf")?.addEventListener("change", (event) => extractInterviewPdf(event.target.files?.[0]));
+setupDropzone($("#int-dropzone"), (files) => extractInterviewPdf(files[0]));
 
 $("#btn-generate-questions")?.addEventListener("click", async () => {
   const jdText = $("#interview-jd-text").value.trim();
   if (!jdText) {
     alert("Please enter a job description to generate interview questions.");
+    return;
+  }
+  if (isPdfResumeSource() && !$("#int-resume-pdf")?.files?.length && !currentResumeText()) {
+    alert("Upload a resume PDF before generating interview questions.");
+    return;
+  }
+  if (!currentResumeText()) {
+    alert("Your Profile has no resume content yet. Add Profile data or upload a resume.");
     return;
   }
 
@@ -65,6 +158,7 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           job_description: jdText,
+          resume_text: currentResumeText(),
           provider: config.provider,
           model_name: config.model_name,
           api_key: config.api_key,
@@ -74,10 +168,13 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
       120000,
     );
     const data = await res.json();
-    if (!data.ok || !data.questions?.length) throw new Error(data.error || "Failed to generate questions");
+    if (!res.ok || !data.questions?.length) {
+      throw new Error(data.detail || data.error || "Failed to generate questions");
+    }
 
     interviewState.questions = data.questions;
     interviewState.sessionId = data.session_id || null;
+    interviewState.answered = new Set();
     renderActiveQuestion(0);
 
     $("#interview-loading").hidden = true;
@@ -89,35 +186,6 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
   }
 });
 
-// TTS Audio
-$("#btn-play-tts")?.addEventListener("click", async () => {
-  const q = interviewState.questions[interviewState.currentIndex];
-  if (!q) return;
-  const btn = $("#btn-play-tts");
-  const originalText = btn.innerHTML;
-  btn.innerHTML = "<span>⏳ Loading audio…</span>";
-  try {
-    const res = await fetch("/api/v1/interview/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ text: q.question }),
-    });
-    if (!res.ok) throw new Error("TTS audio unavailable");
-    const blob = await res.blob();
-    const audioUrl = URL.createObjectURL(blob);
-    const player = $("#interview-audio-player");
-    player.src = audioUrl;
-    player.play();
-    btn.innerHTML = "<span>Playing…</span>";
-    player.onended = () => {
-      btn.innerHTML = originalText;
-    };
-  } catch (err) {
-    btn.innerHTML = originalText;
-    alert(`Audio error: ${err.message}`);
-  }
-});
-
 // Microphone Recording (audio only; transcription happens locally on the server)
 async function initMicrophone() {
   if (interviewState.stream) return interviewState.stream;
@@ -126,9 +194,12 @@ async function initMicrophone() {
   return stream;
 }
 
-function setAudioStatus(icon, text) {
-  $("#audio-status-icon").textContent = icon;
-  $("#audio-status-text").textContent = text;
+function setRecordStatus(text) {
+  const el = $("#recording-inline-status");
+  if (el) {
+    el.textContent = text;
+    el.hidden = false;
+  }
 }
 
 $("#btn-start-record")?.addEventListener("click", async () => {
@@ -151,14 +222,11 @@ $("#btn-start-record")?.addEventListener("click", async () => {
       });
       stream.getTracks().forEach((t) => t.stop());
       interviewState.stream = null;
-      setAudioStatus(
-        "🎙️",
-        "Recording saved. Click 'Analyze' to transcribe locally and get feedback, or re-record.",
-      );
+      setRecordStatus("Recording saved — analyze when ready, or re-record.");
     };
     interviewState.mediaRecorder.start();
 
-    setAudioStatus("🔴", "Recording… speak your answer clearly.");
+    setRecordStatus("Recording — speak your answer, then stop.");
     $("#btn-start-record").hidden = true;
     $("#btn-stop-record").hidden = false;
     $("#recording-timer").hidden = false;
@@ -172,10 +240,7 @@ $("#btn-start-record")?.addEventListener("click", async () => {
       $("#recording-time-text").textContent = `${m}:${s}`;
     }, 1000);
   } catch (err) {
-    setAudioStatus(
-      "🎤",
-      `Microphone access failed (${err.message}). You can still type your answer below.`,
-    );
+    setRecordStatus(`Microphone unavailable (${err.message}) — type your answer instead.`);
   }
 });
 
@@ -187,7 +252,7 @@ $("#btn-stop-record")?.addEventListener("click", () => {
   $("#recording-timer").hidden = true;
   $("#btn-start-record").hidden = false;
   $("#btn-stop-record").hidden = true;
-  $("#btn-start-record").textContent = "Re-record Answer";
+  $("#btn-start-record").textContent = "↺ Re-record";
 });
 
 $("#btn-analyze-answer")?.addEventListener("click", async () => {
@@ -227,6 +292,12 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
   if (interviewState.sessionId) {
     formData.append("session_id", interviewState.sessionId);
     formData.append("question_index", String(interviewState.currentIndex));
+  }
+  if (q?.eval_criteria?.length) {
+    formData.append(
+      "question_criteria",
+      q.eval_criteria.map((c) => `- ${c}`).join("\n"),
+    );
   }
 
   const btn = $("#btn-analyze-answer");
@@ -269,18 +340,41 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
       transcriptBlock.hidden = true;
     }
 
+    const criteriaBlock = $("#criteria-results-block");
+    const criteriaList = $("#interview-criteria-wrap");
+    if (criteriaBlock && criteriaList) {
+      const results = data.criteria_results || [];
+      if (results.length) {
+        criteriaBlock.hidden = false;
+        const verdictIcon = { met: "✓", partial: "◐", missed: "✕" };
+        criteriaList.innerHTML = results.map((result) => `
+          <div class="criterion-result criterion-${escapeHtml(result.verdict || "missed")}">
+            <span class="criterion-verdict">${verdictIcon[result.verdict] || "✕"}</span>
+            <span class="criterion-text"><strong>${escapeHtml(result.criterion || "")}</strong>${result.note ? ` — ${escapeHtml(result.note)}` : ""}</span>
+          </div>
+        `).join("");
+      } else {
+        criteriaBlock.hidden = true;
+      }
+    }
+
     const timelineWrap = $("#interview-timeline-wrap");
-    timelineWrap.innerHTML = (data.timeline || []).map((t) => `
+    timelineWrap.innerHTML = (data.timeline || []).map((t) => {
+      const section = t.section || t.type || "Observation";
+      return `
       <div class="timeline-event-item">
-        <span class="timeline-ts">${escapeHtml(t.timestamp)}</span>
-        <span class="timeline-obs"><strong>${escapeHtml(t.type)}:</strong> ${escapeHtml(t.observation)}</span>
+        <span class="timeline-ts">${escapeHtml(section)}</span>
+        <span class="timeline-obs">${escapeHtml(t.observation)}</span>
       </div>
-    `).join("") || "<p class='detail-description'>No specific timeline flags noted.</p>";
+    `;
+    }).join("") || "<p class='detail-description'>No specific answer-phase notes.</p>";
 
     const adviceWrap = $("#interview-advice-wrap");
     adviceWrap.innerHTML = (data.advice || []).map((a) => `<li>${escapeHtml(a)}</li>`).join("");
 
     $("#interview-report-card").hidden = false;
+    interviewState.answered.add(interviewState.currentIndex);
+    renderStepper();
     $("#btn-next-question").scrollIntoView({ behavior: "smooth" });
   } catch (err) {
     alert(`Analysis error: ${err.message}`);
@@ -295,7 +389,7 @@ $("#btn-next-question")?.addEventListener("click", () => {
     renderActiveQuestion(interviewState.currentIndex + 1);
     $("#interview-active-card").scrollIntoView({ behavior: "smooth" });
   } else {
-    alert("Great job! You have completed all 3 mock interview rounds.");
+    alert("Great job! You have completed all 7 technical interview rounds.");
     refreshHistory();
   }
 });
@@ -313,24 +407,38 @@ async function refreshHistory() {
     const sessions = await sessionsRes.json();
 
     summaryWrap.innerHTML = `
-      <div class="trend-stat"><strong>${trend.session_count ?? 0}</strong>practice sessions</div>
-      <div class="trend-stat"><strong>${trend.answer_count ?? 0}</strong>answers analyzed</div>
-      <div class="trend-stat"><strong>${trend.average_score ?? 0}</strong>average score</div>
-      <div class="trend-stat"><strong>${(trend.improvement ?? 0) >= 0 ? "+" : ""}${trend.improvement ?? 0}</strong>change since first session</div>
+      <div class="history-stat"><strong>${trend.session_count ?? 0}</strong><span>sessions</span></div>
+      <div class="history-stat"><strong>${trend.answer_count ?? 0}</strong><span>answers analyzed</span></div>
+      <div class="history-stat"><strong>${trend.average_score ?? 0}</strong><span>avg score</span></div>
+      <div class="history-stat"><strong>${(trend.improvement ?? 0) >= 0 ? "+" : ""}${trend.improvement ?? 0}</strong><span>vs first session</span></div>
     `;
 
     if (!sessions.length) {
-      listWrap.innerHTML = "<p class='detail-description'>No practice sessions yet. Generate questions to start.</p>";
+      listWrap.innerHTML = "<p class='history-empty'>No practice sessions yet — generate questions to start.</p>";
       return;
     }
-    listWrap.innerHTML = sessions.map((session) => `
-      <div class="interview-session-item" data-session-id="${escapeHtml(session.id)}">
-        <span>${new Date(session.created_at).toLocaleString()} · ${escapeHtml(session.provider)}</span>
-        <span>${session.answer_count}/${session.question_count} answered ·
-          <span class="interview-session-score">${session.avg_score}/100</span></span>
-        <button type="button" class="agent-memory-delete" data-delete-session="${escapeHtml(session.id)}">✕</button>
+    listWrap.innerHTML = sessions.map((session) => {
+      const pct = session.question_count
+        ? Math.round((session.answer_count / session.question_count) * 100)
+        : 0;
+      const date = new Date(session.created_at).toLocaleString(undefined, {
+        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+      });
+      return `
+      <div class="history-row" data-session-id="${escapeHtml(session.id)}">
+        <div class="history-row-main">
+          <div class="history-row-top">
+            <strong>${escapeHtml(date)}</strong>
+            <span class="tag">${escapeHtml(session.provider)}</span>
+          </div>
+          <div class="history-progress"><span style="width: ${pct}%"></span></div>
+          <span class="history-progress-label">${session.answer_count}/${session.question_count} answered</span>
+        </div>
+        <div class="history-row-score">${session.avg_score}<span>/100</span></div>
+        <button type="button" class="history-delete" data-delete-session="${escapeHtml(session.id)}" title="Delete session">✕</button>
       </div>
-    `).join("");
+    `;
+    }).join("");
     listWrap.querySelectorAll("[data-session-id]").forEach((item) => {
       item.addEventListener("click", () => loadSessionDetail(item.dataset.sessionId));
     });
@@ -390,6 +498,17 @@ async function deleteSession(sessionId) {
 }
 
 $("#btn-refresh-history")?.addEventListener("click", refreshHistory);
+$("#clear-interview")?.addEventListener("click", () => {
+  const profileRadio = $("input[name='int-resume-source'][value='profile']");
+  if (profileRadio) profileRadio.checked = true;
+  $("#int-pdf-source").hidden = true;
+  const fileInput = $("#int-resume-pdf");
+  if (fileInput) fileInput.value = "";
+  $("#int-file-label").textContent = "Click or drag & drop resume PDF";
+  $("#int-resume-text").value = "";
+  loadInterviewProfile();
+});
+loadInterviewProfile();
 refreshHistory();
 
 $("#clear-interview")?.addEventListener("click", () => {

@@ -91,6 +91,7 @@ def test_openapi_contract_covers_frontend_endpoints():
     assert "delete" in paths["/api/v1/tracker/bookmarks/waterlooworks/{source_job_id}"]
     assert "post" in paths["/api/v1/agent/sessions"]
     assert "post" in paths["/api/v1/agent/sessions/{session_id}/messages"]
+    assert "get" in paths["/api/v1/agent/sessions/{session_id}/tool-calls"]
     assert "post" in paths["/api/v1/agent/approvals/{approval_id}/decision"]
 
     analyze = paths["/api/v1/interview/analyze"]["post"]["requestBody"]["content"][

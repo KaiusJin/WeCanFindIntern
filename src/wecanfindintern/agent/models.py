@@ -32,6 +32,7 @@ class AgentMessage(BaseModel):
 class AgentToolCall(BaseModel):
     id: UUID
     session_id: UUID
+    message_id: UUID | None = None
     tool_name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
     status: Literal["succeeded", "failed", "awaiting_approval"] = "succeeded"
