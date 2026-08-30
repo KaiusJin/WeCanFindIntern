@@ -47,6 +47,7 @@ def generate_ats_review(
                 if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama")
                 else None
             ),
+            use_cache=True,
         )
         data = result.data
         score = int(data.get("score", 0))

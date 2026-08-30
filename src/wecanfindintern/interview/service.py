@@ -158,6 +158,7 @@ def generate_interview_questions(
             system_prompt="You are a professional technical interviewer. Output valid JSON.",
             user_prompt=build_questions_prompt(job_description, resume_text),
             response_format=json_response_format(provider),
+            use_cache=True,
         )
         data = result.data
         if isinstance(data, dict) and "questions" in data:
