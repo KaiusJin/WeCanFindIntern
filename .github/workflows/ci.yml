@@ -21,9 +21,27 @@ jobs:
           pip install pytest ruff
       - name: Lint
         run: ruff check src tests scripts
-      - name: Tests
-        run: PYTHONPATH=src python -m pytest
+      - name: Unit tests
+        run: PYTHONPATH=src python -m pytest -m "not db"
+      - name: Database integration tests
+        env:
+          TEST_DATABASE_URL: postgresql://wecanfindintern:wecanfindintern@127.0.0.1:5432/wecanfindintern_test
+        run: PYTHONPATH=src python -m pytest -m db
       - name: Frontend syntax
         run: for f in web/modules/*.js; do node --check "$f"; done
       - name: Frontend/API contract
         run: PYTHONPATH=src python scripts/dev/verify_frontend_api_contract.py
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: wecanfindintern
+          POSTGRES_PASSWORD: wecanfindintern
+          POSTGRES_DB: wecanfindintern_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wecanfindintern -d wecanfindintern_test"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20

@@ -30,6 +30,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+markers = [
+  "db: integration tests requiring a live PostgreSQL database (deselected by default in CI unit step)",
+]
 
 [tool.ruff]
 target-version = "py310"
