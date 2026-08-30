@@ -296,11 +296,13 @@ async def send_agent_message_stream(
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except ToolError as error:
             status = 502 if error.error_type in {"llm_failed", "llm_config_missing"} else 422
-            payload = {"type": "error", "status": status, "detail": str(error)}
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            # Deliberately NOT named `payload`: that would shadow the request
+            # parameter and make it a local of this generator.
+            error_event = {"type": "error", "status": status, "detail": str(error)}
+            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
         except Exception as error:  # pragma: no cover - defensive
-            payload = {"type": "error", "status": 502, "detail": str(error)}
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            error_event = {"type": "error", "status": 502, "detail": str(error)}
+            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
