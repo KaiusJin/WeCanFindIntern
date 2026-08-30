@@ -53,6 +53,81 @@ def test_tracker_create_and_update_requests():
     assert update_req.stage == ApplicationStage.INTERVIEW
 
 
+def test_create_custom_application_sql_matches_parameter_count():
+    now = datetime.now(UTC)
+    public_id = uuid4()
+
+    class FakeCursor:
+        def __init__(self):
+            self.row = None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, query, params):
+            assert query.count("%s") == len(params)
+            if "INSERT INTO application_tracker (" in query:
+                self.row = {
+                    "id": public_id,
+                    "job_id": None,
+                    "external_job_id": None,
+                    "company_name": "Example Corp",
+                    "title": "Software Engineer Intern",
+                    "location_text": "Toronto, ON",
+                    "work_mode": "hybrid",
+                    "job_url": None,
+                    "job_description": None,
+                    "salary_text": None,
+                    "origin_type": "custom",
+                    "source": "other",
+                    "stage": "interested",
+                    "applied_at": None,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+
+        async def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def cursor(self, row_factory=None):
+            return self.cursor_obj
+
+        def transaction(self):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakePool:
+        def __init__(self):
+            self.connection_obj = FakeConnection()
+
+        def connection(self):
+            return self.connection_obj
+
+    created = asyncio.run(
+        TrackerRepository(FakePool()).create_application(
+            TrackerCreateRequest(
+                company_name="Example Corp",
+                title="Software Engineer Intern",
+                location_text="Toronto, ON",
+                work_mode="hybrid",
+            )
+        )
+    )
+    assert created.id == public_id
+
+
 def test_tracker_stats():
     stats = TrackerStatsResponse(
         total=10,
@@ -65,6 +140,19 @@ def test_tracker_stats():
     )
     assert stats.total == 10
     assert stats.response_rate_percent == 42.9
+
+
+def test_tracker_application_exposes_clean_location():
+    application = TrackedApplication(
+        id=uuid4(),
+        company_name="Example Corp",
+        title="Software Engineer Intern",
+        location_text="Toronto, ON, CA",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+
+    assert application.location_text == "Toronto, Ontario, Canada"
 
 
 def test_tracker_v3_fields_and_bulk_contract():

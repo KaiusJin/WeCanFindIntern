@@ -1,4 +1,4 @@
-import { $, escapeHtml } from "./helpers.js";
+import { $, escapeHtml, showErrorDialog } from "./helpers.js";
 import { switchTab } from "./navigation.js";
 import { applyRegionFilter } from "./jobs.js";
 
@@ -216,10 +216,7 @@ async function loadHeatmap() {
     renderUsMap(getTopojson().feature(usTopo, usTopo.objects.states), counts, nameLookup, maxCount);
     renderCaMap(caGeo, counts, nameLookup, maxCount);
   } catch (err) {
-    const us = $("#heatmap-us");
-    if (us) {
-      us.innerHTML = `<p class="muted-copy">Heatmap unavailable: ${escapeHtml(err.message)}</p>`;
-    }
+    showErrorDialog(err, { title: "Heat map unavailable" });
   }
 }
 

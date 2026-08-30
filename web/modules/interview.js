@@ -1,4 +1,4 @@
-import { $, escapeHtml, fetchWithTimeout, setupDropzone } from "./helpers.js";
+import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, setupDropzone, showErrorDialog, showSuccessDialog } from "./helpers.js";
 import { validateAiConfig } from "./settings.js";
 import { profileToCoverLetterText as profileToResumeText } from "./cover-letter.js";
 
@@ -80,8 +80,9 @@ async function loadInterviewProfile() {
         : "Your Profile is empty. Add Profile data or upload a resume.";
     }
   } catch (error) {
-    if (status) status.textContent = error.message;
+    if (status) status.textContent = "Profile could not be loaded.";
     $("#int-resume-text").value = "";
+    showErrorDialog(error, { title: "Could not load Profile" });
   }
 }
 
@@ -102,38 +103,48 @@ async function extractInterviewPdf(file) {
   try {
     const response = await fetch("/api/v1/ats/extract-pdf", { method: "POST", body: form });
     const result = await response.json();
-    if (!result.ok) throw new Error(result.error || "Resume extraction failed.");
+    if (!response.ok || !result.ok) throw new Error(result.detail || result.error || "Resume extraction failed.");
     $("#int-resume-text").value = result.text;
     if (label) label.textContent = `✓ Extracted from ${file.name}`;
   } catch (error) {
-    if (label) label.textContent = `Upload error: ${error.message}`;
+    if (label) label.textContent = "Click or drag & drop resume PDF";
     $("#int-resume-text").value = "";
+    showErrorDialog(error, { title: "Resume upload failed" });
   }
 }
 
-document.querySelectorAll("input[name='int-resume-source']").forEach((input) => input.addEventListener("change", (event) => {
-  const isPdf = event.target.value === "pdf";
+function syncInterviewResumeSource({ resetPdf = false } = {}) {
+  const isPdf = isPdfResumeSource();
   $("#int-pdf-source").hidden = !isPdf;
   if (isPdf) {
-    $("#int-resume-text").value = "";
-    $("#int-file-label").textContent = "Click or drag & drop resume PDF";
+    if (resetPdf) {
+      $("#int-resume-text").value = "";
+      $("#int-file-label").textContent = "Click or drag & drop resume PDF";
+    }
   } else loadInterviewProfile();
+}
+
+document.querySelectorAll("input[name='int-resume-source']").forEach((input) => input.addEventListener("change", () => {
+  syncInterviewResumeSource({ resetPdf: true });
 }));
 $("#int-resume-pdf")?.addEventListener("change", (event) => extractInterviewPdf(event.target.files?.[0]));
 setupDropzone($("#int-dropzone"), (files) => extractInterviewPdf(files[0]));
+// The tab module is lazy-loaded. Synchronize with the current radio value in
+// case Upload Resume was selected while the import was still in flight.
+syncInterviewResumeSource({ resetPdf: true });
 
 $("#btn-generate-questions")?.addEventListener("click", async () => {
   const jdText = $("#interview-jd-text").value.trim();
   if (!jdText) {
-    alert("Please enter a job description to generate interview questions.");
+    showErrorDialog("The job description is empty.", { title: "Job description required", guidance: "Paste the target job description, then generate questions again." });
     return;
   }
   if (isPdfResumeSource() && !$("#int-resume-pdf")?.files?.length && !currentResumeText()) {
-    alert("Upload a resume PDF before generating interview questions.");
+    showErrorDialog("No uploaded resume content is available.", { title: "Resume required", guidance: "Upload a readable resume PDF and wait for extraction to finish before generating questions." });
     return;
   }
   if (!currentResumeText()) {
-    alert("Your Profile has no resume content yet. Add Profile data or upload a resume.");
+    showErrorDialog("Your Profile does not contain resume information.", { title: "Resume information required", guidance: "Add Profile data or switch to Upload Resume, then try again." });
     return;
   }
 
@@ -141,7 +152,7 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
   try {
     config = validateAiConfig();
   } catch (err) {
-    alert(err.message);
+    showErrorDialog(err, { title: "AI settings required" });
     return;
   }
 
@@ -149,6 +160,10 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
   $("#interview-loading").hidden = false;
   $("#interview-active-card").hidden = true;
   $("#interview-report-card").hidden = true;
+  interviewState.questions = [];
+  interviewState.currentIndex = 0;
+  interviewState.sessionId = null;
+  interviewState.answered = new Set();
 
   try {
     const res = await fetchWithTimeout(
@@ -168,8 +183,7 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
       180000,
     );
     if (!res.ok || !res.body) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || data.error || "Failed to generate questions");
+      throw new Error(await responseErrorMessage(res, "Interview questions could not be generated."));
     }
 
     const reader = res.body.getReader();
@@ -206,9 +220,12 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
         } else if (event.type === "error") {
           throw new Error(event.detail || "Question generation failed");
         } else if (event.type === "done") {
-          questions = event.questions;
+          questions = Array.isArray(event.questions) ? event.questions : [];
+          if (!questions.length) throw new Error("Model returned no questions");
           interviewState.questions = questions;
           interviewState.sessionId = event.session_id || null;
+          $("#interview-loading").hidden = true;
+          $("#interview-active-card").hidden = false;
           renderActiveQuestion(Math.min(interviewState.currentIndex, questions.length - 1));
         }
       }
@@ -216,6 +233,15 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
     if (!interviewState.questions.length) {
       throw new Error("Model returned no questions");
     }
+    if (interviewState.sessionId) refreshHistory();
+  } catch (err) {
+    if (!interviewState.questions.length) {
+      $("#interview-empty").hidden = false;
+      $("#interview-active-card").hidden = true;
+    }
+    showErrorDialog(err, { title: "Question generation failed" });
+  } finally {
+    $("#interview-loading").hidden = true;
   }
 });
 
@@ -273,7 +299,8 @@ $("#btn-start-record")?.addEventListener("click", async () => {
       $("#recording-time-text").textContent = `${m}:${s}`;
     }, 1000);
   } catch (err) {
-    setRecordStatus(`Microphone unavailable (${err.message}) — type your answer instead.`);
+    setRecordStatus("You can type your answer in the text box instead.");
+    showErrorDialog(err, { title: "Microphone unavailable", guidance: "Allow microphone access in your browser settings, or type your answer instead." });
   }
 });
 
@@ -294,11 +321,11 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
   const answerText = $("#interview-answer-text").value.trim();
 
   if (!jdText) {
-    alert("Missing job description.");
+    showErrorDialog("The job description for this practice session is missing.", { title: "Job description required" });
     return;
   }
   if (!answerText && !interviewState.recordedBlob) {
-    alert("Record an audio answer or type your answer first.");
+    showErrorDialog("No answer was provided.", { title: "Answer required", guidance: "Record an audio answer or type your response before requesting analysis." });
     return;
   }
 
@@ -306,7 +333,7 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
   try {
     config = validateAiConfig();
   } catch (err) {
-    alert(err.message);
+    showErrorDialog(err, { title: "AI settings required" });
     return;
   }
 
@@ -341,6 +368,7 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
 
   try {
     const res = await fetchWithTimeout("/api/v1/interview/analyze", { method: "POST", body: formData }, 180000);
+    if (!res.ok) throw new Error(await responseErrorMessage(res, "The interview answer could not be analyzed."));
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Analysis failed");
 
@@ -410,7 +438,7 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
     renderStepper();
     $("#btn-next-question").scrollIntoView({ behavior: "smooth" });
   } catch (err) {
-    alert(`Analysis error: ${err.message}`);
+    showErrorDialog(err, { title: "Answer analysis failed" });
   } finally {
     btn.disabled = false;
     btn.textContent = "Analyze Answer Performance ↗";
@@ -422,7 +450,7 @@ $("#btn-next-question")?.addEventListener("click", () => {
     renderActiveQuestion(interviewState.currentIndex + 1);
     $("#interview-active-card").scrollIntoView({ behavior: "smooth" });
   } else {
-    alert("Great job! You have completed all 7 technical interview rounds.");
+    showSuccessDialog("You completed all 7 technical interview rounds.", { title: "Practice session complete" });
     refreshHistory();
   }
 });
@@ -483,7 +511,8 @@ async function refreshHistory() {
     });
   } catch (err) {
     summaryWrap.innerHTML = "";
-    listWrap.innerHTML = `<p class='detail-description'>History unavailable: ${escapeHtml(err.message)}</p>`;
+    listWrap.innerHTML = "";
+    showErrorDialog(err, { title: "Practice history unavailable" });
   }
 }
 
@@ -515,7 +544,7 @@ async function loadSessionDetail(sessionId) {
     `;
     detailWrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (err) {
-    alert(`Session detail error: ${err.message}`);
+    showErrorDialog(err, { title: "Session details unavailable" });
   }
 }
 
@@ -526,7 +555,7 @@ async function deleteSession(sessionId) {
     if (interviewState.sessionId === sessionId) interviewState.sessionId = null;
     refreshHistory();
   } catch (err) {
-    alert(`Delete error: ${err.message}`);
+    showErrorDialog(err, { title: "Could not delete session" });
   }
 }
 
@@ -541,7 +570,6 @@ $("#clear-interview")?.addEventListener("click", () => {
   $("#int-resume-text").value = "";
   loadInterviewProfile();
 });
-loadInterviewProfile();
 refreshHistory();
 
 $("#clear-interview")?.addEventListener("click", () => {

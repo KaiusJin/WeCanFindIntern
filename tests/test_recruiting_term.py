@@ -76,3 +76,22 @@ def test_job_list_filters_hourly_salary() -> None:
     assert filters.hourly_salary_max == Decimal("50.00")
 
 
+def test_job_list_filters_normalize_multiple_facet_values() -> None:
+    from wecanfindintern.api.models import JobListFilters
+
+    filters = JobListFilters(
+        countries=["ca", "US", "ca"],
+        regions=["on,ca", "ny,us"],
+        cities=["Toronto", "New York"],
+        work_modes=["remote", "hybrid"],
+        opportunity_types=["internship", "co_op"],
+        schedule_types=["full_time", "part_time"],
+        categories=["software_development", "data_analytics"],
+        skills=["python", "react"],
+        recruiting_terms=["Summer 2027", "Fall 2026"],
+    )
+
+    assert filters.countries == ["CA", "US"]
+    assert filters.regions == ["ON,CA", "NY,US"]
+    assert filters.work_modes == ["remote", "hybrid"]
+    assert filters.recruiting_terms == ["Summer 2027", "Fall 2026"]

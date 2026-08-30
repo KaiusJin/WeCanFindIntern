@@ -6,7 +6,14 @@ import asyncio
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import httpx
+from fastapi import FastAPI
+
+from wecanfindintern.agent.tools import ToolError
 from wecanfindintern.api.app import app
+from wecanfindintern.api.models import JobPage
+from wecanfindintern.api.routes.agent import _public_agent_error
+from wecanfindintern.api.routes.jobs import _repository, jobs_router
 from wecanfindintern.api.routes.profile import (
     delete_resume,
     export_profile,
@@ -24,6 +31,17 @@ def _profile() -> UserProfile:
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
+
+def test_agent_llm_errors_hide_internal_details():
+    status, detail = _public_agent_error(
+        ToolError("llm_failed", "Agent planner returned a non-object response.")
+    )
+
+    assert status == 502
+    assert detail == "The AI model could not complete this request. Please try again."
+    assert "planner" not in detail.lower()
+    assert "non-object" not in detail.lower()
 
 
 class FakeProfileRepo:
@@ -105,3 +123,39 @@ def test_openapi_contract_covers_frontend_endpoints():
     assert "get" in paths["/api/v1/interview/sessions/{session_id}"]
     assert "delete" in paths["/api/v1/interview/sessions/{session_id}"]
     assert "get" in paths["/api/v1/interview/trend"]
+
+
+def test_jobs_route_accepts_repeated_multi_value_filters():
+    class FakeJobsRepo:
+        filters = None
+
+        async def list_jobs(self, filters):
+            self.filters = filters
+            return JobPage(items=[], next_cursor=None, has_more=False)
+
+    repo = FakeJobsRepo()
+    test_app = FastAPI()
+    test_app.include_router(jobs_router)
+    test_app.dependency_overrides[_repository] = lambda: repo
+
+    async def request_jobs():
+        transport = httpx.ASGITransport(app=test_app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.get(
+                "/api/v1/jobs",
+                params=[
+                    ("country", "CA"),
+                    ("country", "US"),
+                    ("region", "ON,CA"),
+                    ("region", "NY,US"),
+                    ("work_mode", "hybrid"),
+                    ("work_mode", "remote"),
+                ],
+            )
+
+    response = asyncio.run(request_jobs())
+
+    assert response.status_code == 200
+    assert repo.filters.countries == ["CA", "US"]
+    assert repo.filters.regions == ["ON,CA", "NY,US"]
+    assert repo.filters.work_modes == ["hybrid", "remote"]

@@ -3,6 +3,7 @@ import {
   escapeHtml,
   renderMarkdown,
   fetchWithTimeout,
+  showErrorDialog,
   workModeLabel,
 } from "./helpers.js";
 import { syncDialogScrollLock, validateAiConfig } from "./settings.js";
@@ -153,7 +154,7 @@ async function switchSession(sessionId) {
     });
     approvals.forEach(renderApprovalCard);
   } catch (err) {
-    appendMessage("assistant", `<p class="md-p agent-error">⚠ ${escapeText(err.message)}</p>`);
+    showErrorDialog(err, { title: "Conversation could not be loaded" });
   }
 }
 
@@ -173,7 +174,7 @@ async function createNewSession() {
     await renderSessionList();
     loadMemoryStatus();
   } catch (err) {
-    alert(err.message);
+    showErrorDialog(err, { title: "Conversation could not be created" });
   }
 }
 
@@ -307,7 +308,7 @@ function renderRecommendationCards(toolCalls, afterElement = null) {
           ${score}
         </div>
         <div class="agent-job-card-tools">
-          <button type="button" class="job-bookmark-btn${tracked ? " saved" : ""}" data-agent-save-job="${escapeHtml(key)}" title="${tracked ? "Tracked in Pipeline" : "Bookmark / Track Job"}">${tracked ? AGENT_BOOKMARK_ICON_SAVED : AGENT_BOOKMARK_ICON_OPEN}</button>
+          <button type="button" class="agent-icon-btn${tracked ? " saved" : ""}" data-agent-save-job="${escapeHtml(key)}" title="${tracked ? "Tracked in Pipeline" : "Bookmark / Track Job"}">${tracked ? AGENT_BOOKMARK_ICON_SAVED : AGENT_BOOKMARK_ICON_OPEN}</button>
           <button type="button" class="job-view-btn" data-agent-view-job="${escapeHtml(key)}" title="View job details">${AGENT_VIEW_ICON}</button>
         </div>
       </div>
@@ -340,7 +341,7 @@ async function decideApproval(approvalId, approved, card) {
     appendMessage("assistant", renderMarkdown(data.message.content));
   } catch (err) {
     card.querySelectorAll("button").forEach((button) => { button.disabled = false; });
-    appendMessage("assistant", `<p class="md-p agent-error">⚠ ${escapeText(err.message)}</p>`);
+    showErrorDialog(err, { title: "Agent action failed" });
   }
 }
 
@@ -368,17 +369,31 @@ function buildContext() {
   };
 }
 
+let activeStream = null;
+
+function setStreamActive(active) {
+  const button = $(".agent-send-button");
+  if (button) {
+    button.textContent = active ? "⏹ Stop" : "Send";
+    button.classList.toggle("streaming-stop", active);
+  }
+}
+
 async function sendAgentMessage(text) {
   let config;
   try {
     config = validateAiConfig();
   } catch (err) {
-    alert(err.message);
+    showErrorDialog(err, { title: "AI settings required" });
     return;
   }
 
   appendMessage("user", escapeText(text));
   $("#agent-input").value = "";
+
+  const streamAbort = new AbortController();
+  activeStream = streamAbort;
+  setStreamActive(true);
 
   const thinking = document.createElement("div");
   thinking.className = "agent-message agent-assistant";
@@ -405,6 +420,7 @@ async function sendAgentMessage(text) {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: streamAbort.signal,
         body: JSON.stringify({
           content: text,
           provider: config.provider,
@@ -468,7 +484,20 @@ async function sendAgentMessage(text) {
     }
   } catch (err) {
     if (thinking.parentElement) thinking.remove();
-    appendMessage("assistant", `<p class="md-p agent-error">⚠ ${escapeText(err.message)}</p>`);
+    if (streamAbort.signal.aborted) {
+      // User pressed Stop: keep the partial reply, mark it, no error UI.
+      if (bubble) {
+        bubble.querySelector(".agent-bubble").insertAdjacentHTML(
+          "beforeend",
+          '<p class="md-p agent-stopped">⏹ Stopped.</p>',
+        );
+      }
+    } else {
+      showErrorDialog(err, { title: "Agent response failed" });
+    }
+  } finally {
+    activeStream = null;
+    setStreamActive(false);
   }
 }
 
@@ -527,7 +556,7 @@ async function deleteMemory(memoryId) {
     if (!res.ok) throw new Error("Could not delete memory");
     await loadMemoryStatus();
   } catch (err) {
-    alert(err.message);
+    showErrorDialog(err, { title: "Memory could not be deleted" });
   }
 }
 
@@ -658,9 +687,11 @@ async function searchAttachJobs() {
     ]);
     const jobs = searches.flatMap((result) => result.status === "fulfilled" ? result.value : []);
     const failedCount = searches.filter((result) => result.status === "rejected").length;
-    const emptyMessage = failedCount === searches.length
-      ? "Job search is temporarily unavailable. Please try again."
-      : "No matching jobs found.";
+    if (failedCount === searches.length) {
+      const reasons = searches.map((result) => result.reason?.message).filter(Boolean).join("\n");
+      showErrorDialog(reasons || "Both job sources were unavailable.", { title: "Job search unavailable" });
+    }
+    const emptyMessage = failedCount === searches.length ? "No results loaded." : "No matching jobs found.";
     renderAttachSearchResults(jobs, emptyMessage);
   } finally {
     if (button) {
@@ -709,7 +740,7 @@ async function attachSelectedJob(key, button) {
     closeAttachDialog();
     $("#agent-input")?.focus();
   } catch (error) {
-    alert(error.message);
+    showErrorDialog(error, { title: "Job could not be attached" });
     button.disabled = false;
     button.textContent = "Attach";
   }
@@ -749,6 +780,12 @@ function setSidebarCollapsed(collapsed, { persist = true } = {}) {
 
 $("#agent-form")?.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (activeStream) {
+    // The Send button doubles as Stop: abort the stream and keep whatever
+    // the user just typed so they can correct and resend.
+    activeStream.abort();
+    return;
+  }
   const text = $("#agent-input").value.trim();
   if (!text) return;
   sendAgentMessage(text);

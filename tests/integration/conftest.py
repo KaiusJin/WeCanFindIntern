@@ -113,6 +113,7 @@ def seed_job(
     region_code: str = "ON",
     region_name: str = "Ontario",
     country: str = "CA",
+    work_mode: str = "remote",
     description: str = "Build APIs with Python.",
 ) -> str:
     """Insert one minimal active job with a plain sync connection; returns public_id."""
@@ -127,7 +128,7 @@ def seed_job(
                 first_seen_at, last_seen_at, last_verified_at
             ) VALUES (
                 %s, %s, %s, %s, %s,
-                %s, %s, %s, 'remote', %s,
+                %s, %s, %s, %s, %s,
                 %s, date_trunc('day', now()), now(), now(), now()
             )
             RETURNING public_id
@@ -141,6 +142,7 @@ def seed_job(
                 region_code,
                 region_name,
                 country,
+                work_mode,
                 description,
                 os.urandom(32),
             ),

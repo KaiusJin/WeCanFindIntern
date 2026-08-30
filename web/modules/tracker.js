@@ -1,4 +1,4 @@
-import { $, $$, escapeHtml, formatRelativeTime, renderMarkdown } from "./helpers.js";
+import { $, $$, escapeHtml, formatRelativeTime, renderMarkdown, responseErrorMessage, showErrorDialog } from "./helpers.js";
 import { switchTab } from "./navigation.js";
 
 const trackerState = {
@@ -110,8 +110,9 @@ async function fetchTrackerData({ keepSelection = false } = {}) {
     renderTrackerPagination();
     updateBookmarkButtons();
   } catch (error) {
-    $("#tracker-result-count").textContent = error.message;
+    $("#tracker-result-count").textContent = "Applications unavailable";
     console.error("Tracker fetch error:", error);
+    showErrorDialog(error, { title: "Application Tracker unavailable" });
   } finally {
     if (requestVersion === trackerState.requestVersion) trackerState.loading = false;
   }
@@ -269,7 +270,7 @@ async function saveTrackerDrawer() {
     });
   }
   const response = await fetch(`/api/v1/tracker/${appId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-  if (!response.ok) { alert("Could not save this application."); return; }
+  if (!response.ok) { showErrorDialog(await responseErrorMessage(response, "Could not save this application."), { title: "Application update failed" }); return; }
   const saved = await response.json();
   $("#drawer-title").textContent = saved.title;
   $("#drawer-company").textContent = `${saved.company_name} · ${saved.location_text || "Location unspecified"}`;
@@ -284,7 +285,8 @@ async function loadTrackerTimeline(appId) {
   root.innerHTML = `<p class="tracker-view-status">Loading progress…</p>`;
   const response = await fetch(`/api/v1/tracker/${appId}/events`);
   if (!response.ok) {
-    root.innerHTML = `<p class="tracker-view-status">Progress is temporarily unavailable.</p>`;
+    root.innerHTML = "";
+    showErrorDialog(await responseErrorMessage(response, "Application progress could not be loaded."), { title: "Timeline unavailable" });
     return;
   }
   const events = await response.json();
@@ -312,7 +314,7 @@ async function bulkUpdateTracker(payload) {
   const ids = [...trackerState.selectedIds];
   if (!ids.length) return;
   const response = await fetch("/api/v1/tracker/bulk", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, ...payload }) });
-  if (!response.ok) { alert("Bulk update failed."); return; }
+  if (!response.ok) { showErrorDialog(await responseErrorMessage(response, "The selected applications could not be updated."), { title: "Bulk update failed" }); return; }
   trackerState.selectedIds.clear();
   await fetchTrackerData();
 }
@@ -321,7 +323,7 @@ async function bulkUpdateTracker(payload) {
 async function deleteTrackedApplication(appId) {
   if (!confirm("Delete this application and its activity permanently?")) return;
   const response = await fetch(`/api/v1/tracker/${appId}`, { method: "DELETE" });
-  if (!response.ok) { alert("Delete failed."); return; }
+  if (!response.ok) { showErrorDialog(await responseErrorMessage(response, "The application could not be deleted."), { title: "Delete failed" }); return; }
   closeTrackerDrawer();
   await fetchTrackerData();
 }
@@ -410,7 +412,7 @@ async function toggleBookmarkJob(jobId) {
   try {
     if (!existing) {
       const res = await fetch(`/api/v1/tracker/bookmarks/${jobId}`, { method: "PUT" });
-      if (!res.ok) throw new Error("Could not save this job to your tracker.");
+      if (!res.ok) throw new Error(await responseErrorMessage(res, "Could not save this job to your tracker."));
       const app = await res.json();
       trackerState.trackedJobs.set(jobId, { job_id: jobId, application_id: app.id, stage: app.stage });
       trackerState.trackedJobIds.add(jobId);
@@ -421,7 +423,7 @@ async function toggleBookmarkJob(jobId) {
       await fetchTrackerData({ keepSelection: true });
     } else if (existing.stage === "interested") {
       const res = await fetch(`/api/v1/tracker/bookmarks/${jobId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Could not remove bookmark.");
+      if (!res.ok) throw new Error(await responseErrorMessage(res, "Could not remove this bookmark."));
       trackerState.trackedJobs.delete(jobId);
       trackerState.trackedJobIds.delete(jobId);
       updateBookmarkButtons();
@@ -435,7 +437,7 @@ async function toggleBookmarkJob(jobId) {
       });
     }
   } catch (error) {
-    alert(error.message);
+    showErrorDialog(error, { title: "Tracker bookmark failed" });
   } finally {
     buttons.forEach((b) => { b.disabled = false; });
   }
@@ -466,7 +468,7 @@ async function toggleWaterlooWorksBookmark(sourceJobId) {
         `/api/v1/tracker/bookmarks/waterlooworks/${encodeURIComponent(sourceJobId)}`,
         { method: "PUT" },
       );
-      if (!response.ok) throw new Error("Could not save this job to your tracker.");
+      if (!response.ok) throw new Error(await responseErrorMessage(response, "Could not save this job to your tracker."));
       const app = await response.json();
       trackerState.waterlooWorksTracked.set(sourceJobId, {
         external_job_id: sourceJobId,
@@ -483,7 +485,7 @@ async function toggleWaterlooWorksBookmark(sourceJobId) {
         `/api/v1/tracker/bookmarks/waterlooworks/${encodeURIComponent(sourceJobId)}`,
         { method: "DELETE" },
       );
-      if (!response.ok) throw new Error("Could not remove bookmark.");
+      if (!response.ok) throw new Error(await responseErrorMessage(response, "Could not remove this bookmark."));
       trackerState.waterlooWorksTracked.delete(sourceJobId);
       updateBookmarkButtons();
       showPlainToast("Removed from Interested");
@@ -496,7 +498,7 @@ async function toggleWaterlooWorksBookmark(sourceJobId) {
       });
     }
   } catch (error) {
-    alert(error.message);
+    showErrorDialog(error, { title: "Tracker bookmark failed" });
   } finally {
     buttons.forEach((b) => { b.disabled = false; });
   }
@@ -540,7 +542,7 @@ $("#tracker-table-body")?.addEventListener("change", async (event) => {
     ? { stage: stage.value }
     : { applied_at: appliedDate.value ? new Date(`${appliedDate.value}T12:00:00`).toISOString() : null };
   const response = await fetch(`/api/v1/tracker/${appId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-  if (!response.ok) { alert("Inline update failed."); await fetchTrackerData({ keepSelection: true }); return; }
+  if (!response.ok) { showErrorDialog(await responseErrorMessage(response, "This application could not be updated."), { title: "Application update failed" }); await fetchTrackerData({ keepSelection: true }); return; }
   await fetchTrackerData({ keepSelection: true });
 });
 $("#tracker-select-page")?.addEventListener("change", (event) => { trackerState.applications.forEach((app) => event.target.checked ? trackerState.selectedIds.add(app.id) : trackerState.selectedIds.delete(app.id)); renderTrackerList(); renderTrackerPagination(); });
@@ -550,6 +552,7 @@ $("#tracker-bulk-delete")?.addEventListener("click", async () => {
   const ids = [...trackerState.selectedIds]; if (!ids.length || !confirm(`Delete ${ids.length} applications permanently?`)) return;
   const response = await fetch("/api/v1/tracker/bulk", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
   if (response.ok) { trackerState.selectedIds.clear(); fetchTrackerData(); }
+  else showErrorDialog(await responseErrorMessage(response, "The selected applications could not be deleted."), { title: "Bulk delete failed" });
 });
 
 $("#close-tracker-drawer")?.addEventListener("click", closeTrackerDrawer);
@@ -568,17 +571,19 @@ $("#drawer-copy-job")?.addEventListener("click", async (event) => {
     fallback.value = url; fallback.style.position = "fixed"; fallback.style.opacity = "0";
     document.body.appendChild(fallback); fallback.select();
     const copied = document.execCommand("copy"); fallback.remove();
-    event.target.textContent = copied ? "Copied" : "Copy failed";
+    event.target.textContent = copied ? "Copied" : "Copy";
+    if (!copied) showErrorDialog("The browser did not allow this link to be copied.", { title: "Copy failed", guidance: "Select and copy the application URL manually, or allow clipboard access and try again." });
   }
   setTimeout(() => { event.target.textContent = "Copy"; }, 1200);
 });
 $("#btn-delete-tracked-app")?.addEventListener("click", () => { const id = $("#drawer-app-id").value; if (id) deleteTrackedApplication(id); });
-$("#btn-open-custom-job")?.addEventListener("click", () => { $("#custom-job-form").reset(); $("#custom-job-error").hidden = true; $("#custom-job-dialog")?.showModal(); syncDialogScrollLock(); });
+$("#btn-open-custom-job")?.addEventListener("click", () => { $("#custom-job-form").reset(); $("#custom-job-dialog")?.showModal(); syncDialogScrollLock(); });
 $("#close-custom-job-dialog")?.addEventListener("click", () => $("#custom-job-dialog")?.close());
 $("#btn-cancel-custom-job")?.addEventListener("click", () => $("#custom-job-dialog")?.close());
 $("#custom-job-dialog")?.addEventListener("click", (event) => { if (event.target === $("#custom-job-dialog")) $("#custom-job-dialog")?.close(); });
 $("#custom-job-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const submitButton = event.currentTarget.querySelector("button[type='submit']");
   const payload = {
     company_name: $("#custom-company").value.trim(), title: $("#custom-title").value.trim(),
     location_text: $("#custom-location").value.trim() || null, work_mode: $("#custom-work-mode").value || null,
@@ -588,9 +593,28 @@ $("#custom-job-form")?.addEventListener("submit", async (event) => {
     job_url: $("#custom-url").value.trim() || null,
     job_description: $("#custom-job-description").value.trim() || null,
   };
-  const response = await fetch("/api/v1/tracker", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-  if (!response.ok) { const box = $("#custom-job-error"); box.textContent = "Could not save this application."; box.hidden = false; return; }
-  $("#custom-job-dialog")?.close(); await fetchTrackerData();
+  const missing = [!payload.company_name && "company name", !payload.title && "job title"].filter(Boolean);
+  if (missing.length) {
+    showErrorDialog(`Missing required fields: ${missing.join(", ")}.`, { title: "Application details incomplete", guidance: "Complete the required fields and save the application again." });
+    return;
+  }
+  if (payload.job_url) {
+    try { new URL(payload.job_url); } catch (_) {
+      showErrorDialog("The Job Posting / Application URL is not a valid URL.", { title: "Invalid application link", guidance: "Enter a complete link such as https://careers.company.com/job/123, or leave the field empty." });
+      return;
+    }
+  }
+  submitButton.disabled = true;
+  try {
+    const response = await fetch("/api/v1/tracker", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!response.ok) throw new Error(await responseErrorMessage(response, "Could not save this application."));
+    $("#custom-job-dialog")?.close();
+    await fetchTrackerData();
+  } catch (error) {
+    showErrorDialog(error, { title: "Application could not be saved" });
+  } finally {
+    submitButton.disabled = false;
+  }
 });
 
 export {

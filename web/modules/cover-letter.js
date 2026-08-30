@@ -1,4 +1,4 @@
-import { $, escapeHtml, fetchWithTimeout, setupDropzone } from "./helpers.js";
+import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, setupDropzone, showErrorDialog } from "./helpers.js";
 import { validateAiConfig } from "./settings.js";
 
 // =========================================================
@@ -42,8 +42,9 @@ async function loadCoverLetterProfile() {
       status.textContent = text ? "Using saved Profile as candidate context" : "Your Profile is empty. Add Profile data or upload a resume.";
     }
   } catch (error) {
-    if (status) status.textContent = error.message;
+    if (status) status.textContent = "Profile could not be loaded.";
     $("#cl-resume-text").value = "";
+    showErrorDialog(error, { title: "Could not load Profile" });
   }
 }
 
@@ -64,16 +65,15 @@ function validateCoverLetterInputs() {
   const isPdf = $("input[name='cl-resume-source'][value='pdf']")?.checked;
   const resumeText = $("#cl-resume-text").value.trim();
   const jdText = $("#cl-jd-text").value.trim();
-  if (isPdf && !$("#cl-resume-pdf")?.files?.length) {
-    alert("Upload a resume PDF before generating the cover letter.");
-    return false;
-  }
   if (!resumeText) {
-    alert(isPdf ? "Extract your resume PDF before generating the cover letter." : "Your Profile has no resume content yet.");
+    showErrorDialog(
+      isPdf ? "No extracted resume content is available." : "Your Profile does not contain resume content.",
+      { title: "Resume information required", guidance: isPdf ? "Upload a readable resume PDF, wait for extraction to finish, and try again." : "Add information to Profile or switch to Upload Resume, then try again." },
+    );
     return false;
   }
   if (!jdText) {
-    alert("Enter a Target Job Description before generating the cover letter.");
+    showErrorDialog("The Target Job Description is empty.", { title: "Job description required", guidance: "Paste the target role's job description, then generate the cover letter again." });
     return false;
   }
   const contact = coverLetterUserInfo();
@@ -81,7 +81,7 @@ function validateCoverLetterInputs() {
     .filter(([field]) => !contact[field]);
   if (missing.length) {
     const location = isPdf ? "the Contact Details form" : "your Profile";
-    alert(`Complete ${missing.map(([, label]) => label).join(", ")} in ${location} before generating the cover letter.`);
+    showErrorDialog(`Missing required contact details: ${missing.map(([, label]) => label).join(", ")}.`, { title: "Contact details incomplete", guidance: `Complete these fields in ${location}, then try again.` });
     return false;
   }
   return true;
@@ -117,27 +117,37 @@ async function extractCoverLetterPdf(file) {
   try {
     const response = await fetch("/api/v1/ats/extract-pdf", { method: "POST", body: form });
     const result = await response.json();
-    if (!result.ok) throw new Error(result.error || "Resume extraction failed.");
+    if (!response.ok || !result.ok) throw new Error(result.detail || result.error || "Resume extraction failed.");
     $("#cl-resume-text").value = result.text;
     if (label) label.textContent = `✓ Extracted from ${file.name}`;
   } catch (error) {
-    if (label) label.textContent = `Upload error: ${error.message}`;
+    if (label) label.textContent = "Click or drag & drop resume PDF";
     $("#cl-resume-text").value = "";
+    showErrorDialog(error, { title: "Resume upload failed" });
   }
 }
 
-document.querySelectorAll("input[name='cl-resume-source']").forEach((input) => input.addEventListener("change", (event) => {
-  const isPdf = event.target.value === "pdf";
+function syncCoverLetterResumeSource({ resetPdf = false } = {}) {
+  const isPdf = $("input[name='cl-resume-source'][value='pdf']")?.checked ?? false;
   $("#cl-pdf-source").hidden = !isPdf;
   $("#cl-contact-section").hidden = !isPdf;
   if (isPdf) {
-    $("#cl-resume-text").value = "";
-    $("#cl-file-label").textContent = "Click or drag & drop resume PDF";
+    if (resetPdf) {
+      $("#cl-resume-text").value = "";
+      $("#cl-file-label").textContent = "Click or drag & drop resume PDF";
+    }
   } else loadCoverLetterProfile();
+}
+
+document.querySelectorAll("input[name='cl-resume-source']").forEach((input) => input.addEventListener("change", () => {
+  syncCoverLetterResumeSource({ resetPdf: true });
 }));
 $("#cl-resume-pdf")?.addEventListener("change", (event) => extractCoverLetterPdf(event.target.files?.[0]));
 setupDropzone($("#cl-dropzone"), (files) => extractCoverLetterPdf(files[0]));
-loadCoverLetterProfile();
+// Modules load lazily. A user can select Upload Resume before this module has
+// finished loading, so initialize from the radio's current state instead of
+// assuming the default Profile option is still selected.
+syncCoverLetterResumeSource({ resetPdf: true });
 
 $("#btn-generate-cl")?.addEventListener("click", async () => {
   const resumeText = $("#cl-resume-text").value.trim();
@@ -148,7 +158,7 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
   try {
     config = validateAiConfig();
   } catch (err) {
-    alert(err.message);
+    showErrorDialog(err, { title: "AI settings required" });
     return;
   }
 
@@ -186,14 +196,7 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
       300000,
     );
     if (!res.ok || !res.body) {
-      const errText = await res.text();
-      let msg = errText;
-      try {
-        const json = JSON.parse(errText);
-        if (json.detail) msg = json.detail;
-        else if (json.error) msg = json.error;
-      } catch { }
-      throw new Error(msg || `Server error (${res.status})`);
+      throw new Error(await responseErrorMessage(res, "Cover letter generation failed."));
     }
 
     const stageLabels = {
@@ -245,10 +248,14 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
       reviewCard.className = `cl-review-card ${approved ? "approved" : rejected ? "warning" : "unavailable"}`;
       reviewCard.innerHTML = `<strong>${title}</strong><span>${escapeHtml(data.review_summary || "Review the letter before sending.")}</span>${details.length ? `<ul>${details.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}`;
     }
-    stopCoverLetterProgress();
-    $("#cl-loading").hidden = true;
     $("#cl-result-card").hidden = false;
     $("#cl-export-group").hidden = false;
+  } catch (err) {
+    $("#cl-empty").hidden = false;
+    showErrorDialog(err, { title: "Cover letter generation failed" });
+  } finally {
+    stopCoverLetterProgress();
+    $("#cl-loading").hidden = true;
   }
 });
 
@@ -269,7 +276,7 @@ async function downloadExport(format) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error("Export failed");
+    if (!res.ok) throw new Error(await responseErrorMessage(res, "The cover letter could not be exported."));
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -280,7 +287,7 @@ async function downloadExport(format) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } catch (err) {
-    alert(`Export download error: ${err.message}`);
+    showErrorDialog(err, { title: "Export failed" });
   }
 }
 

@@ -79,39 +79,61 @@ class JobReadRepository:
         if filters.query:
             filter_predicates.append("j.search_document @@ websearch_to_tsquery('simple', %s)")
             filter_parameters.append(filters.query)
-        if filters.country:
-            filter_predicates.append("j.country_code = %s")
-            filter_parameters.append(filters.country)
-        if filters.region:
-            filter_predicates.append("j.region_code = %s")
-            filter_parameters.append(filters.region)
-        if filters.city:
-            filter_predicates.append("lower(j.city) = lower(%s)")
-            filter_parameters.append(filters.city)
+        countries = filters.countries or ([filters.country] if filters.country else [])
+        if countries:
+            filter_predicates.append("j.country_code = ANY(%s)")
+            filter_parameters.append(countries)
+        regions = filters.regions or ([filters.region] if filters.region else [])
+        if regions:
+            if any("," in value for value in regions):
+                filter_predicates.append(
+                    "concat(j.region_code, ',', j.country_code) = ANY(%s)"
+                )
+            else:
+                filter_predicates.append("j.region_code = ANY(%s)")
+            filter_parameters.append(regions)
+        cities = filters.cities or ([filters.city] if filters.city else [])
+        if cities:
+            filter_predicates.append("lower(j.city) = ANY(%s)")
+            filter_parameters.append([value.lower() for value in cities])
         if filters.company:
             filter_predicates.append("j.company_normalized = %s")
             filter_parameters.append(normalize_company(filters.company))
-        if filters.work_mode:
-            filter_predicates.append("j.work_mode = %s")
-            filter_parameters.append(filters.work_mode)
+        work_modes = filters.work_modes or ([filters.work_mode] if filters.work_mode else [])
+        if work_modes:
+            filter_predicates.append("j.work_mode = ANY(%s)")
+            filter_parameters.append(work_modes)
         if filters.employment_type:
             filter_predicates.append("j.primary_employment_type = %s")
             filter_parameters.append(filters.employment_type)
-        if filters.opportunity_type:
-            filter_predicates.append("j.opportunity_type = %s")
-            filter_parameters.append(filters.opportunity_type)
-        if filters.schedule_type:
-            filter_predicates.append("%s = ANY(j.schedule_types)")
-            filter_parameters.append(filters.schedule_type)
-        if filters.category:
-            filter_predicates.append("j.job_category = %s")
-            filter_parameters.append(filters.category)
+        opportunity_types = filters.opportunity_types or (
+            [filters.opportunity_type] if filters.opportunity_type else []
+        )
+        if opportunity_types:
+            filter_predicates.append("j.opportunity_type = ANY(%s)")
+            filter_parameters.append(opportunity_types)
+        schedule_types = filters.schedule_types or (
+            [filters.schedule_type] if filters.schedule_type else []
+        )
+        if schedule_types:
+            filter_predicates.append("j.schedule_types && %s::text[]")
+            filter_parameters.append(schedule_types)
+        categories = filters.categories or ([filters.category] if filters.category else [])
+        if categories:
+            filter_predicates.append("j.job_category = ANY(%s)")
+            filter_parameters.append(categories)
         if filters.subcategory:
             filter_predicates.append("%s = ANY(j.job_subcategories)")
             filter_parameters.append(filters.subcategory)
-        if filters.skill:
-            filter_predicates.append("%s = ANY(j.skill_tags)")
-            filter_parameters.append(normalize_tag(filters.skill))
+        skills = filters.skills or ([filters.skill] if filters.skill else [])
+        if skills:
+            filter_predicates.append("j.skill_tags && %s::text[]")
+            filter_parameters.append([normalize_tag(value) for value in skills])
+        if filters.recruiting_terms:
+            filter_predicates.append(
+                "concat(initcap(j.recruiting_season), ' ', j.recruiting_year) = ANY(%s)"
+            )
+            filter_parameters.append(filters.recruiting_terms)
         if filters.season:
             filter_predicates.append("j.recruiting_season = %s")
             filter_parameters.append(filters.season)
@@ -419,10 +441,16 @@ class JobReadRepository:
                                FROM jobs WHERE status = 1 AND country_code IS NOT NULL
                                GROUP BY country_code) grouped) AS countries,
                         (SELECT coalesce(jsonb_agg(item ORDER BY item->>'value'), '[]')
-                         FROM (SELECT jsonb_build_object('value', region_code,
+                         FROM (SELECT jsonb_build_object(
+                                                        'value', concat(
+                                                            region_code, ',', country_code
+                                                        ),
                                                         'count', count(*)) AS item
-                               FROM jobs WHERE status = 1 AND region_code IS NOT NULL
-                               GROUP BY region_code) grouped) AS regions,
+                               FROM jobs
+                               WHERE status = 1
+                                 AND region_code IS NOT NULL
+                                 AND country_code IS NOT NULL
+                               GROUP BY region_code, country_code) grouped) AS regions,
                         (SELECT coalesce(jsonb_agg(item ORDER BY (item->>'count')::int DESC,
                                                             item->>'value'), '[]')
                          FROM (SELECT jsonb_build_object('value', city,

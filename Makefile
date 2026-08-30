@@ -12,7 +12,7 @@ contract:
 	PYTHONPATH=src .venv/bin/python scripts/dev/verify_frontend_api_contract.py
 
 frontend-check:
-	for f in web/modules/*.js; do node --check "$$f"; done
+	for f in web/modules/*.js; do node --input-type=module --check < "$$f"; done
 
 format-check:
 	.venv/bin/ruff format --check src tests scripts

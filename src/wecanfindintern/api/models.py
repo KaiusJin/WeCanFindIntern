@@ -16,19 +16,30 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class JobListFilters(BaseModel):
     query: str | None = Field(default=None, max_length=200)
     country: str | None = Field(default=None, min_length=2, max_length=2)
+    countries: list[str] = Field(default_factory=list)
     region: str | None = Field(default=None, max_length=32)
+    regions: list[str] = Field(default_factory=list)
     city: str | None = Field(default=None, max_length=120)
+    cities: list[str] = Field(default_factory=list)
     company: str | None = Field(default=None, max_length=160)
     work_mode: Literal["onsite", "hybrid", "remote", "unknown"] | None = None
+    work_modes: list[Literal["onsite", "hybrid", "remote", "unknown"]] = Field(
+        default_factory=list
+    )
     employment_type: str | None = Field(default=None, max_length=40)
     opportunity_type: str | None = Field(default=None, max_length=40)
+    opportunity_types: list[str] = Field(default_factory=list)
     schedule_type: str | None = Field(default=None, max_length=40)
+    schedule_types: list[str] = Field(default_factory=list)
     category: str | None = Field(default=None, max_length=60)
+    categories: list[str] = Field(default_factory=list)
     subcategory: str | None = Field(default=None, max_length=60)
     skill: str | None = Field(default=None, max_length=80)
+    skills: list[str] = Field(default_factory=list)
     season: Literal["winter", "spring", "summer", "fall"] | None = None
     recruiting_year: int | None = Field(default=None, ge=2020, le=2099)
     recruiting_term: str | None = Field(default=None, max_length=40)
+    recruiting_terms: list[str] = Field(default_factory=list)
     has_recruiting_term: bool | None = None
     source: str | None = Field(default=None, max_length=40)
     posted_after: date | None = None
@@ -46,6 +57,23 @@ class JobListFilters(BaseModel):
     @classmethod
     def uppercase_codes(cls, value: str | None) -> str | None:
         return value.upper() if value else None
+
+    @field_validator("countries", "regions")
+    @classmethod
+    def uppercase_code_lists(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip().upper() for value in values if value.strip()))
+
+    @field_validator(
+        "cities",
+        "opportunity_types",
+        "schedule_types",
+        "categories",
+        "skills",
+        "recruiting_terms",
+    )
+    @classmethod
+    def clean_filter_lists(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
 
     @field_validator("season", mode="before")
     @classmethod

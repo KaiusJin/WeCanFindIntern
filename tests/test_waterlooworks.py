@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 import tempfile
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+from wecanfindintern.waterlooworks.browser import ChromeSession
 from wecanfindintern.waterlooworks.collector import WaterlooWorksCollector
 from wecanfindintern.waterlooworks.extractor import waterlooworks_salary
 from wecanfindintern.waterlooworks.repository import (
@@ -35,6 +38,30 @@ def test_snapshot_payload_round_trip():
     payload = snapshot.payload()
     assert payload["status"] == "idle"
     assert len(payload["boards"]) == 5
+
+
+def test_chrome_session_minimizes_target_window():
+    session = ChromeSession(
+        profile_dir=Path("/tmp/test-waterlooworks-profile"),
+        start_url="https://waterlooworks.uwaterloo.ca",
+        chrome_binary=None,
+    )
+    session.websocket_url = "ws://127.0.0.1/devtools/browser/test"
+    session.cdp_call = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[{"windowId": 42}, {}]
+    )
+
+    minimized = asyncio.run(session.minimize_window({"id": "page-target"}))
+
+    assert minimized is True
+    assert session.cdp_call.await_args_list[0].args[1:] == (
+        "Browser.getWindowForTarget",
+        {"targetId": "page-target"},
+    )
+    assert session.cdp_call.await_args_list[1].args[1:] == (
+        "Browser.setWindowBounds",
+        {"windowId": 42, "bounds": {"windowState": "minimized"}},
+    )
 
 
 def test_collector_board_state_lookup():

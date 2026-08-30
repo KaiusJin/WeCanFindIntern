@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -33,8 +34,24 @@ from wecanfindintern.api.routes.tracker import get_tracker_repo
 from wecanfindintern.db.read_repository import JobReadRepository
 
 agent_router = APIRouter(prefix="/api/v1/agent", tags=["AI Agent"])
+logger = logging.getLogger(__name__)
 
 SUPPORTED_PROVIDERS = {"Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"}
+
+
+def _public_agent_error(error: ToolError) -> tuple[int, str]:
+    """Keep provider, parser, and planner internals out of API responses."""
+
+    if error.error_type in {"llm_failed", "planner_invalid_output"}:
+        logger.warning(
+            "AI Agent request failed internally: error_type=%s error=%s",
+            error.error_type,
+            error,
+        )
+        return 502, "The AI model could not complete this request. Please try again."
+    if error.error_type == "llm_config_missing":
+        return 422, "Please select an AI model and configure its API key in Settings."
+    return 422, str(error)
 
 
 def get_agent_repo(request: Request) -> AgentRepository:
@@ -265,12 +282,8 @@ async def send_agent_message(
             session_id, payload.content, context=payload.context
         )
     except ToolError as error:
-        status_code = (
-            502
-            if error.error_type in {"llm_failed", "llm_config_missing"}
-            else 422
-        )
-        raise HTTPException(status_code=status_code, detail=str(error)) from error
+        status_code, detail = _public_agent_error(error)
+        raise HTTPException(status_code=status_code, detail=detail) from error
 
 
 @agent_router.post("/sessions/{session_id}/messages/stream")
@@ -295,13 +308,18 @@ async def send_agent_message_stream(
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except ToolError as error:
-            status = 502 if error.error_type in {"llm_failed", "llm_config_missing"} else 422
+            status, detail = _public_agent_error(error)
             # Deliberately NOT named `payload`: that would shadow the request
             # parameter and make it a local of this generator.
-            error_event = {"type": "error", "status": status, "detail": str(error)}
+            error_event = {"type": "error", "status": status, "detail": detail}
             yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
         except Exception as error:  # pragma: no cover - defensive
-            error_event = {"type": "error", "status": 502, "detail": str(error)}
+            logger.exception("Unhandled AI Agent streaming failure", exc_info=error)
+            error_event = {
+                "type": "error",
+                "status": 502,
+                "detail": "The AI Agent could not complete this request. Please try again.",
+            }
             yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(

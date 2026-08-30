@@ -43,6 +43,7 @@ from wecanfindintern.agent.recommend.scoring import ScoredCandidate
 from wecanfindintern.api.models import JobDetail, JobListFilters, JobListItem
 from wecanfindintern.db.read_repository import JobReadRepository
 from wecanfindintern.domain.classification import normalize_for_matching
+from wecanfindintern.domain.location import clean_location_display
 from wecanfindintern.profile.models import ProfileBasics, ProfilePayload, UserProfile
 from wecanfindintern.profile.repository import ProfileRepository
 from wecanfindintern.tracker.models import (
@@ -105,7 +106,7 @@ def _ww_job_summary(item: dict[str, Any]) -> dict[str, Any]:
         "title": item.get("title"),
         "company": item.get("organization"),
         "division": item.get("division"),
-        "location": item.get("location_text"),
+        "location": clean_location_display(item.get("location_text")),
         "work_mode": item.get("work_mode"),
         "date_posted": item.get("date_posted"),
         "application_deadline": item.get("application_deadline"),
@@ -619,14 +620,15 @@ async def tool_recommend_jobs(
             job_id = item.get("source_job_id")
             if parsed.exclude_tracked and job_id in external_tracked:
                 continue
+            location = clean_location_display(item.get("location_text"))
             candidates.append(
                 {
                     "source": "waterloo_work",
                     "job_id": job_id,
                     "title": item.get("title"),
                     "company": item.get("organization"),
-                    "location": item.get("location_text"),
-                    "location_text": item.get("location_text"),
+                    "location": location,
+                    "location_text": location,
                     "work_mode": item.get("work_mode"),
                     "date_posted": item.get("date_posted"),
                     "application_deadline": item.get("application_deadline"),

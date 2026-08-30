@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from wecanfindintern.domain.location import clean_location_display
 from wecanfindintern.domain.normalization import annualize_salary, to_decimal
 from wecanfindintern.waterlooworks.service import WaterlooWorksService
 
@@ -18,6 +19,7 @@ waterlooworks_router = APIRouter(
 def _with_salary(item: dict[str, Any]) -> dict[str, Any]:
     """Expose structured salary in the same shape as public job postings."""
 
+    item["location_text"] = clean_location_display(item.get("location_text"))
     minimum = to_decimal(item.get("salary_min"))
     maximum = to_decimal(item.get("salary_max"))
     interval = item.get("salary_interval")

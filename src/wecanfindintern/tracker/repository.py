@@ -171,7 +171,7 @@ class TrackerRepository:
                 created_at, updated_at
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s
             ) RETURNING {APPLICATION_COLUMNS};
         """
         values = (

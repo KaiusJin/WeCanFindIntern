@@ -217,6 +217,33 @@ def parse_location(value: str | None) -> Location:
     )
 
 
+def clean_location_display(value: str | None) -> str | None:
+    """Return one user-facing spelling for a raw job location.
+
+    Recognized Canadian and US locations use full region and country names.
+    Unknown international locations are preserved instead of being guessed.
+    """
+
+    if not value or not value.strip():
+        return None
+    raw = value.strip()
+    location = parse_location(raw)
+    if location.normalized == "remote" or location.normalized.startswith("remote|"):
+        parts = ["Remote", location.country_name or location.country_code]
+        return ", ".join(part for part in parts if part)
+    if location.country_code or location.region_code:
+        parts = [
+            location.city,
+            location.region_name or location.region_code,
+            location.country_name or location.country_code,
+        ]
+        rendered = ", ".join(part for part in parts if part)
+        return rendered or raw
+    # Without a recognized hierarchy, retaining the raw value avoids turning
+    # "London, England" into the misleadingly incomplete "London".
+    return raw
+
+
 def normalize_region_code(value: str | None, country_code: str | None) -> str | None:
     if not value:
         return None

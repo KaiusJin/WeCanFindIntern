@@ -1,4 +1,4 @@
-import { $, $$, escapeHtml } from "./helpers.js";
+import { $, escapeHtml, showErrorDialog } from "./helpers.js";
 
 // =========================================================
 // PROFILE WORKSPACE
@@ -7,6 +7,10 @@ import { $, $$, escapeHtml } from "./helpers.js";
 let profileData = null;
 let profileSavedData = null;
 let profileImportId = null;
+let profileSaveTimer = null;
+let profileSaveInFlight = false;
+let profileSaveQueued = false;
+let profileDirty = false;
 
 const profileConfigs = [
   ["education", "02", "Education", "education", [["institution", "School"], ["degree", "Degree"], ["major", "Major"], ["specialization", "Specialization"], ["minor", "Minor"], ["start_date_text", "Start date"], ["graduation_date_text", "Graduation date"], ["gpa", "GPA"], ["coursework", "Coursework", "list"]]],
@@ -48,7 +52,12 @@ function renderProfile(payload, completion = null) {
   renderProfileSections();
   const checks = [profileData.basics?.full_name, profileData.basics?.email, ...profileConfigs.map(([key]) => profileData[key]?.length)];
   const percent = completion ?? Math.round(checks.filter(Boolean).length / checks.length * 100);
-  $("#profile-completion-label").textContent = `${percent}% complete`; $("#profile-progress-fill").style.width = `${percent}%`;
+  updateProfileCompletion(percent);
+}
+
+function updateProfileCompletion(percent) {
+  $("#profile-completion-label").textContent = `${percent}% complete`;
+  $("#profile-progress-fill").style.width = `${percent}%`;
 }
 
 function collectProfile() {
@@ -60,24 +69,28 @@ function collectProfile() {
     document.querySelectorAll(`[data-profile-section="${key}"]`).forEach((card) => {
       const item = { ...(profileData[key]?.[Number(card.dataset.profileIndex)] || {}) };
       card.querySelectorAll("[data-profile-field]").forEach((input) => { const raw = input.value.trim(); const field = input.dataset.profileField; if (input.dataset.profileType === "list") item[field] = raw ? raw.split(",").map((v) => v.trim()).filter(Boolean) : []; else if (input.dataset.profileType === "lines") item[field] = raw ? raw.split("\n").map((v) => v.trim()).filter(Boolean) : []; else item[field] = raw || null; });
-      item[required[key]] ??= ""; if (key === "skills") Object.keys(item).filter((field) => field !== "name").forEach((field) => delete item[field]);
+      item[required[key]] ??= "";
+      if (key === "skills") {
+        Object.keys(item).filter((field) => field !== "name").forEach((field) => delete item[field]);
+        if (!item.name) return;
+      }
       payload[key].push(item);
     });
   });
   return payload;
 }
 
-function showProfileStatus(message, error = false) { const box = $("#profile-import-status"); box.hidden = false; box.textContent = message; box.classList.toggle("error", error); }
-function renderResumeHistory(items) { $("#profile-resume-list").innerHTML = items.length ? items.map((item) => `<article class="profile-resume-row"><div><strong>${escapeHtml(item.filename)}</strong><span>${item.source_type.toUpperCase()} · ${(item.size_bytes / 1024).toFixed(0)} KB · ${item.status}</span></div><button class="text-button danger-text profile-delete-resume" data-resume-id="${item.id}" type="button">Delete</button></article>`).join("") : `<p class="muted-copy">No resumes uploaded yet.</p>`; }
+function showProfileStatus(message) { const box = $("#profile-import-status"); box.hidden = false; box.textContent = message; }
+function renderResumeHistory(items) { $("#profile-resume-list").innerHTML = items.length ? items.map((item) => `<article class="profile-resume-row"><div><strong>${escapeHtml(item.filename)}</strong><span>${item.source_type.toUpperCase()} · ${(item.size_bytes / 1024).toFixed(0)} KB</span></div><button class="text-button danger-text profile-delete-resume" data-resume-id="${item.id}" type="button">Delete</button></article>`).join("") : `<p class="muted-copy">No resumes uploaded yet.</p>`; }
 
 async function loadProfileWorkspace() {
-  try { const [p, r] = await Promise.all([fetch("/api/v1/profile"), fetch("/api/v1/profile/resumes")]); if (!p.ok) throw new Error("Could not load profile."); const loaded = await p.json(); profileSavedData = loaded; if (!profileImportId) renderProfile(loaded, loaded.completion_percent); renderResumeHistory(r.ok ? await r.json() : []); } catch (error) { showProfileStatus(error.message, true); }
+  try { const [p, r] = await Promise.all([fetch("/api/v1/profile"), fetch("/api/v1/profile/resumes")]); if (!p.ok) throw new Error("Could not load profile."); const loaded = await p.json(); profileSavedData = loaded; if (!profileImportId) renderProfile(loaded, loaded.completion_percent); renderResumeHistory(r.ok ? await r.json() : []); } catch (error) { showErrorDialog(error, { title: "Profile unavailable" }); }
 }
 
 function mergeProfileDraft(saved, draft) { const merged = JSON.parse(JSON.stringify(saved || emptyProfile())); merged.basics = { ...(saved?.basics || {}), ...Object.fromEntries(Object.entries(draft.basics || {}).filter(([, value]) => value != null && value !== "")) }; profileConfigs.forEach(([key]) => { if (draft[key]?.length) merged[key] = draft[key]; }); merged.schema_version = "profile.v1"; return merged; }
 
 async function parseProfileFile(file) {
-  if (!file) return showProfileStatus("Choose a PDF or .tex file first.", true);
+  if (!file) return showErrorDialog("No resume file was selected.", { title: "Resume required", guidance: "Choose a PDF or .tex resume file, then try again." });
   const uploadButton = $("#profile-upload-file");
   const latexButton = $("#profile-parse-latex");
   uploadButton.disabled = true; latexButton.disabled = true;
@@ -87,35 +100,94 @@ async function parseProfileFile(file) {
     const form = new FormData(); form.append("file", file, file.name);
     const response = await fetch("/api/v1/profile/resumes", { method: "POST", body: form });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) { showProfileStatus(result.detail || "Resume import failed.", true); return; }
-    profileImportId = result.import_id; renderProfile(mergeProfileDraft(profileSavedData, result.draft));
+    if (!response.ok) { showErrorDialog(result.detail || "Resume import failed.", { title: "Resume import failed" }); return; }
+    profileImportId = result.import_id; profileDirty = false; renderProfile(mergeProfileDraft(profileSavedData, result.draft));
     $("#profile-draft-banner").hidden = false; $("#profile-editor-title").textContent = "Review imported profile";
-    showProfileStatus(`Parsed ${result.resume.filename}. Review the extracted fields, then save to confirm.`);
+    showProfileStatus(`Parsed ${result.resume.filename}. Review the extracted fields before applying the import.`);
     const resumes = await fetch("/api/v1/profile/resumes"); if (resumes.ok) renderResumeHistory(await resumes.json());
   } catch (error) {
-    showProfileStatus(`Upload failed: ${error.message}`, true);
+    showErrorDialog(error, { title: "Resume upload failed" });
   } finally {
     uploadButton.disabled = false; latexButton.disabled = false;
     uploadButton.textContent = "Parse selected resume";
   }
 }
 
-async function saveProfileWorkspace() {
-  const payload = collectProfile(); const url = profileImportId ? `/api/v1/profile/imports/${profileImportId}/confirm` : "/api/v1/profile";
-  const response = await fetch(url, { method: profileImportId ? "POST" : "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const result = await response.json();
-  if (!response.ok) return showProfileStatus(result.detail || "Could not save profile.", true);
-  profileImportId = null; profileSavedData = result; $("#profile-draft-banner").hidden = true; $("#profile-editor-title").textContent = "Your profile"; renderProfile(result, result.completion_percent); $("#profile-save-feedback").hidden = false; setTimeout(() => { $("#profile-save-feedback").hidden = true; }, 1600); showProfileStatus("Profile saved.");
+function scheduleProfileAutosave({ immediate = false } = {}) {
+  profileDirty = true;
+  clearTimeout(profileSaveTimer);
+  if (profileSaveInFlight) {
+    profileSaveQueued = true;
+    return;
+  }
+  profileSaveTimer = setTimeout(() => { void saveProfileWorkspace(); }, immediate ? 0 : 650);
 }
 
-$("#profile-repeat-sections")?.addEventListener("click", (event) => { const add = event.target.closest("[data-profile-add]"); if (add) { profileData = collectProfile(); profileData[add.dataset.profileAdd].push({}); return renderProfile(profileData); } const remove = event.target.closest(".profile-remove-item"); if (remove) { const card = remove.closest("[data-profile-section]"); profileData = collectProfile(); profileData[card.dataset.profileSection].splice(Number(card.dataset.profileIndex), 1); renderProfile(profileData); } });
+async function saveProfileWorkspace({ force = false } = {}) {
+  if (profileSaveInFlight) {
+    profileSaveQueued = true;
+    if (force) profileDirty = true;
+    return;
+  }
+  if (!force && !profileDirty) return;
+
+  clearTimeout(profileSaveTimer);
+  profileSaveTimer = null;
+  profileSaveInFlight = true;
+  profileSaveQueued = false;
+  profileDirty = false;
+
+  const payload = collectProfile();
+  const importId = profileImportId;
+  const url = importId ? `/api/v1/profile/imports/${importId}/confirm` : "/api/v1/profile";
+  try {
+    const response = await fetch(url, {
+      method: importId ? "POST" : "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.detail || "Could not save profile.");
+    if (importId && profileImportId === importId) {
+      profileImportId = null;
+      $("#profile-draft-banner").hidden = true;
+      $("#profile-editor-title").textContent = "Your profile";
+    }
+    profileSavedData = result;
+    profileData = result;
+    updateProfileCompletion(result.completion_percent ?? 0);
+    const status = $("#profile-import-status");
+    if (importId) {
+      status.hidden = true;
+    }
+  } catch (error) {
+    profileDirty = true;
+    showErrorDialog(error, { title: "Profile changes could not be saved" });
+  } finally {
+    profileSaveInFlight = false;
+    if (profileSaveQueued) scheduleProfileAutosave({ immediate: true });
+  }
+}
+
+$("#profile-repeat-sections")?.addEventListener("click", (event) => { const add = event.target.closest("[data-profile-add]"); if (add) { profileData = collectProfile(); profileData[add.dataset.profileAdd].push({}); renderProfile(profileData); return; } const remove = event.target.closest(".profile-remove-item"); if (remove) { const card = remove.closest("[data-profile-section]"); profileData = collectProfile(); profileData[card.dataset.profileSection].splice(Number(card.dataset.profileIndex), 1); renderProfile(profileData); scheduleProfileAutosave({ immediate: true }); } });
+$(".profile-editor-panel")?.addEventListener("input", (event) => {
+  if (event.target.matches("input, textarea, select")) scheduleProfileAutosave();
+});
+$(".profile-editor-panel")?.addEventListener("change", (event) => {
+  if (event.target.matches("input, textarea, select")) scheduleProfileAutosave({ immediate: true });
+});
+$(".profile-editor-panel")?.addEventListener("focusout", (event) => {
+  if (event.target.matches("input, textarea, select") && profileDirty) scheduleProfileAutosave({ immediate: true });
+});
 $("#profile-upload-file")?.addEventListener("click", () => parseProfileFile($("#profile-resume-file").files?.[0]));
 $("#profile-resume-file")?.addEventListener("change", (event) => {
   const file = event.target.files?.[0];
   if (file) parseProfileFile(file);
 });
 $("#profile-parse-latex")?.addEventListener("click", () => parseProfileFile(new File([$("#profile-latex-source").value], "pasted-resume.tex", { type: "application/x-tex" })));
-$("#profile-save")?.addEventListener("click", saveProfileWorkspace); $("#profile-save-bottom")?.addEventListener("click", saveProfileWorkspace); $("#profile-refresh-resumes")?.addEventListener("click", loadProfileWorkspace);
-$("#profile-discard-draft")?.addEventListener("click", () => { profileImportId = null; $("#profile-draft-banner").hidden = true; $("#profile-editor-title").textContent = "Your profile"; renderProfile(profileSavedData || emptyProfile(), profileSavedData?.completion_percent); });
-$("#profile-resume-list")?.addEventListener("click", async (event) => { const button = event.target.closest(".profile-delete-resume"); if (!button || !window.confirm("Delete this resume and its import draft?")) return; const response = await fetch(`/api/v1/profile/resumes/${button.dataset.resumeId}`, { method: "DELETE" }); if (response.ok) loadProfileWorkspace(); else showProfileStatus("Could not delete resume.", true); });
+$("#profile-refresh-resumes")?.addEventListener("click", loadProfileWorkspace);
+$("#profile-apply-draft")?.addEventListener("click", () => { profileDirty = true; void saveProfileWorkspace({ force: true }); });
+$("#profile-discard-draft")?.addEventListener("click", () => { clearTimeout(profileSaveTimer); profileDirty = false; profileImportId = null; $("#profile-draft-banner").hidden = true; $("#profile-editor-title").textContent = "Your profile"; renderProfile(profileSavedData || emptyProfile(), profileSavedData?.completion_percent); });
+$("#profile-resume-list")?.addEventListener("click", async (event) => { const button = event.target.closest(".profile-delete-resume"); if (!button || !window.confirm("Delete this resume and its import draft?")) return; const response = await fetch(`/api/v1/profile/resumes/${button.dataset.resumeId}`, { method: "DELETE" }); if (response.ok) loadProfileWorkspace(); else showErrorDialog("The selected resume and import draft could not be deleted.", { title: "Delete failed" }); });
 
 export { loadProfileWorkspace };

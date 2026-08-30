@@ -1,7 +1,7 @@
 """Tests for deterministic location parsing and display-name composition."""
 
 from wecanfindintern.db.read_repository import location_display_name
-from wecanfindintern.domain.location import parse_location
+from wecanfindintern.domain.location import clean_location_display, parse_location
 
 
 def test_canadian_city_full_form():
@@ -145,3 +145,13 @@ def test_display_name_falls_back_to_location_text():
         )
     )
     assert display == "Somewhere, Overseas"
+
+
+def test_clean_location_display_uses_full_canonical_names():
+    assert clean_location_display("Toronto, ON, CA") == "Toronto, Ontario, Canada"
+    assert clean_location_display("New York, NY") == "New York, New York, United States"
+    assert clean_location_display("Remote, US") == "Remote, United States"
+
+
+def test_clean_location_display_preserves_unknown_international_hierarchy():
+    assert clean_location_display("London, England") == "London, England"

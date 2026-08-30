@@ -60,3 +60,24 @@ def test_list_jobs_filters_by_region(database, run):
     assert page.total_count == 1
     assert page.items[0].title == "Toronto Role"
     assert page.items[0].location.region_code == "ON"
+
+
+def test_list_jobs_filters_multiple_regions_and_work_modes(database, run):
+    seed_job(region_code="ON", country="CA", title="Toronto Role", work_mode="hybrid")
+    seed_job(region_code="NY", country="US", title="New York Role", work_mode="remote")
+    seed_job(region_code="BC", country="CA", title="Vancouver Role", work_mode="onsite")
+
+    from wecanfindintern.db.read_repository import JobReadRepository
+
+    repo = JobReadRepository(database.pool)
+    page = run(
+        repo.list_jobs(
+            JobListFilters(
+                regions=["ON,CA", "NY,US"],
+                work_modes=["hybrid", "remote"],
+                limit=10,
+            )
+        )
+    )
+
+    assert {item.title for item in page.items} == {"Toronto Role", "New York Role"}

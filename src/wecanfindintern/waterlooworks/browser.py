@@ -144,6 +144,28 @@ class ChromeSession:
                 timeout=5,
             )
 
+    async def minimize_window(self, target: dict[str, Any]) -> bool:
+        """Minimize the Chrome window containing the given WaterlooWorks page."""
+
+        if not self.websocket_url or not target.get("id"):
+            return False
+        result = await self.cdp_call(
+            self.websocket_url,
+            "Browser.getWindowForTarget",
+            {"targetId": target["id"]},
+            timeout=5,
+        )
+        window_id = result.get("windowId")
+        if not isinstance(window_id, int):
+            return False
+        await self.cdp_call(
+            self.websocket_url,
+            "Browser.setWindowBounds",
+            {"windowId": window_id, "bounds": {"windowState": "minimized"}},
+            timeout=5,
+        )
+        return True
+
     async def navigate(self, target: dict[str, Any], url: str) -> None:
         await self.cdp_call(
             target["webSocketDebuggerUrl"],

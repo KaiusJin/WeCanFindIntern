@@ -44,6 +44,7 @@ class WaterlooWorksService:
         )
         self.snapshot = self._snapshot_from_latest_run()
         self.collect_task: asyncio.Task[None] | None = None
+        self._minimize_attempted_for_login = False
         self._lock = asyncio.Lock()
 
     def _snapshot_from_latest_run(self) -> WaterlooWorksSnapshot:
@@ -97,6 +98,7 @@ class WaterlooWorksService:
                     "Chrome opened, but its local connector did not become ready."
                 )
                 raise
+            self._minimize_attempted_for_login = False
             self.snapshot.browser_open = True
             self.snapshot.status = "waiting_for_login"
             self.snapshot.message = (
@@ -145,6 +147,13 @@ class WaterlooWorksService:
                 readiness = {}
             if readiness.get("authenticated"):
                 self.snapshot.status = "ready"
+                minimized_now = False
+                if not self._minimize_attempted_for_login:
+                    self._minimize_attempted_for_login = True
+                    try:
+                        minimized_now = await self.session.minimize_window(target)
+                    except Exception:
+                        minimized_now = False
                 if readiness.get("hasPostingApi") and readiness.get("hasJobTable"):
                     self.snapshot.message = (
                         "WaterlooWorks is connected and ready to import."
@@ -154,7 +163,10 @@ class WaterlooWorksService:
                         "WaterlooWorks is connected. Import will open All Jobs on each board, "
                         "mark inaccessible boards as failed, and continue."
                     )
+                if minimized_now:
+                    self.snapshot.message += " The login window was minimized automatically."
             else:
+                self._minimize_attempted_for_login = False
                 self.snapshot.status = "waiting_for_login"
                 self.snapshot.message = (
                     "Complete Waterloo SSO/MFA in the dedicated Chrome window."
@@ -220,3 +232,4 @@ class WaterlooWorksService:
             with suppress(asyncio.CancelledError):
                 await self.collect_task
         await self.session.close()
+        self._minimize_attempted_for_login = False

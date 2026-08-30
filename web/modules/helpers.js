@@ -4,6 +4,94 @@ function escapeHtml(text) {
   return String(text ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 }
 
+function errorMessage(error, fallback = "An unexpected error occurred.") {
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (error?.message && String(error.message).trim()) return String(error.message).trim();
+  if (error?.detail && typeof error.detail === "string") return error.detail.trim();
+  return fallback;
+}
+
+async function responseErrorMessage(response, fallback = "The request could not be completed.") {
+  const text = await response.text().catch(() => "");
+  let payload = null;
+  try { payload = text ? JSON.parse(text) : null; } catch (_) { payload = null; }
+  const detail = payload?.detail ?? payload?.error ?? payload?.message;
+  let reason = "";
+  if (typeof detail === "string") {
+    reason = detail.trim();
+  } else if (Array.isArray(detail)) {
+    reason = detail.map((issue) => {
+      const path = Array.isArray(issue?.loc)
+        ? issue.loc.filter((part) => part !== "body").join(".")
+        : "";
+      const message = issue?.msg || "Invalid value";
+      return path ? `${path}: ${message}` : message;
+    }).join("\n");
+  } else if (text && !text.trim().startsWith("<")) {
+    reason = text.trim();
+  }
+  const status = response?.status ? `HTTP ${response.status}` : "Request failed";
+  return reason ? `${fallback}\n\n${reason}` : `${fallback}\n\nThe server returned ${status} without an explanation.`;
+}
+
+function ensureAppMessageDialog() {
+  let dialog = $("#app-message-dialog");
+  if (dialog) return dialog;
+  document.body.insertAdjacentHTML("beforeend", `
+    <dialog id="app-message-dialog" class="app-message-dialog" aria-labelledby="app-message-title" aria-describedby="app-message-detail">
+      <div class="app-message-card">
+        <button id="app-message-close" class="app-message-close" type="button" aria-label="Close">×</button>
+        <div id="app-message-icon" class="app-message-icon" aria-hidden="true">!</div>
+        <p id="app-message-eyebrow" class="app-message-eyebrow">ACTION NEEDED</p>
+        <h2 id="app-message-title">Unable to complete this action</h2>
+        <div class="app-message-reason">
+          <strong>Reason</strong>
+          <p id="app-message-detail"></p>
+        </div>
+        <p id="app-message-guidance" class="app-message-guidance"></p>
+        <button id="app-message-confirm" class="primary-button app-message-confirm" type="button">Got it</button>
+      </div>
+    </dialog>
+  `);
+  dialog = $("#app-message-dialog");
+  const close = () => dialog.open && dialog.close();
+  $("#app-message-close").addEventListener("click", close);
+  $("#app-message-confirm").addEventListener("click", close);
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) close();
+  });
+  return dialog;
+}
+
+function showAppMessage(message, {
+  title = "Unable to complete this action",
+  guidance = "Review the reason above, correct the information if needed, and try again.",
+  variant = "error",
+} = {}) {
+  const dialog = ensureAppMessageDialog();
+  dialog.dataset.variant = variant;
+  $("#app-message-icon").textContent = variant === "success" ? "✓" : "!";
+  $("#app-message-eyebrow").textContent = variant === "success" ? "COMPLETED" : "ACTION NEEDED";
+  $("#app-message-title").textContent = title;
+  $("#app-message-detail").textContent = errorMessage(message);
+  $("#app-message-guidance").textContent = guidance;
+  if (!dialog.open) dialog.showModal();
+  $("#app-message-confirm").focus();
+}
+
+function showErrorDialog(error, options = {}) {
+  showAppMessage(error, { ...options, variant: "error" });
+}
+
+function showSuccessDialog(message, options = {}) {
+  showAppMessage(message, {
+    title: "Completed",
+    guidance: "You can continue when you are ready.",
+    ...options,
+    variant: "success",
+  });
+}
+
 function renderMarkdown(rawText) {
   if (!rawText) return "";
   let text = String(rawText).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
@@ -148,10 +236,17 @@ function formatSalary(salary) {
 async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    // Let callers abort (e.g. a Stop button); their abort rethrows as-is so
+    // they can distinguish it from a timeout.
+    if (options.signal.aborted) controller.abort();
+    else options.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
     if (error.name === "AbortError") {
+      if (options.signal?.aborted) throw error;
       throw new Error("Request timed out. Please try again.");
     }
     throw error;
@@ -193,4 +288,8 @@ export {
   formatSalary,
   fetchWithTimeout,
   setupDropzone,
+  errorMessage,
+  responseErrorMessage,
+  showErrorDialog,
+  showSuccessDialog,
 };

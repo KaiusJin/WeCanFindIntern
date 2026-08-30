@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
 from wecanfindintern.agent.memory.config import settings as memory_settings
 from wecanfindintern.agent.memory.manager import render_context_sections
 from wecanfindintern.agent.memory.models import WorkingContext
@@ -88,12 +90,23 @@ GENERIC_RECOMMEND_INTENT = re.compile(
     re.IGNORECASE,
 )
 
+PERSONALIZED_RECOMMEND_INTENT = re.compile(
+    r"(?:(?:哪个|哪些|什么).{0,16}(?:岗位|职位|工作).{0,16}(?:最)?适合我|"
+    r"(?:最)?适合我.{0,16}(?:岗位|职位|工作)|"
+    r"which .{0,24}(?:job|role|position).{0,24}(?:best|fit|suit).{0,16}(?:me|my)|"
+    r"best .{0,16}(?:job|role|position).{0,16}(?:for me|for my profile))",
+    re.IGNORECASE,
+)
+
 
 def _fast_recommend_plan(content: str) -> dict[str, Any] | None:
     """Bypass the planner for short, unambiguous recommendation requests."""
 
     text = re.sub(r"\s+", " ", content.strip())
-    if len(text) > 100 or not GENERIC_RECOMMEND_INTENT.fullmatch(text):
+    if len(text) > 160 or not (
+        GENERIC_RECOMMEND_INTENT.fullmatch(text)
+        or PERSONALIZED_RECOMMEND_INTENT.search(text)
+    ):
         return None
     lowered = text.lower()
     source = "all"
@@ -115,6 +128,49 @@ def _fast_recommend_plan(content: str) -> dict[str, Any] | None:
             }
         ],
     }
+
+
+class PlannerToolCallPayload(BaseModel):
+    """Strict contract for one model-planned tool call."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    name: str = Field(min_length=1, max_length=80)
+    arguments: dict[str, Any]
+
+
+class PlannerPayload(BaseModel):
+    """Strict top-level contract for every Agent planner response."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    reply: str
+    tool_calls: list[PlannerToolCallPayload]
+
+
+def _validate_planner_payload(
+    data: Any, *, allowed_tool_names: set[str]
+) -> dict[str, Any]:
+    """Reject malformed planner output before it reaches orchestration logic."""
+
+    payload = PlannerPayload.model_validate(data, strict=True)
+    unknown_tools = sorted(
+        {call.name for call in payload.tool_calls} - allowed_tool_names
+    )
+    if unknown_tools:
+        raise ValueError(f"unknown planner tools: {', '.join(unknown_tools)}")
+    return payload.model_dump()
+
+
+def _planner_failure_reply(user_message: str) -> str:
+    """Public-safe fallback when both the initial and repair outputs are invalid."""
+
+    if re.search(r"[\u4e00-\u9fff]", user_message):
+        return "抱歉，我暂时无法可靠地处理这次请求，请重试一次。你的数据没有被更改。"
+    return (
+        "I couldn't reliably process that request. Please try once more; "
+        "your data was not changed."
+    )
 
 
 def _detect_decision(content: str) -> bool | None:
@@ -264,14 +320,60 @@ def plan_turn(
         user_prompt=user_prompt,
         response_format=json_response_format(config.provider),
     )
-    data = result.data
-    if not isinstance(data, dict):
-        raise ToolError("llm_failed", "Agent planner returned a non-object response.")
-    reply = data.get("reply")
-    tool_calls = data.get("tool_calls") or []
-    if not isinstance(reply, str) or not isinstance(tool_calls, list):
-        raise ToolError("llm_failed", "Agent planner response was missing reply/tool_calls.")
-    return {"reply": reply, "tool_calls": tool_calls}
+    allowed_tool_names = {str(tool["name"]) for tool in TOOL_CATALOG}
+    try:
+        return _validate_planner_payload(
+            result.data, allowed_tool_names=allowed_tool_names
+        )
+    except (ValidationError, ValueError) as first_error:
+        logger.warning(
+            "Agent planner schema validation failed; requesting one repair: "
+            "provider=%s model=%s round=%s type=%s validation=%s",
+            config.provider,
+            config.model_name,
+            round_number,
+            type(result.data).__name__,
+            first_error,
+        )
+    repair_result = complete_json(
+        provider=config.provider,
+        model_name=config.model_name,
+        api_key=config.api_key,
+        api_base=config.api_base,
+        system_prompt=(
+            "You are a JSON format repairer. Return exactly one JSON object that "
+            "conforms to the supplied schema. Preserve the intended reply and tool "
+            "calls, but do not add explanations, markdown, wrapper objects, or new "
+            "tools."
+        ),
+        user_prompt=(
+            "Required schema:\n"
+            + json.dumps(PlannerPayload.model_json_schema(), ensure_ascii=False)
+            + "\nAllowed tool names:\n"
+            + json.dumps(sorted(allowed_tool_names), ensure_ascii=False)
+            + "\nInvalid parsed output:\n"
+            + json.dumps(result.data, ensure_ascii=False, default=str)[:10000]
+        ),
+        response_format=json_response_format(config.provider),
+    )
+    try:
+        return _validate_planner_payload(
+            repair_result.data, allowed_tool_names=allowed_tool_names
+        )
+    except (ValidationError, ValueError) as repair_error:
+        logger.error(
+            "Agent planner repair failed schema validation: provider=%s model=%s "
+            "round=%s type=%s validation=%s",
+            config.provider,
+            config.model_name,
+            round_number,
+            type(repair_result.data).__name__,
+            repair_error,
+        )
+        raise ToolError(
+            "planner_invalid_output",
+            "The AI response failed internal format validation.",
+        ) from repair_error
 
 
 def _compose_prompts(
@@ -366,10 +468,47 @@ def recommendation_reply(result: dict[str, Any], user_message: str) -> str:
             "I could not find a strong match yet. Add target roles, locations, "
             "or skills and try again."
         )
+    top = recommendations[0]
+    title = top.get("title") or "Untitled role"
+    company = top.get("company") or "Unknown company"
+    score = round(float(top.get("match_score") or 0))
+    matched = top.get("matched_skills") or []
+    preferences = top.get("preference_matches") or []
+    if re.search(r"[\u4e00-\u9fff]", user_message):
+        reasons: list[str] = []
+        if matched:
+            reasons.append(f"与你 Profile 中的技能匹配：{', '.join(matched[:8])}")
+        if preferences:
+            reasons.append(f"符合你的求职偏好：{', '.join(preferences[:4])}")
+        if not top.get("description_available", True):
+            reasons.append("职位描述不完整，因此这个判断的可信度会稍低")
+        if not reasons:
+            reasons.append("职位方向与你的 Profile 最接近，但目前缺少直接技能证据")
+        lines = [
+            f"目前最适合你的是 **{title} — {company}**（匹配度 {score}/100）。",
+            "",
+            "主要原因：",
+            *(f"- {reason}" for reason in reasons),
+        ]
+        if len(recommendations) > 1:
+            second = recommendations[1]
+            second_score = round(float(second.get("match_score") or 0))
+            lines.extend(
+                [
+                    "",
+                    f"相比之下，**{second.get('title') or '第二个岗位'} — "
+                    f"{second.get('company') or 'Unknown company'}** 的匹配度为 "
+                    f"{second_score}/100。",
+                ]
+            )
+        return "\n".join(lines)
     return (
-        f"I found **{len(recommendations)} roles** that fit your profile. "
-        "The cards below include the job description, match evidence, and actions "
-        "to review or save each role."
+        f"Your strongest match is **{title} — {company}** ({score}/100). "
+        + (
+            f"It directly matches these profile skills: {', '.join(matched[:8])}."
+            if matched
+            else "Its role direction is the closest match to your current profile."
+        )
     )
 
 
@@ -495,6 +634,27 @@ class AgentOrchestrator:
                             "llm_failed", f"AI model error: {error}"
                         ) from error
                     break  # keep the results already gathered this turn
+                except ToolError as error:
+                    if error.error_type == "planner_invalid_output":
+                        logger.warning(
+                            "Planner output remained invalid after repair; using a "
+                            "public-safe fallback: round=%s has_tool_results=%s",
+                            round_number,
+                            bool(tool_summaries),
+                        )
+                        if round_number == 1 and not tool_summaries:
+                            last_plan_reply = _planner_failure_reply(content)
+                        break
+                    if round_number == 1 or not tool_summaries:
+                        raise
+                    logger.warning(
+                        "Planner continuation failed after successful tools; "
+                        "preserving results: round=%s error_type=%s error=%s",
+                        round_number,
+                        error.error_type,
+                        error,
+                    )
+                    break
             last_plan_reply = plan["reply"]
             planned_calls = [
                 planned for planned in plan["tool_calls"] if isinstance(planned, dict)

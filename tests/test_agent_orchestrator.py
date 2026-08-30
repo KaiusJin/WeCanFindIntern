@@ -237,6 +237,51 @@ def fake_stream_reply(reply):
     return fake
 
 
+def test_personalized_waterlooworks_question_uses_recommendations():
+    plan = orchestrator_module._fast_recommend_plan(
+        "你觉得哪个岗位最适合我 为什么呢 WaterlooWorks"
+    )
+
+    assert plan is not None
+    call = plan["tool_calls"][0]
+    assert call["name"] == "recommend_jobs"
+    assert call["arguments"]["source"] == "waterloo_work"
+    assert call["arguments"]["use_semantic_retrieval"] is True
+    assert call["arguments"]["use_llm_rerank"] is True
+
+
+def test_recommendation_reply_names_top_role_and_explains_why():
+    reply = orchestrator_module.recommendation_reply(
+        {
+            "data": {
+                "recommendations": [
+                    {
+                        "title": "QTS - Software Developer",
+                        "company": "RBC Financial Group",
+                        "match_score": 88,
+                        "matched_skills": ["Python", "SQL"],
+                        "preference_matches": ["Canada"],
+                        "description_available": True,
+                    },
+                    {
+                        "title": "Software Developer",
+                        "company": "RBC Financial Group",
+                        "match_score": 80,
+                        "matched_skills": ["Python"],
+                    },
+                ]
+            }
+        },
+        "哪个岗位最适合我？为什么？",
+    )
+
+    assert "QTS - Software Developer" in reply
+    assert "88/100" in reply
+    assert "Python, SQL" in reply
+    assert "Software Developer" in reply
+    assert "80/100" in reply
+
+
 def test_read_only_turn_records_tool_call_and_reply(monkeypatch):
     repo, session = make_repo_with_session()
     domain = FakeDomain()
@@ -543,6 +588,42 @@ def test_continuation_round_llm_failure_degrades_to_summary(monkeypatch):
     assert any(c.tool_name == "search_jobs" for c in repo.tool_calls)
 
 
+def test_continuation_round_invalid_shape_preserves_tool_results(monkeypatch):
+    repo, session = make_repo_with_session()
+    deps = make_deps(FakeDomain())
+    calls = {"count": 0}
+
+    def fake_plan(**kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {
+                "reply": "",
+                "tool_calls": [
+                    {"name": "search_jobs", "arguments": {"query": "RBC", "limit": 3}}
+                ],
+            }
+        raise ToolError(
+            "planner_invalid_output",
+            "The AI response failed internal format validation.",
+        )
+
+    monkeypatch.setattr(orchestrator_module, "plan_turn", fake_plan)
+    monkeypatch.setattr(
+        orchestrator_module.AgentOrchestrator,
+        "_stream_reply_events",
+        fake_stream_reply("QTS - Software Developer is the strongest match."),
+    )
+    orchestrator = AgentOrchestrator(repo, deps)
+    result = asyncio.run(orchestrator.process_message(session.id, "find RBC developer jobs"))
+
+    assert calls["count"] == 2
+    assert "strongest match" in result.message.content
+    assert any(
+        call.tool_name == "search_jobs" and call.status == "succeeded"
+        for call in repo.tool_calls
+    )
+
+
 def test_first_round_llm_failure_still_raises(monkeypatch):
     from wecanfindintern.llm.gateway import LLMError
 
@@ -599,6 +680,91 @@ def test_plan_turn_sends_json_mode_feedback_and_injection_guard(monkeypatch):
         round_number=1,
     )
     assert captured["response_format"] is None
+
+
+def test_plan_turn_repairs_array_output_before_returning(monkeypatch):
+    responses = iter(
+        [
+            SimpleNamespace(
+                data=[{"reply": "comparison complete", "tool_calls": []}]
+            ),
+            SimpleNamespace(data={"reply": "comparison complete", "tool_calls": []}),
+        ]
+    )
+    calls = []
+
+    def fake_complete_json(**kwargs):
+        calls.append(kwargs)
+        return next(responses)
+
+    monkeypatch.setattr(orchestrator_module, "complete_json", fake_complete_json)
+    deps = make_deps(FakeDomain())
+    deps.llm_config = SimpleNamespace(
+        provider="DeepSeek", model_name="deepseek-chat", api_key="x", api_base=None
+    )
+
+    plan = orchestrator_module.plan_turn(
+        llm_config=deps,
+        user_message="which job fits me",
+        history=[],
+        context=None,
+        pending_approval=None,
+        round_number=2,
+    )
+
+    assert plan == {"reply": "comparison complete", "tool_calls": []}
+    assert len(calls) == 2
+    assert "JSON format repairer" in calls[1]["system_prompt"]
+    assert "Invalid parsed output" in calls[1]["user_prompt"]
+
+
+def test_plan_turn_rejects_output_when_repair_is_still_invalid(monkeypatch):
+    monkeypatch.setattr(
+        orchestrator_module,
+        "complete_json",
+        lambda **kwargs: SimpleNamespace(
+            data=[{"reply": "comparison complete", "tool_calls": []}]
+        ),
+    )
+    deps = make_deps(FakeDomain())
+    deps.llm_config = SimpleNamespace(
+        provider="DeepSeek", model_name="deepseek-chat", api_key="x", api_base=None
+    )
+
+    with pytest.raises(ToolError) as exc:
+        orchestrator_module.plan_turn(
+            llm_config=deps,
+            user_message="which job fits me",
+            history=[],
+            context=None,
+            pending_approval=None,
+            round_number=2,
+        )
+
+    assert exc.value.error_type == "planner_invalid_output"
+
+
+def test_first_round_invalid_planner_output_uses_safe_public_reply(monkeypatch):
+    repo, session = make_repo_with_session()
+    deps = make_deps(FakeDomain())
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "plan_turn",
+        lambda **kwargs: (_ for _ in ()).throw(
+            ToolError(
+                "planner_invalid_output",
+                "The AI response failed internal format validation.",
+            )
+        ),
+    )
+    orchestrator = AgentOrchestrator(repo, deps)
+    result = asyncio.run(orchestrator.process_message(session.id, "帮我整理这些岗位"))
+
+    assert "请重试一次" in result.message.content
+    assert "数据没有被更改" in result.message.content
+    assert "planner" not in result.message.content.lower()
+    assert "non-object" not in result.message.content.lower()
 
 
 def test_audit_accumulates_all_rounds(monkeypatch):

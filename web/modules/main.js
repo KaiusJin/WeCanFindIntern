@@ -1,4 +1,4 @@
-import { $ } from "./helpers.js";
+import { $, showErrorDialog } from "./helpers.js";
 import { loadSettings } from "./settings.js";
 import { setTabActivators, switchTab } from "./navigation.js";
 import {
@@ -35,6 +35,8 @@ function ensureTabModule(tabId) {
     moduleLoads[tabId] = tabModules[tabId]().catch((err) => {
       delete moduleLoads[tabId];
       console.error(`Module load failed for ${tabId}`, err);
+      showErrorDialog(err, { title: "Section could not be opened", guidance: "Reload the page and try opening this section again." });
+      throw err;
     });
   }
   return moduleLoads[tabId];

@@ -6,7 +6,9 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from wecanfindintern.domain.location import clean_location_display
 
 
 class ApplicationStage(StrEnum):
@@ -52,6 +54,11 @@ class TrackedApplication(BaseModel):
     applied_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("location_text")
+    @classmethod
+    def display_clean_location(cls, value: str | None) -> str | None:
+        return clean_location_display(value)
 
 
 class TrackerCreateRequest(BaseModel):

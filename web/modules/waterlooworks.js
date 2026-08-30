@@ -5,6 +5,7 @@ import {
   formatSalary,
   formatRelativeTime,
   renderMarkdown,
+  showErrorDialog,
   workModeLabel,
 } from "./helpers.js";
 import { syncDialogScrollLock } from "./settings.js";
@@ -47,7 +48,13 @@ const WW_BOOKMARK_FILLED = `<svg width="15" height="15" viewBox="0 0 24 24" fill
 
 function renderWaterlooWorksStatus(data) {
   const status = data.status || "idle";
-  wwBusy = ["collecting", "importing"].includes(status);
+  wwBusy = [
+    "browser_starting",
+    "waiting_for_login",
+    "waiting_for_job_page",
+    "collecting",
+    "importing",
+  ].includes(status);
   const pill = $("#ww-status-pill");
   pill.className = `ww-status-pill ${status}`;
   pill.querySelector("span").textContent = WW_STATUS_LABELS[status] || status;
@@ -132,7 +139,8 @@ async function loadWaterlooWorksJobs() {
     }).join("");
     updateBookmarkButtons();
   } catch (error) {
-    list.innerHTML = `<p class="notice error">${escapeHtml(error.message)}</p>`;
+    list.innerHTML = "";
+    showErrorDialog(error, { title: "WaterlooWorks jobs unavailable" });
   }
 }
 
@@ -141,24 +149,19 @@ async function loadWaterlooWorksStatus() {
     const response = await fetch("/api/v1/waterlooworks/status");
     if (!response.ok) throw new Error("Could not read WaterlooWorks status.");
     renderWaterlooWorksStatus(await response.json());
-    $("#ww-action-error").hidden = true;
   } catch (error) {
-    $("#ww-action-error").textContent = error.message;
-    $("#ww-action-error").hidden = false;
+    console.error("WaterlooWorks status error:", error);
   }
 }
 
 async function runWaterlooWorksAction(path) {
-  const errorBox = $("#ww-action-error");
-  errorBox.hidden = true;
   try {
     const response = await fetch(`/api/v1/waterlooworks/${path}`, { method: "POST" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `WaterlooWorks action failed (${response.status}).`);
     renderWaterlooWorksStatus(data);
   } catch (error) {
-    errorBox.textContent = error.message;
-    errorBox.hidden = false;
+    showErrorDialog(error, { title: "WaterlooWorks action failed" });
   }
 }
 
@@ -207,7 +210,9 @@ async function openWaterlooWorksJob(sourceJobId, boardsCsv) {
       <div class="detail-description">${job.description ? renderMarkdown(job.description) : "<p>No detailed description is available for this job.</p>"}</div>
     `;
   } catch (error) {
-    detail.innerHTML = `<div class="notice error">${escapeHtml(error.message)}</div>`;
+    if (dialog.open) dialog.close();
+    syncDialogScrollLock();
+    showErrorDialog(error, { title: "WaterlooWorks job details unavailable" });
   }
 }
 let wwPollTimer = null;
