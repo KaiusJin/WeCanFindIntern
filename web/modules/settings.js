@@ -1,4 +1,4 @@
-import { $ } from "./helpers.js";
+import { $, showErrorDialog } from "./helpers.js";
 
 // =========================================================
 // GLOBAL AI SETTINGS & LOCALSTORAGE
@@ -116,7 +116,9 @@ function loadSettings() {
       const parsed = JSON.parse(saved);
       Object.assign(aiSettings, parsed);
     }
-  } catch (_) { }
+  } catch (error) {
+    showErrorDialog(error, { title: "Saved AI settings could not be read", guidance: "Save your AI settings again to replace the invalid browser data." });
+  }
 
   let selectedModel = aiSettings.selectedModel || "Gemini:gemini-3.7-flash";
   const [provider, legacyModel] = splitModelValue(selectedModel);
@@ -165,7 +167,10 @@ function saveSettings() {
 
   try {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(aiSettings));
-  } catch (_) { }
+  } catch (error) {
+    showErrorDialog(error, { title: "AI settings could not be saved", guidance: "Allow local storage for this site, then save the settings again." });
+    return;
+  }
 
   const feedback = $("#settings-save-feedback");
   if (feedback) {
@@ -256,7 +261,6 @@ $("#open-settings")?.addEventListener("click", () => {
   syncDialogScrollLock();
 });
 $("#close-settings")?.addEventListener("click", () => $("#settings-dialog")?.close());
-$("#btn-cancel-settings")?.addEventListener("click", () => $("#settings-dialog")?.close());
 $("#btn-save-settings")?.addEventListener("click", saveSettings);
 $("#settings-dialog")?.addEventListener("click", (e) => {
   if (e.target === $("#settings-dialog")) $("#settings-dialog")?.close();

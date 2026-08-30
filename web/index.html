@@ -92,37 +92,32 @@
               <button id="clear-filters" class="text-button" type="button">Clear</button>
             </div>
 
-            <label class="field-label" for="recruiting-term">Recruiting season / term</label>
-            <select id="recruiting-term"><option value="">All recruiting seasons</option></select>
+            <label class="field-label">Recruiting season / term</label>
+            <div id="recruiting-term" class="multi-filter" data-placeholder="All recruiting seasons"></div>
 
-            <label class="field-label" for="opportunity-type">Opportunity type</label>
-            <select id="opportunity-type"><option value="">All opportunity types</option></select>
+            <label class="field-label">Opportunity type</label>
+            <div id="opportunity-type" class="multi-filter" data-placeholder="All opportunity types"></div>
 
-            <label class="field-label" for="country">Country</label>
-            <select id="country"><option value="">All countries</option></select>
+            <label class="field-label">Country</label>
+            <div id="country" class="multi-filter" data-placeholder="All countries"></div>
 
-            <label class="field-label" for="region">State / Province</label>
-            <select id="region"><option value="">All regions</option></select>
+            <label class="field-label">State / Province</label>
+            <div id="region" class="multi-filter" data-placeholder="All regions"></div>
 
-            <label class="field-label" for="city">City</label>
-            <select id="city"><option value="">All cities</option></select>
+            <label class="field-label">City</label>
+            <div id="city" class="multi-filter" data-placeholder="All cities"></div>
 
-            <label class="field-label" for="work-mode">Work mode</label>
-            <select id="work-mode">
-              <option value="">All work modes</option>
-              <option value="remote">Remote</option>
-              <option value="hybrid">Hybrid</option>
-              <option value="onsite">In-person</option>
-            </select>
+            <label class="field-label">Work mode</label>
+            <div id="work-mode" class="multi-filter" data-placeholder="All work modes"></div>
 
-            <label class="field-label" for="schedule-type">Schedule</label>
-            <select id="schedule-type"><option value="">All schedules</option></select>
+            <label class="field-label">Schedule</label>
+            <div id="schedule-type" class="multi-filter" data-placeholder="All schedules"></div>
 
-            <label class="field-label" for="category">Job category</label>
-            <select id="category"><option value="">All categories</option></select>
+            <label class="field-label">Job category</label>
+            <div id="category" class="multi-filter" data-placeholder="All categories"></div>
 
-            <label class="field-label" for="skill">Skill</label>
-            <select id="skill"><option value="">All skills</option></select>
+            <label class="field-label">Skill</label>
+            <div id="skill" class="multi-filter" data-placeholder="All skills"></div>
 
             <label class="checkbox-field">
               <input id="has-salary" type="checkbox" />
@@ -175,7 +170,6 @@
               <button id="refresh" class="icon-button" type="button" title="Refresh">↻</button>
             </div>
             </div>
-            <div id="error" class="notice error" hidden></div>
             <div id="job-list" class="job-list"></div>
             <div id="empty-state" class="empty-state" hidden>
               <div class="empty-icon">⌁</div>
@@ -245,7 +239,7 @@
       <div id="tab-waterlooworks" class="tab-pane" hidden>
         <section class="hero ww-hero">
           <h1>Bring your WaterlooWorks jobs home.</h1>
-          <p class="hero-copy">Sign in yourself through a dedicated Chrome profile. WeCanFindIntern reads the five job boards locally and stores them in a separate WaterlooWorks library. Job IDs are used for deduplication.</p>
+          <p class="hero-copy">Explore all five WaterlooWorks job boards in one place, keep promising opportunities organized, and move the roles you want directly into your application Tracker.</p>
         </section>
 
         <section class="ww-workspace">
@@ -267,7 +261,6 @@
               <button id="ww-launch" class="primary-button" type="button">Log into WaterlooWorks ↗</button>
               <button id="ww-collect" class="secondary-button" type="button" disabled>Import all job boards</button>
             </div>
-            <p id="ww-action-error" class="notice error" hidden></p>
           </article>
 
           <aside class="ww-side-panel">
@@ -419,9 +412,9 @@
 
         <section class="career-workspace">
           <div class="career-form-panel">
-            <div class="filter-heading">
+            <div class="career-panel-heading">
               <h2>Interview Setup</h2>
-              <button id="clear-interview" class="text-button" type="button">Reset</button>
+              <button id="clear-interview" class="text-button career-reset-button" type="button">Reset</button>
             </div>
 
             <!-- Candidate Source Switcher -->
@@ -583,9 +576,9 @@
 
         <section class="career-workspace">
           <div class="career-form-panel">
-            <div class="filter-heading">
+            <div class="career-panel-heading">
               <h2>Candidate & Job Target</h2>
-              <button id="clear-cover-letter" class="text-button" type="button">Reset</button>
+              <button id="clear-cover-letter" class="text-button career-reset-button" type="button">Reset</button>
             </div>
 
             <!-- Candidate Source Switcher -->
@@ -686,7 +679,7 @@
         </section>
         <section class="profile-workspace">
           <aside class="profile-import-panel">
-            <div class="profile-panel-head"><div><p class="eyebrow">RESUME IMPORT</p><h2>Source document</h2></div><span class="profile-security-pill">Strict validation</span></div>
+            <div class="profile-panel-head"><div><p class="eyebrow">RESUME IMPORT</p><h2>Source document</h2></div></div>
             <p class="profile-help">PDF must contain selectable English text. Scans, encrypted PDFs, active content, embedded files, and disguised extensions are rejected. LaTeX is read as text and never compiled.</p>
             <label class="profile-dropzone" for="profile-resume-file"><input id="profile-resume-file" type="file" accept=".pdf,.tex,application/pdf,application/x-tex,text/x-tex" hidden /><strong>Choose PDF or .tex</strong><span>Maximum 8 MB PDF / 1 MB LaTeX</span></label>
             <button id="profile-upload-file" class="primary-button profile-wide-button" type="button">Parse selected resume</button>
@@ -698,9 +691,9 @@
             <div id="profile-resume-list" class="profile-resume-list"><p class="muted-copy">No resumes uploaded yet.</p></div>
           </aside>
           <div class="profile-editor-panel">
-            <div class="profile-editor-toolbar"><div><p class="eyebrow">STRUCTURED PROFILE</p><h2 id="profile-editor-title">Your profile</h2><p id="profile-completion-label" class="muted-copy">0% complete</p></div><div class="profile-toolbar-actions"><a class="secondary-button" href="/api/v1/profile/export" target="_blank" rel="noreferrer">Export JSON</a><button id="profile-save" class="primary-button" type="button">Save profile</button></div></div>
+            <div class="profile-editor-toolbar"><div><h2 id="profile-editor-title">Your profile</h2><p id="profile-completion-label" class="muted-copy">0% complete</p></div><div class="profile-toolbar-actions"><a class="secondary-button" href="/api/v1/profile/export" target="_blank" rel="noreferrer">Export JSON</a></div></div>
             <div class="profile-progress"><span id="profile-progress-fill"></span></div>
-            <div id="profile-draft-banner" class="profile-draft-banner" hidden><div><strong>Resume draft ready for review</strong><span>Check extracted fields before confirming. Saved data has not been overwritten.</span></div><button id="profile-discard-draft" class="secondary-button compact-button" type="button">Discard draft</button></div>
+            <div id="profile-draft-banner" class="profile-draft-banner" hidden><div><strong>Resume draft ready for review</strong><span>Editing a field applies the import automatically, or use the actions here.</span></div><div class="profile-draft-actions"><button id="profile-apply-draft" class="primary-button compact-button" type="button">Apply import</button><button id="profile-discard-draft" class="secondary-button compact-button" type="button">Discard</button></div></div>
             <section class="profile-section-card">
               <div class="profile-section-heading"><div><span>01</span><h3>Basic information</h3></div></div>
               <div class="profile-basic-grid">
@@ -711,7 +704,6 @@
               </div>
             </section>
             <div id="profile-repeat-sections"></div>
-            <div class="profile-save-footer"><span id="profile-save-feedback" class="settings-save-feedback" hidden>Saved</span><button id="profile-save-bottom" class="primary-button" type="button">Save profile</button></div>
           </div>
         </section>
       </div>
@@ -855,7 +847,7 @@
         <button id="close-custom-job-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
       </div>
 
-      <form id="custom-job-form" class="settings-body">
+      <form id="custom-job-form" class="settings-body" novalidate>
         <div class="tracker-grid-form">
           <div class="field-group">
             <label class="field-label" for="custom-company">Company Name *</label>
@@ -916,7 +908,6 @@
         </div>
 
         <div class="settings-dialog-footer">
-          <span id="custom-job-error" class="notice error" style="margin-top:0; padding:6px 12px; font-size:12px;" hidden></span>
           <div class="settings-footer-actions">
             <button id="btn-cancel-custom-job" class="secondary-button" type="button">Cancel</button>
             <button type="submit" class="primary-button">Save Application</button>
@@ -970,7 +961,6 @@
           </div>
           <div>
             <h3>AI Model & API Key</h3>
-            <p class="settings-subtitle">Select your AI model and key. Saved locally in your browser.</p>
           </div>
         </div>
         <button id="close-settings" class="dialog-close" type="button" aria-label="Close">×</button>
@@ -1034,7 +1024,7 @@
         </div>
 
         <div class="field-group" style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border);">
-          <label class="field-label" for="setting-embedding-provider">Recommendation Embedding</label>
+          <label class="field-label" for="setting-embedding-provider">Embedding Provider</label>
           <select id="setting-embedding-provider" class="career-select">
             <option value="Ollama" selected>Ollama (Local)</option>
             <option value="Gemini">Google Gemini</option>
@@ -1053,7 +1043,6 @@
         <div class="settings-dialog-footer">
           <span id="settings-save-feedback" class="settings-save-feedback" hidden>✓ Saved to localStorage!</span>
           <div class="settings-footer-actions">
-            <button id="btn-cancel-settings" class="secondary-button" type="button">Cancel</button>
             <button id="btn-save-settings" class="primary-button" type="button">Save Settings</button>
           </div>
         </div>
