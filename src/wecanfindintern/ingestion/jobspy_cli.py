@@ -13,7 +13,7 @@ def add_query_arguments(parser: argparse.ArgumentParser) -> None:
         action="append",
         dest="sites",
         choices=sorted(SUPPORTED_SITES),
-        help="可重复传入；默认 indeed",
+        help="Repeatable; defaults to indeed",
     )
     parser.add_argument("--search-term", required=True)
     parser.add_argument("--google-search-term")

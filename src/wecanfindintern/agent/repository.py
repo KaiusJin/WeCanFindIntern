@@ -138,6 +138,8 @@ class AgentRepository:
                 RETURNING public_id AS id,
                     (SELECT public_id FROM agent_sessions WHERE id=agent_tool_calls.session_id)
                         AS session_id,
+                    (SELECT public_id FROM agent_messages WHERE id=agent_tool_calls.message_id)
+                        AS message_id,
                     tool_name, arguments, status, result, error, created_at, updated_at;""",
                 (
                     tool_name,
@@ -157,10 +159,12 @@ class AgentRepository:
     ) -> list[AgentToolCall]:
         async with self.pool.connection() as connection:
             result = await connection.execute(
-                """SELECT t.public_id AS id, s.public_id AS session_id, t.tool_name,
+                """SELECT t.public_id AS id, s.public_id AS session_id,
+                    m.public_id AS message_id, t.tool_name,
                     t.arguments, t.status, t.result, t.error, t.created_at, t.updated_at
                 FROM agent_tool_calls t
                 JOIN agent_sessions s ON s.id = t.session_id
+                LEFT JOIN agent_messages m ON m.id = t.message_id
                 WHERE s.public_id = %s
                 ORDER BY t.created_at ASC, t.id ASC
                 LIMIT %s;""",

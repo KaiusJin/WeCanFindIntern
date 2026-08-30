@@ -220,4 +220,4 @@ function scheduleWaterlooWorksPoll() {
 }
 scheduleWaterlooWorksPoll();
 
-export { loadWaterlooWorksStatus, loadWaterlooWorksJobs };
+export { loadWaterlooWorksStatus, loadWaterlooWorksJobs, openWaterlooWorksJob };

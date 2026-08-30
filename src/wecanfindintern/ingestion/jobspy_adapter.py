@@ -26,7 +26,7 @@ SUPPORTED_SITES = {
     "bdjobs",
 }
 
-# JobSpy 1.1.82 的 jobspy.util.desired_order。
+# Mirrors jobspy.util.desired_order in JobSpy 1.1.82.
 JOBSPY_COLUMNS: tuple[str, ...] = (
     "id",
     "site",
@@ -93,16 +93,16 @@ class JobSpyQuery(BaseModel):
     def validate_sites(cls, sites: list[str]) -> list[str]:
         normalized = list(dict.fromkeys(site.strip().lower() for site in sites))
         if not normalized:
-            raise ValueError("至少需要一个职位来源")
+            raise ValueError("At least one job source is required")
         unknown = sorted(set(normalized) - SUPPORTED_SITES)
         if unknown:
-            raise ValueError(f"JobSpy 不支持以下来源: {', '.join(unknown)}")
+            raise ValueError(f"Unsupported JobSpy sources: {', '.join(unknown)}")
         return normalized
 
     @model_validator(mode="after")
     def validate_upstream_filter_combinations(self) -> JobSpyQuery:
         if "google" in self.sites and not self.google_search_term:
-            raise ValueError("使用 Google Jobs 时必须提供 google_search_term")
+            raise ValueError("google_search_term is required when using Google Jobs")
 
         if "indeed" in self.sites:
             indeed_filter_groups = sum(
@@ -114,11 +114,11 @@ class JobSpyQuery(BaseModel):
             )
             if indeed_filter_groups > 1:
                 raise ValueError(
-                    "Indeed 只能选择 hours_old、job_type/is_remote、easy_apply 中的一组筛选"
+                    "Indeed accepts only one of: hours_old, job_type/is_remote, easy_apply"
                 )
 
         if "linkedin" in self.sites and self.hours_old is not None and self.easy_apply is not None:
-            raise ValueError("LinkedIn 不能同时使用 hours_old 和 easy_apply")
+            raise ValueError("LinkedIn cannot combine hours_old with easy_apply")
         return self
 
 

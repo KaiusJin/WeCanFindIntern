@@ -18,6 +18,7 @@ from wecanfindintern.agent.models import (
     AgentMessageRequest,
     AgentSession,
     AgentSessionResponse,
+    AgentToolCall,
     AgentTurnResult,
 )
 from wecanfindintern.agent.orchestrator import AgentOrchestrator
@@ -229,6 +230,19 @@ async def list_agent_messages(
     if await repo.get_session(session_id) is None:
         raise HTTPException(status_code=404, detail="Agent session not found")
     return await repo.list_messages(session_id)
+
+
+@agent_router.get(
+    "/sessions/{session_id}/tool-calls", response_model=list[AgentToolCall]
+)
+async def list_agent_tool_calls(
+    session_id: UUID, repo: AgentRepoDep
+) -> list[AgentToolCall]:
+    """Return structured results so historical conversations can restore job cards."""
+
+    if await repo.get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Agent session not found")
+    return await repo.list_tool_calls(session_id)
 
 
 @agent_router.post(

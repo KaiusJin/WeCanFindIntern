@@ -9,10 +9,10 @@ from wecanfindintern.llm.prompts.ats import ATS_SYSTEM_PROMPT, build_ats_prompt
 
 def match_level(score: int) -> str:
     if score >= 80:
-        return "高匹配 (High Match)"
+        return "High Match"
     if score >= 55:
-        return "中匹配 (Medium Match)"
-    return "基础匹配 (Low Match)"
+        return "Medium Match"
+    return "Low Match"
 
 
 def generate_ats_review(

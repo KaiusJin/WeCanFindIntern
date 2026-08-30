@@ -283,7 +283,11 @@ def compose_reply(
         "You are the AI Agent inside WeCanFindIntern. Summarize tool results for the "
         "user in a concise, friendly way. Be honest about limitations: if a job "
         "description or profile field was missing, say it. Respond in the same language "
-        "as the user's message. Output ONLY JSON: {\"reply\": string}."
+        "as the user's message. Never describe or promise UI elements: do NOT say that "
+        "results, cards, or lists 'are shown below' or elsewhere — the interface may "
+        "render structured results itself, and you cannot know what it shows. If a "
+        "search returned jobs, name the strongest few with one-line reasons instead of "
+        "promising a list. Output ONLY JSON: {\"reply\": string}."
     )
     user_prompt = (
         f"Open job context: {_context_text(context)}\n\n"
@@ -319,37 +323,19 @@ def compose_reply(
 
 
 def recommendation_reply(result: dict[str, Any], user_message: str) -> str:
-    """Render recommendation tool evidence without a second model round-trip."""
+    """Render a compact recommendation summary; the UI renders full cards."""
 
     recommendations = (result.get("data") or {}).get("recommendations") or []
-    chinese = bool(re.search(r"[\u3400-\u9fff]", user_message))
     if not recommendations:
         return (
-            "暂时没有找到符合当前资料和偏好的岗位。可以补充目标职位、地点或技能后再试。"
-            if chinese
-            else (
-                "I could not find a strong match yet. Add target roles, locations, "
-                "or skills and try again."
-            )
+            "I could not find a strong match yet. Add target roles, locations, "
+            "or skills and try again."
         )
-    heading = "根据你的资料，优先推荐这些岗位：" if chinese else "Top matches from your profile:"
-    lines = [heading]
-    for item in recommendations:
-        title = item.get("title") or "Untitled"
-        company = item.get("company") or "Unknown company"
-        url = item.get("application_url")
-        label = f"[{title}]({url})" if url else title
-        score = item.get("match_score", item.get("score", 0))
-        confidence = item.get("confidence", "unknown")
-        reason = "; ".join((item.get("reasons") or [])[:2])
-        lines.append(f"- {label} — {company} · {score}/100 · {confidence}: {reason}")
-    mode = (result.get("data") or {}).get("retrieval_mode", "unknown")
-    lines.append(
-        (f"\n召回模式：`{mode}`。分数表示当前候选集中的相对匹配，不是录取概率。")
-        if chinese
-        else f"\nRetrieval: `{mode}`. Scores are relative fit signals, not admission probabilities."
+    return (
+        f"I found **{len(recommendations)} roles** that fit your profile. "
+        "The cards below include the job description, match evidence, and actions "
+        "to review or save each role."
     )
-    return "\n".join(lines)
 
 
 def format_execution_reply(tool_name: str, result: dict[str, Any]) -> str:
@@ -648,7 +634,7 @@ class AgentOrchestrator:
         if not approved:
             decided = await self.repo.decide_approval(approval_id, "denied")
             assert decided is not None
-            reply = "取消成功。没有做任何更改。"
+            reply = "Cancelled. Nothing was changed."
             assistant = await self.repo.add_message(
                 session.id, "assistant", reply, token_count=estimate_tokens(reply)
             )
@@ -693,7 +679,7 @@ class AgentOrchestrator:
         reply = (
             format_execution_reply(approval.tool_name, result)
             if not tool_error
-            else f"操作失败：{tool_error}"
+            else f"The action failed: {tool_error}"
         )
         assistant = await self.repo.add_message(
             session.id, "assistant", reply, token_count=estimate_tokens(reply)

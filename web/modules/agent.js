@@ -1,6 +1,18 @@
-import { $, escapeHtml, renderMarkdown, fetchWithTimeout } from "./helpers.js";
-import { validateAiConfig } from "./settings.js";
-import { state } from "./jobs.js";
+import {
+  $,
+  escapeHtml,
+  renderMarkdown,
+  fetchWithTimeout,
+  workModeLabel,
+} from "./helpers.js";
+import { syncDialogScrollLock, validateAiConfig } from "./settings.js";
+import { openJob, state } from "./jobs.js";
+import { openWaterlooWorksJob } from "./waterlooworks.js";
+import {
+  toggleBookmarkJob,
+  toggleWaterlooWorksBookmark,
+  trackerState,
+} from "./tracker.js";
 
 // =========================================================
 // SECTION 8: AI AGENT CHAT
@@ -8,8 +20,12 @@ import { state } from "./jobs.js";
 
 let currentSessionId = null;
 let sessionList = [];
+let attachedJobContext = null;
+const renderedAgentJobs = new Map();
+const attachSearchJobs = new Map();
 
 const SESSION_STORAGE_KEY = "wecanfindintern_agent_session_v1";
+const SIDEBAR_STORAGE_KEY = "wecanfindintern_agent_sidebar_collapsed_v1";
 
 function persistSession() {
   try {
@@ -31,18 +47,28 @@ function restoreSession() {
 }
 
 function updateContextChip() {
-  const ctx = state.activeJobContext;
-  const chip = $("#agent-context-job");
-  const empty = $("#agent-context-empty");
-  if (!chip || !empty) return;
-  if (ctx) {
-    chip.hidden = false;
-    empty.hidden = true;
-    chip.textContent = `📌 ${ctx.title} @ ${ctx.company || "Company"}`;
-  } else {
-    chip.hidden = true;
-    empty.hidden = false;
-  }
+  const preview = $("#agent-attachment-preview");
+  const title = $("#agent-attached-job-title");
+  if (!preview || !title) return;
+  preview.hidden = !attachedJobContext;
+  title.textContent = attachedJobContext
+    ? `${attachedJobContext.title} @ ${attachedJobContext.company || "Company"}`
+    : "";
+}
+
+function clearAttachedJob() {
+  attachedJobContext = null;
+  updateContextChip();
+}
+
+function attachActiveJobContext() {
+  if (!state.activeJobContext) return false;
+  attachedJobContext = {
+    ...state.activeJobContext,
+    source: state.activeJobContext.source || "public",
+  };
+  updateContextChip();
+  return true;
 }
 
 function appendMessage(role, html) {
@@ -53,6 +79,7 @@ function appendMessage(role, html) {
   el.innerHTML = `<div class="agent-bubble">${html}</div>`;
   chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;
+  return el;
 }
 
 function clearChat() {
@@ -62,7 +89,7 @@ function clearChat() {
 
 function sessionLabel(session) {
   const title = session.title || "Untitled";
-  return escapeHtml(title.length > 32 ? `${title.slice(0, 32)}…` : title);
+  return title.length > 34 ? `${title.slice(0, 34)}…` : title;
 }
 
 async function renderSessionList() {
@@ -79,7 +106,7 @@ async function renderSessionList() {
   list.innerHTML = sessionList
     .map((session) => {
       const active = session.id === currentSessionId ? " active" : "";
-      return `<button type="button" class="agent-session-chip${active}" data-session-id="${escapeHtml(session.id)}">${sessionLabel(session)}</button>`;
+      return `<button type="button" class="agent-session-chip${active}" data-session-id="${escapeHtml(session.id)}" title="${escapeHtml(session.title || "Untitled conversation")}">${escapeHtml(sessionLabel(session))}</button>`;
     })
     .join("");
   list.querySelectorAll("[data-session-id]").forEach((button) => {
@@ -90,29 +117,48 @@ async function renderSessionList() {
 }
 
 async function switchSession(sessionId) {
+  clearAttachedJob();
   currentSessionId = sessionId;
   persistSession();
   clearChat();
   await renderSessionList();
   loadMemoryStatus();
   try {
-    const res = await fetch(`/api/v1/agent/sessions/${sessionId}/messages`);
-    if (!res.ok) throw new Error("Could not load conversation");
-    const messages = await res.json();
+    const [messagesRes, toolsRes, approvalsRes] = await Promise.all([
+      fetch(`/api/v1/agent/sessions/${sessionId}/messages`),
+      fetch(`/api/v1/agent/sessions/${sessionId}/tool-calls`),
+      fetch(`/api/v1/agent/sessions/${sessionId}/approvals`),
+    ]);
+    if (!messagesRes.ok) throw new Error("Could not load conversation");
+    const messages = await messagesRes.json();
+    const toolCalls = toolsRes.ok ? await toolsRes.json() : [];
+    const approvals = approvalsRes.ok ? await approvalsRes.json() : [];
+    const callsByMessage = new Map();
+    toolCalls.forEach((call) => {
+      if (!call.message_id) return;
+      const calls = callsByMessage.get(call.message_id) || [];
+      calls.push(call);
+      callsByMessage.set(call.message_id, calls);
+    });
     messages.forEach((message) => {
-      appendMessage(
+      const messageEl = appendMessage(
         message.role === "user" ? "user" : "assistant",
         message.role === "user"
           ? escapeText(message.content)
           : renderMarkdown(message.content)
       );
+      if (message.role === "assistant") {
+        renderRecommendationCards(callsByMessage.get(message.id) || [], messageEl);
+      }
     });
+    approvals.forEach(renderApprovalCard);
   } catch (err) {
     appendMessage("assistant", `<p class="md-p agent-error">⚠ ${escapeText(err.message)}</p>`);
   }
 }
 
 async function createNewSession() {
+  clearAttachedJob();
   try {
     const res = await fetch("/api/v1/agent/sessions", { method: "POST" });
     if (!res.ok) throw new Error("Could not create a new conversation");
@@ -202,40 +248,77 @@ function renderApprovalCard(approval) {
   });
 }
 
-function renderRecommendationCards(toolCalls) {
-  const call = (toolCalls || []).find(
-    (item) => item.tool_name === "recommend_jobs" && item.status === "succeeded"
-  );
-  const recommendations = call?.result?.data?.recommendations;
-  if (!Array.isArray(recommendations) || !recommendations.length) return;
-  const safeUrl = (value) => {
-    try {
-      const url = new URL(value);
-      return ["http:", "https:"].includes(url.protocol) ? url.href : "";
-    } catch (_) {
-      return "";
+const AGENT_BOOKMARK_ICON_SAVED = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+const AGENT_BOOKMARK_ICON_OPEN = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+const AGENT_VIEW_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+
+function agentJobKey(job) {
+  return `${job.source || "public"}:${job.job_id}`;
+}
+
+function isAgentJobTracked(job) {
+  return job.source === "waterloo_work"
+    ? trackerState.waterlooWorksTracked.has(String(job.job_id))
+    : trackerState.trackedJobIds.has(String(job.job_id));
+}
+
+function renderRecommendationCards(toolCalls, afterElement = null) {
+  const jobs = [];
+  (toolCalls || []).forEach((call) => {
+    if (call.status !== "succeeded") return;
+    const data = call.result?.data;
+    if (call.tool_name === "recommend_jobs") {
+      jobs.push(...(data?.recommendations || []));
+    } else if (call.tool_name === "search_jobs") {
+      jobs.push(...(data?.waterloo_work || []), ...(data?.public || []));
+    } else if (call.tool_name === "get_job_details" && data?.job_id) {
+      jobs.push(data);
     }
-  };
+  });
+  const uniqueJobs = [...new Map(
+    jobs.filter((job) => job?.job_id).map((job) => [agentJobKey(job), job])
+  ).values()];
+  if (!uniqueJobs.length) return;
+
   const wrapper = document.createElement("div");
   wrapper.className = "agent-recommendation-grid";
-  wrapper.innerHTML = recommendations.map((job) => {
-    const url = safeUrl(job.application_url);
-    const matched = (job.matched_skills || []).slice(0, 5);
-    const reason = (job.reasons || [])[0] || "Limited matching evidence.";
-    return `<article class="agent-recommendation-card">
-      <div class="agent-recommendation-head">
-        <span class="agent-recommendation-score">${escapeHtml(job.match_score)}%</span>
-        <span class="tag">${escapeHtml(job.confidence || "unknown")}</span>
+  wrapper.innerHTML = uniqueJobs.map((job) => {
+    const key = agentJobKey(job);
+    renderedAgentJobs.set(key, job);
+    const sourceTag = job.source === "waterloo_work" ? "WaterlooWorks" : "Job Board";
+    const tracked = isAgentJobTracked(job);
+    const company = job.company || job.company_name || "Company not specified";
+    const location = job.location_text || job.location || "";
+    const meta = [company, location].filter(Boolean).join(" · ");
+    const deadline = job.application_deadline
+      ? `<span class="agent-job-deadline">Due ${escapeHtml(job.application_deadline)}</span>`
+      : "";
+    const score = job.match_score != null
+      ? `<span class="agent-job-score">${escapeHtml(job.match_score)}% match</span>`
+      : "";
+    const skills = (job.matched_skills || []).slice(0, 4);
+    const skillTags = skills.length
+      ? `<div class="agent-job-skills">${skills.map((skill) => `<span class="tag">${escapeHtml(skill)}</span>`).join("")}</div>`
+      : "";
+    return `<article class="agent-recommendation-card" data-agent-job-key="${escapeHtml(key)}">
+      <div class="agent-job-card-head">
+        <div class="agent-job-card-tags">
+          <span class="tag">${escapeHtml(sourceTag)}</span>
+          ${score}
+        </div>
+        <div class="agent-job-card-tools">
+          <button type="button" class="job-bookmark-btn${tracked ? " saved" : ""}" data-agent-save-job="${escapeHtml(key)}" title="${tracked ? "Tracked in Pipeline" : "Bookmark / Track Job"}">${tracked ? AGENT_BOOKMARK_ICON_SAVED : AGENT_BOOKMARK_ICON_OPEN}</button>
+          <button type="button" class="job-view-btn" data-agent-view-job="${escapeHtml(key)}" title="View job details">${AGENT_VIEW_ICON}</button>
+        </div>
       </div>
-      <h4>${escapeHtml(job.title || "Untitled")}</h4>
-      <p class="agent-recommendation-company">${escapeHtml(job.company || "Unknown company")}</p>
-      <p>${escapeHtml(job.location || "Location not specified")} · ${escapeHtml(job.work_mode || "unknown")}</p>
-      <p class="agent-recommendation-reason">${escapeHtml(reason)}</p>
-      <div class="agent-recommendation-skills">${matched.map((skill) => `<span class="tag">${escapeHtml(skill)}</span>`).join("")}</div>
-      ${url ? `<a class="primary-button compact-button" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">View job</a>` : ""}
+      <h4>${escapeHtml(job.title || "Untitled role")}</h4>
+      <p class="agent-job-card-meta">${escapeHtml(meta)}</p>
+      ${deadline}
+      ${skillTags}
     </article>`;
   }).join("");
-  $("#agent-chat").appendChild(wrapper);
+  if (afterElement) afterElement.insertAdjacentElement("afterend", wrapper);
+  else $("#agent-chat").appendChild(wrapper);
   $("#agent-chat").scrollTop = $("#agent-chat").scrollHeight;
 }
 
@@ -272,9 +355,17 @@ async function ensureSession() {
 }
 
 function buildContext() {
-  const ctx = state.activeJobContext;
+  const ctx = attachedJobContext;
   if (!ctx) return null;
-  return { job: { id: ctx.id, title: ctx.title, company: ctx.company, jd: ctx.jd } };
+  return {
+    job: {
+      id: ctx.id,
+      source: ctx.source || "public",
+      title: ctx.title,
+      company: ctx.company,
+      jd: ctx.jd,
+    },
+  };
 }
 
 async function sendAgentMessage(text) {
@@ -321,12 +412,12 @@ async function sendAgentMessage(text) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Agent request failed");
     thinking.remove();
-    appendMessage("assistant", renderMarkdown(data.message.content));
-    renderRecommendationCards(data.tool_calls);
+    const messageEl = appendMessage("assistant", renderMarkdown(data.message.content));
+    renderRecommendationCards(data.tool_calls, messageEl);
     if (data.pending_approval) {
       renderApprovalCard(data.pending_approval);
     }
-    updateContextChip();
+    clearAttachedJob();
     renderSessionList();
     loadMemoryStatus();
   } catch (err) {
@@ -335,62 +426,25 @@ async function sendAgentMessage(text) {
   }
 }
 
-async function loadPreferences() {
-  try {
-    const res = await fetch("/api/v1/agent/preferences");
-    if (!res.ok) return;
-    const prefs = await res.json();
-    const set = (id, key) => {
-      const el = $(id);
-      if (el && prefs[key] != null) el.value = prefs[key];
-    };
-    set("#agent-pref-ltm", "LONG_TERM_MEMORY");
-    set("#agent-pref-locations", "TARGET_LOCATIONS");
-    set("#agent-pref-roles", "TARGET_ROLES");
-    set("#agent-pref-work-mode", "WORK_MODE");
-    set("#agent-pref-salary", "SALARY_RANGE");
-    set("#agent-pref-language", "ANSWER_LANGUAGE");
-  } catch (_) { }
-}
-
-async function savePreferences() {
-  const updates = {
-    LONG_TERM_MEMORY: $("#agent-pref-ltm")?.value,
-    TARGET_LOCATIONS: $("#agent-pref-locations")?.value.trim(),
-    TARGET_ROLES: $("#agent-pref-roles")?.value.trim(),
-    WORK_MODE: $("#agent-pref-work-mode")?.value,
-    SALARY_RANGE: $("#agent-pref-salary")?.value.trim(),
-    ANSWER_LANGUAGE: $("#agent-pref-language")?.value.trim(),
+function memoryTypeLabel(memoryType) {
+  const labels = {
+    USER_PREFERENCE: "Job preference",
+    SKILL_PROFILE: "Skills",
+    EDUCATION_PROFILE: "Education",
+    CAREER_CONTEXT: "Career context",
+    WORKFLOW_PREFERENCE: "Workflow",
   };
-  for (const [key, value] of Object.entries(updates)) {
-    if (!value) {
-      await fetch(`/api/v1/agent/preferences/${key}`, { method: "DELETE" });
-      continue;
-    }
-    const res = await fetch(`/api/v1/agent/preferences/${key}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      alert(data.detail || `Could not save ${key}`);
-      return;
-    }
-  }
-  const feedback = $("#agent-pref-feedback");
-  if (feedback) {
-    feedback.hidden = false;
-    setTimeout(() => { feedback.hidden = true; }, 2500);
-  }
+  return labels[memoryType] || String(memoryType || "Remembered detail").replaceAll("_", " ");
 }
 
 async function loadMemoryStatus() {
   const status = $("#agent-memory-status");
   const memoryList = $("#agent-memory-list");
+  const memoryCount = $("#agent-memory-count");
   if (!status) return;
   if (!currentSessionId) {
-    status.textContent = "No conversation yet.";
+    status.textContent = "Nothing saved yet.";
+    if (memoryCount) memoryCount.textContent = "0";
     if (memoryList) memoryList.innerHTML = "";
     return;
   }
@@ -398,27 +452,22 @@ async function loadMemoryStatus() {
     const res = await fetch(`/api/v1/agent/sessions/${currentSessionId}/memory`);
     if (!res.ok) return;
     const data = await res.json();
-    const summary = data.summary || {};
-    const ltm = data.long_term_memory || {};
-    status.textContent =
-      `Summary v${summary.version || 0} (${summary.unsummarized_tokens ?? 0} unsummarized tokens) · ` +
-      `${ltm.active_count ?? 0} memories · long-term memory ${ltm.enabled ? "on" : "off"}`;
+    const memories = data.memories || [];
+    if (memoryCount) memoryCount.textContent = String(memories.length);
+    status.textContent = memories.length
+      ? `${memories.length} saved ${memories.length === 1 ? "detail" : "details"}`
+      : "Nothing saved yet.";
     if (memoryList) {
-      const memories = data.memories || [];
       memoryList.innerHTML = memories.length
         ? memories.map((memory) => `
             <div class="agent-memory-item">
               <div class="agent-memory-item-head">
-                <span class="agent-memory-type">${escapeHtml(memory.memory_type)}</span>
-                <span class="agent-memory-conf">conf ${Math.round((memory.confidence || 0) * 100)}%</span>
+                <span class="agent-memory-type">${escapeHtml(memoryTypeLabel(memory.memory_type))}</span>
+                <button type="button" class="agent-memory-delete" data-memory-id="${escapeHtml(memory.id)}" title="Forget this detail" aria-label="Forget this detail">×</button>
               </div>
               <div class="agent-memory-text">${escapeHtml(memory.content)}</div>
-              <div class="agent-memory-item-head" style="margin-top:4px;margin-bottom:0;">
-                <span></span>
-                <button type="button" class="agent-memory-delete" data-memory-id="${escapeHtml(memory.id)}" title="Delete this memory">✕ delete</button>
-              </div>
             </div>`).join("")
-        : '<div class="agent-memory-status">No long-term memories yet.</div>';
+        : "";
       memoryList.querySelectorAll("[data-memory-id]").forEach((button) => {
         button.addEventListener("click", () => deleteMemory(button.dataset.memoryId));
       });
@@ -436,23 +485,294 @@ async function deleteMemory(memoryId) {
   }
 }
 
+function viewAgentJob(key) {
+  const job = renderedAgentJobs.get(key);
+  if (!job) return;
+  if (job.source === "waterloo_work") {
+    openWaterlooWorksJob(String(job.job_id), (job.boards || []).join(","));
+  } else {
+    openJob(String(job.job_id));
+  }
+}
+
+function updateAgentSaveButtons(key, job) {
+  const tracked = isAgentJobTracked(job);
+  document.querySelectorAll("[data-agent-save-job]").forEach((button) => {
+    if (button.dataset.agentSaveJob === key) {
+      button.classList.toggle("saved", tracked);
+      button.innerHTML = tracked ? AGENT_BOOKMARK_ICON_SAVED : AGENT_BOOKMARK_ICON_OPEN;
+      button.title = tracked ? "Tracked in Pipeline" : "Bookmark / Track Job";
+    }
+  });
+}
+
+async function saveAgentJob(key, button) {
+  const job = renderedAgentJobs.get(key);
+  if (!job) return;
+  button.disabled = true;
+  try {
+    if (job.source === "waterloo_work") {
+      await toggleWaterlooWorksBookmark(String(job.job_id));
+    } else {
+      await toggleBookmarkJob(String(job.job_id));
+    }
+    updateAgentSaveButtons(key, job);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function closeAttachDialog() {
+  const dialog = $("#agent-attach-dialog");
+  if (dialog?.open) dialog.close();
+  syncDialogScrollLock();
+}
+
+function renderCurrentJobOption() {
+  const option = $("#agent-current-job-option");
+  if (!option) return;
+  const job = state.activeJobContext;
+  option.hidden = !job;
+  option.innerHTML = job
+    ? `<p>Currently viewed job</p>
+       <div class="agent-attach-result">
+         <div class="agent-attach-result-copy">
+           <strong>${escapeHtml(job.title || "Untitled role")}</strong>
+           <span>${escapeHtml(job.company || "Company not specified")}</span>
+         </div>
+         <button type="button" class="primary-button compact-button" data-attach-current-job>Attach</button>
+       </div>`
+    : "";
+}
+
+function renderAttachSearchResults(jobs, message = "") {
+  const results = $("#agent-attach-results");
+  if (!results) return;
+  if (!jobs.length) {
+    results.innerHTML = `<p class="muted-copy">${escapeHtml(message || "No matching jobs found.")}</p>`;
+    return;
+  }
+  results.innerHTML = jobs.map((job) => {
+    const key = agentJobKey(job);
+    attachSearchJobs.set(key, job);
+    const source = job.source === "waterloo_work" ? "WaterlooWorks" : "Job Board";
+    const meta = [job.company, job.location].filter(Boolean).join(" · ");
+    return `<div class="agent-attach-result">
+      <div class="agent-attach-result-copy">
+        <strong>${escapeHtml(job.title || "Untitled role")}</strong>
+        <span><span class="tag">${escapeHtml(source)}</span>${escapeHtml(meta || "Company not specified")}</span>
+      </div>
+      <button type="button" class="secondary-button compact-button" data-attach-job-key="${escapeHtml(key)}">Attach</button>
+    </div>`;
+  }).join("");
+}
+
+async function fetchAttachJobList(url, source) {
+  const response = await fetch(url);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || `Could not search ${source}.`);
+  if (source === "waterloo_work") {
+    return (data.items || []).map((job) => ({
+      source,
+      job_id: String(job.source_job_id),
+      title: job.title,
+      company: job.organization,
+      location: job.location_text,
+      boards: job.boards || [],
+    }));
+  }
+  return (data.items || []).map((job) => ({
+    source,
+    job_id: String(job.id),
+    title: job.title,
+    company: job.company_name,
+    location: job.location?.display_name,
+  }));
+}
+
+async function searchAttachJobs() {
+  const query = $("#agent-attach-query")?.value.trim() || "";
+  const button = $("#agent-attach-search-button");
+  attachSearchJobs.clear();
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Searching…";
+  }
+  renderAttachSearchResults([], "Searching Job Board and WaterlooWorks…");
+  const publicParams = new URLSearchParams({ limit: "8" });
+  const waterlooParams = new URLSearchParams({ limit: "8" });
+  if (query) {
+    publicParams.set("query", query);
+    waterlooParams.set("query", query);
+  }
+  try {
+    const searches = await Promise.allSettled([
+      fetchAttachJobList(`/api/v1/jobs?${publicParams}`, "public"),
+      fetchAttachJobList(`/api/v1/waterlooworks/jobs?${waterlooParams}`, "waterloo_work"),
+    ]);
+    const jobs = searches.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    const failedCount = searches.filter((result) => result.status === "rejected").length;
+    const emptyMessage = failedCount === searches.length
+      ? "Job search is temporarily unavailable. Please try again."
+      : "No matching jobs found.";
+    renderAttachSearchResults(jobs, emptyMessage);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Search";
+    }
+  }
+}
+
+function publicJobContext(job) {
+  return {
+    id: String(job.id),
+    source: "public",
+    title: job.title,
+    company: job.company_name,
+    jd: `${job.title || "Role"} at ${job.company_name || "Company"}\n\nLocation: ${job.location?.display_name || "Unspecified"}\nWork Mode: ${workModeLabel(job.work_mode)}\nRecruiting Term: ${job.recruiting_term?.display_name || "Unspecified"}\n\nDescription:\n${job.description || ""}`,
+  };
+}
+
+function waterlooWorksJobContext(job) {
+  return {
+    id: String(job.source_job_id),
+    source: "waterloo_work",
+    title: job.title,
+    company: job.organization,
+    jd: `${job.title || "Role"} at ${job.organization || "Company"}\n\nJob ID: ${job.source_job_id}\nLocation: ${job.location_text || "Unspecified"}\nWork Mode: ${workModeLabel(job.work_mode)}\nApplication Deadline: ${job.application_deadline || "Unspecified"}\n\nDescription:\n${job.description || ""}`,
+  };
+}
+
+async function attachSelectedJob(key, button) {
+  const summary = attachSearchJobs.get(key);
+  if (!summary) return;
+  button.disabled = true;
+  button.textContent = "Adding…";
+  try {
+    const endpoint = summary.source === "waterloo_work"
+      ? `/api/v1/waterlooworks/jobs/${encodeURIComponent(summary.job_id)}`
+      : `/api/v1/jobs/${encodeURIComponent(summary.job_id)}`;
+    const response = await fetch(endpoint);
+    const job = await response.json();
+    if (!response.ok) throw new Error(job.detail || "Could not attach this job.");
+    attachedJobContext = summary.source === "waterloo_work"
+      ? waterlooWorksJobContext(job)
+      : publicJobContext(job);
+    updateContextChip();
+    closeAttachDialog();
+    $("#agent-input")?.focus();
+  } catch (error) {
+    alert(error.message);
+    button.disabled = false;
+    button.textContent = "Attach";
+  }
+}
+
+function openAttachDialog() {
+  const dialog = $("#agent-attach-dialog");
+  if (!dialog) return;
+  renderCurrentJobOption();
+  $("#agent-attach-query").value = "";
+  renderAttachSearchResults([], "Loading recent jobs…");
+  dialog.showModal();
+  syncDialogScrollLock();
+  searchAttachJobs();
+  $("#agent-attach-query")?.focus();
+}
+
+function resizeAgentInput() {
+  const input = $("#agent-input");
+  if (!input) return;
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 150)}px`;
+}
+
+function setSidebarCollapsed(collapsed, { persist = true } = {}) {
+  const layout = $("#agent-layout");
+  const toggle = $("#agent-sidebar-toggle");
+  if (!layout || !toggle) return;
+  layout.classList.toggle("sidebar-collapsed", collapsed);
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  toggle.setAttribute("aria-label", collapsed ? "Expand conversation sidebar" : "Collapse conversation sidebar");
+  toggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  if (persist) {
+    try { localStorage.setItem(SIDEBAR_STORAGE_KEY, String(collapsed)); } catch (_) { }
+  }
+}
+
 $("#agent-form")?.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = $("#agent-input").value.trim();
   if (!text) return;
   sendAgentMessage(text);
+  resizeAgentInput();
 });
 
 $("#agent-new-session")?.addEventListener("click", createNewSession);
-$("#agent-pref-save")?.addEventListener("click", savePreferences);
+$("#agent-attach-job")?.addEventListener("click", openAttachDialog);
+$("#agent-remove-attachment")?.addEventListener("click", clearAttachedJob);
+$("#close-agent-attach-dialog")?.addEventListener("click", closeAttachDialog);
+$("#cancel-agent-attach-dialog")?.addEventListener("click", closeAttachDialog);
+$("#agent-attach-dialog")?.addEventListener("click", (event) => {
+  if (event.target === $("#agent-attach-dialog")) closeAttachDialog();
+});
+$("#agent-attach-search-button")?.addEventListener("click", searchAttachJobs);
+$("#agent-attach-query")?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    searchAttachJobs();
+  }
+});
+$("#agent-current-job-option")?.addEventListener("click", (event) => {
+  if (!event.target.closest("[data-attach-current-job]")) return;
+  if (attachActiveJobContext()) {
+    closeAttachDialog();
+    $("#agent-input")?.focus();
+  }
+});
+$("#agent-attach-results")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-attach-job-key]");
+  if (button) attachSelectedJob(button.dataset.attachJobKey, button);
+});
+$("#agent-sidebar-toggle")?.addEventListener("click", () => {
+  setSidebarCollapsed(!$("#agent-layout")?.classList.contains("sidebar-collapsed"));
+});
+$("#agent-input")?.addEventListener("input", resizeAgentInput);
+$("#agent-input")?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    $("#agent-form")?.requestSubmit();
+  }
+});
+$("#agent-chat")?.addEventListener("click", (event) => {
+  const suggestion = event.target.closest("[data-agent-prompt]");
+  const viewButton = event.target.closest("[data-agent-view-job]");
+  const saveButton = event.target.closest("[data-agent-save-job]");
+  if (suggestion) {
+    $("#agent-input").value = suggestion.dataset.agentPrompt;
+    resizeAgentInput();
+    $("#agent-input").focus();
+  } else if (viewButton) {
+    viewAgentJob(viewButton.dataset.agentViewJob);
+  } else if (saveButton) {
+    saveAgentJob(saveButton.dataset.agentSaveJob, saveButton);
+  }
+});
 
 restoreSession();
+try {
+  const savedCollapsed = localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
+  setSidebarCollapsed(
+    savedCollapsed || window.matchMedia("(max-width: 640px)").matches,
+    { persist: false },
+  );
+} catch (_) { }
 renderSessionList();
-loadPreferences();
 if (currentSessionId) {
   switchSession(currentSessionId);
 } else {
   loadMemoryStatus();
 }
 
-export { updateContextChip, renderSessionList };
+export { attachActiveJobContext, updateContextChip, renderSessionList };

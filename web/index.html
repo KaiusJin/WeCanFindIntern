@@ -5,12 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260828-fix-v26" />
+    <link rel="stylesheet" href="/styles.css?v=20260829-header-v3" />
   </head>
   <body>
     <header class="topbar">
       <div class="topbar-row">
         <a class="brand" href="/">WeCanFindIntern<span>_</span></a>
+        <nav class="topbar-nav" aria-label="Main Navigation">
+          <button class="nav-tab active" data-tab="tab-jobs" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <span>Jobs</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-heatmap" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            <span>Heatmap</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-waterlooworks" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 2v4M16 2v4M3 9h18"></path><path d="m9 14 2 2 4-4"></path></svg>
+            <span>WaterlooWorks</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-ats" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
+            <span>ATS Review</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-cover-letter" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            <span>Cover Letter</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-interview" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+            <span>Interview Coach</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-tracker" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14l2 2 4-4"></path></svg>
+            <span>Tracker</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-agent" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect x="2" y="2" width="20" height="12" rx="2"></rect><path d="M6 2v4M18 2v4"></path><path d="M2 8h20"></path><path d="M8 14v.01M16 14v.01"></path><rect x="8" y="16" width="8" height="4" rx="1"></rect></svg>
+            <span>AI Agent</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-profile" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            <span>Profile</span>
+          </button>
+        </nav>
         <div class="topbar-actions">
           <button id="open-settings" class="settings-trigger-btn" type="button" aria-label="AI Settings">
             <svg class="gear-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -18,47 +56,12 @@
           </button>
         </div>
       </div>
-      <nav class="topbar-nav" aria-label="Main Navigation">
-        <button class="nav-tab active" data-tab="tab-jobs" type="button">
-          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          <span>Jobs</span>
-        </button>
-        <button class="nav-tab" data-tab="tab-waterlooworks" type="button">
-          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 2v4M16 2v4M3 9h18"></path><path d="m9 14 2 2 4-4"></path></svg>
-          <span>WaterlooWorks</span>
-        </button>
-        <button class="nav-tab" data-tab="tab-ats" type="button">
-          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
-          <span>ATS Review</span>
-        </button>
-        <button class="nav-tab" data-tab="tab-interview" type="button">
-          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-          <span>Interview Coach</span>
-        </button>
-        <button class="nav-tab" data-tab="tab-cover-letter" type="button">
-          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-          <span>Cover Letter</span>
-        </button>
-        <button class="nav-tab" data-tab="tab-profile" type="button">
-          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="7" r="4"></circle></svg>
-          <span>Profile</span>
-        </button>
-        <button class="nav-tab" data-tab="tab-tracker" type="button">
-          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14l2 2 4-4"></path></svg>
-          <span>Tracker</span>
-        </button>
-        <button class="nav-tab" data-tab="tab-agent" type="button">
-          <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect x="2" y="2" width="20" height="12" rx="2"></rect><path d="M6 2v4M18 2v4"></path><path d="M2 8h20"></path><path d="M8 14v.01M16 14v.01"></path><rect x="8" y="16" width="8" height="4" rx="1"></rect></svg>
-          <span>AI Agent</span>
-        </button>
-      </nav>
     </header>
 
     <main>
       <!-- TAB 1: JOBS SEARCH -->
       <div id="tab-jobs" class="tab-pane active">
         <section class="hero">
-          <p class="eyebrow">JOB DISCOVERY / 01</p>
           <h1>Find work worth starting.</h1>
           <p class="hero-copy">Search jobs, skills, and locations to find your next move.</p>
           <form id="search-form" class="searchbar">
@@ -193,9 +196,54 @@
       </div>
 
       <!-- WATERLOOWORKS LOCAL IMPORT -->
+      <div id="tab-heatmap" class="tab-pane" hidden>
+        <section class="hero">
+          <h1>Where the jobs are.</h1>
+          <p class="hero-copy">Active postings across U.S. states and Canadian provinces, colored by volume. Hover any tile for the exact count; the side panel ranks the hottest regions.</p>
+        </section>
+        <section class="heatmap-workspace">
+          <div class="heatmap-map-card">
+            <div class="heatmap-block">
+              <div class="heatmap-block-head">
+                <h2>United States</h2>
+                <span class="heatmap-block-total" id="heatmap-us-total"></span>
+              </div>
+              <div id="heatmap-us" class="heatmap-map"></div>
+            </div>
+            <div class="heatmap-block">
+              <div class="heatmap-block-head">
+                <h2>Canada</h2>
+                <span class="heatmap-block-total" id="heatmap-ca-total"></span>
+              </div>
+              <div id="heatmap-ca" class="heatmap-map"></div>
+            </div>
+            <div id="heatmap-tooltip" class="heatmap-tooltip" hidden></div>
+          </div>
+          <aside class="heatmap-side">
+            <div class="heatmap-card">
+              <h3>Color scale</h3>
+              <div class="heatmap-legend-bar"></div>
+              <div class="heatmap-legend-labels">
+                <span id="heatmap-legend-min">0</span>
+                <span>square-root scale</span>
+                <span id="heatmap-legend-max"></span>
+              </div>
+              <p class="heatmap-legend-note" id="heatmap-legend-note"></p>
+            </div>
+            <div class="heatmap-card">
+              <h3>Hottest regions</h3>
+              <div id="heatmap-top-list" class="heatmap-top-list"></div>
+            </div>
+            <div class="heatmap-card">
+              <h3>Coverage</h3>
+              <div id="heatmap-country-summary"></div>
+            </div>
+          </aside>
+        </section>
+      </div>
+
       <div id="tab-waterlooworks" class="tab-pane" hidden>
         <section class="hero ww-hero">
-          <p class="eyebrow">WATERLOOWORKS IMPORT</p>
           <h1>Bring your WaterlooWorks jobs home.</h1>
           <p class="hero-copy">Sign in yourself through a dedicated Chrome profile. WeCanFindIntern reads the five job boards locally and stores them in a separate WaterlooWorks library. Job IDs are used for deduplication.</p>
         </section>
@@ -205,11 +253,10 @@
             <div class="ww-card-heading">
               <div>
                 <p class="eyebrow">LOCAL CONNECTION</p>
-                <h2>WaterlooWorks session</h2>
               </div>
-              <span id="ww-status-pill" class="ww-status-pill idle"><i></i><span>Not connected</span></span>
+              <span id="ww-status-pill" class="ww-status-pill idle" hidden><i></i><span>Not connected</span></span>
             </div>
-            <div class="ww-status-body">
+            <div class="ww-status-body" hidden>
               <div id="ww-status-icon" class="ww-status-icon">W</div>
               <div>
                 <strong id="ww-status-title">Ready to connect</strong>
@@ -272,7 +319,6 @@
       <!-- TAB 2: ATS RESUME REVIEW -->
       <div id="tab-ats" class="tab-pane" hidden>
         <section class="hero">
-          <p class="eyebrow">ATS RESUME REVIEW / 02</p>
           <h1>Optimize for the algorithm.</h1>
           <p class="hero-copy">Instant ATS match scoring, keyword gap detection, and actionable bullet improvements.</p>
         </section>
@@ -367,9 +413,8 @@
       <!-- TAB 3: INTERVIEW COACH -->
       <div id="tab-interview" class="tab-pane" hidden>
         <section class="hero">
-          <p class="eyebrow">MOCK INTERVIEW COACH / 03</p>
           <h1>Master your interview.</h1>
-          <p class="hero-copy">Dynamic question generation, voice interviewer, audio answer recording with local transcription, and STAR performance feedback — works with every AI provider.</p>
+          <p class="hero-copy">Dynamic question generation, voice interviewer, audio answer recording with local transcription, and STAR performance feedback.</p>
         </section>
 
         <section class="career-workspace">
@@ -379,30 +424,64 @@
               <button id="clear-interview" class="text-button" type="button">Reset</button>
             </div>
 
+            <!-- Candidate Source Switcher -->
+            <div class="field-group">
+              <span class="field-label">Candidate Source</span>
+              <div class="cl-source-options" role="radiogroup" aria-label="Candidate source">
+                <label><input type="radio" name="int-resume-source" value="profile" checked /> Use Profile</label>
+                <label><input type="radio" name="int-resume-source" value="pdf" /> Upload Resume</label>
+              </div>
+              <div id="int-profile-source" class="cl-source-panel" hidden></div>
+              <div id="int-pdf-source" class="cl-source-panel" hidden>
+                <div class="file-dropzone" id="int-dropzone">
+                  <input id="int-resume-pdf" class="file-input" type="file" accept="application/pdf,.pdf" />
+                  <div class="dropzone-content">
+                    <span class="dropzone-icon">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                    </span>
+                    <span class="dropzone-text" id="int-file-label">Click or drag & drop resume PDF</span>
+                  </div>
+                </div>
+              </div>
+              <label class="field-label cl-resume-preview-label" for="int-resume-text" hidden>Candidate Context Preview</label>
+              <textarea id="int-resume-text" class="career-textarea" rows="4" hidden></textarea>
+            </div>
+
             <div class="field-group">
               <label class="field-label" for="interview-jd-text">Target Job Description</label>
               <textarea id="interview-jd-text" class="career-textarea" rows="6" placeholder="Paste job description or click 'Practice Interview' on any job card..."></textarea>
             </div>
 
             <button id="btn-generate-questions" class="primary-button career-btn" type="button">
-              <span>Generate 3-Question Loop ↗</span>
+              <span>Generate 7-Question Interview ↗</span>
             </button>
           </div>
 
           <div class="career-results-panel">
-            <div class="results-toolbar">
-              <div>
-                <p class="eyebrow">PRACTICE STAGE</p>
-                <h2 id="interview-stage-title">Mock Interview Arena</h2>
-              </div>
-            </div>
 
-            <div id="interview-empty" class="empty-state">
+            <div id="interview-empty" class="empty-state interview-empty-state">
               <div class="empty-icon">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
               </div>
-              <h3>Prepare for interview practice</h3>
-              <p>Generate a 3-question loop tailored to your target job to begin round-by-round spoken practice.</p>
+              <h3>Prepare for technical interview practice</h3>
+              <p>Seven spoken questions grounded in your resume and the target job — the flow mirrors a real technical interview.</p>
+              <div class="interview-empty-steps">
+                <div class="interview-step-card">
+                  <span class="interview-step-num">Q1</span>
+                  <strong>Self introduction</strong>
+                  <p>Tell your story, framed by what matters for this role.</p>
+                </div>
+                <div class="interview-step-card">
+                  <span class="interview-step-num">Q2–4</span>
+                  <strong>Work experience</strong>
+                  <p>Deep-dive on your most relevant role, with technical follow-up probes.</p>
+                </div>
+                <div class="interview-step-card">
+                  <span class="interview-step-num">Q5–7</span>
+                  <strong>Projects</strong>
+                  <p>Project deep-dive with design, trade-off, and scale follow-ups.</p>
+                </div>
+              </div>
             </div>
 
             <div id="interview-loading" class="loading-state" hidden>
@@ -412,53 +491,29 @@
 
             <!-- Active Question & Recording Card -->
             <div id="interview-active-card" class="career-card" hidden>
-              <div class="interview-stepper">
-                <button class="step-badge active" data-q="0" type="button">1. Icebreaker</button>
-                <button class="step-badge" data-q="1" type="button">2. Behavioral</button>
-                <button class="step-badge" data-q="2" type="button">3. Situational</button>
-              </div>
+              <div class="interview-stepper" id="interview-stepper"></div>
 
               <div class="question-prompt-box">
                 <div class="question-badge" id="interview-q-category">Question 1</div>
                 <h3 id="interview-q-text">Interview question will appear here...</h3>
-                <div class="audio-player-row">
-                  <button id="btn-play-tts" class="secondary-button" type="button">
-                    <span>Read Question Aloud</span>
-                  </button>
-                  <audio id="interview-audio-player" hidden></audio>
-                </div>
               </div>
 
-              <!-- Answer Input: Mic / Text -->
-              <div class="answer-recording-container">
-                <div class="recording-view-header">
-                  <h4>Your Response</h4>
-                  <div class="recording-timer" id="recording-timer" hidden>
-                    <span class="rec-dot"></span>
-                    <span id="recording-time-text">00:00</span>
+              <div class="answer-block">
+                <div class="answer-block-head">
+                  <span class="field-label">Your response</span>
+                  <div class="recording-inline">
+                    <span class="recording-timer" id="recording-timer" hidden>
+                      <span class="rec-dot"></span><span id="recording-time-text">00:00</span>
+                    </span>
+                    <span id="recording-inline-status" class="recording-inline-status" hidden></span>
                   </div>
                 </div>
-
-                <div class="audio-recording-status" id="audio-recording-status">
-                  <div class="audio-status-icon" id="audio-status-icon">🎤</div>
-                  <div class="audio-status-text" id="audio-status-text">
-                    Microphone ready. Click 'Start Audio Recording' and speak your answer.
-                  </div>
+                <textarea id="interview-answer-text" class="career-textarea" rows="5" placeholder="Speak your answer, or type it here…"></textarea>
+                <div class="answer-actions">
+                  <button id="btn-start-record" class="secondary-button" type="button">🎙 Start recording</button>
+                  <button id="btn-stop-record" class="secondary-button recording-active" type="button" hidden>⏹ Stop recording</button>
+                  <button id="btn-analyze-answer" class="primary-button" type="button">Analyze answer ↗</button>
                 </div>
-
-                <div class="recorder-controls">
-                  <button id="btn-start-record" class="primary-button" type="button">Start Audio Recording</button>
-                  <button id="btn-stop-record" class="secondary-button" type="button" hidden>Stop Recording</button>
-                </div>
-
-                <div class="field-group" style="margin-top: 16px;">
-                  <label class="field-label" for="interview-answer-text">Or Type / Edit Your Answer Transcript</label>
-                  <textarea id="interview-answer-text" class="career-textarea" rows="4" placeholder="Speak your answer, or type your answer here if no microphone is available..."></textarea>
-                </div>
-
-                <button id="btn-analyze-answer" class="primary-button career-btn" type="button">
-                  <span>Analyze Answer Performance ↗</span>
-                </button>
               </div>
             </div>
 
@@ -478,6 +533,11 @@
               <div id="star-feedback-block" class="report-block" hidden>
                 <h4>STAR Method Evaluation</h4>
                 <p id="star-feedback-text" class="detail-description"></p>
+              </div>
+
+              <div id="criteria-results-block" class="report-block" hidden>
+                <h4>Criteria Check</h4>
+                <div id="interview-criteria-wrap" class="criteria-list"></div>
               </div>
 
               <div id="transcript-block" class="report-block" hidden>
@@ -502,9 +562,9 @@
 
             <!-- Practice History & Progress -->
             <div id="interview-history-card" class="career-card" style="margin-top: 16px;">
-              <div class="filter-heading">
-                <h2>Practice History & Progress</h2>
-                <button id="btn-refresh-history" class="text-button" type="button">Refresh</button>
+              <div class="history-head">
+                <h2>Practice history</h2>
+                <button id="btn-refresh-history" class="history-refresh" type="button">↻ Refresh</button>
               </div>
               <div id="interview-trend-summary" class="interview-trend-summary"></div>
               <div id="interview-session-list" class="interview-session-list"></div>
@@ -517,7 +577,6 @@
       <!-- TAB 4: COVER LETTER GENERATOR -->
       <div id="tab-cover-letter" class="tab-pane" hidden>
         <section class="hero">
-          <p class="eyebrow">COVER LETTER GENERATOR / 04</p>
           <h1>Stand out from the crowd.</h1>
           <p class="hero-copy">Hyper-personalized cover letters that weave your actual achievements into company requirements.</p>
         </section>
@@ -536,12 +595,7 @@
                 <label><input type="radio" name="cl-resume-source" value="profile" checked /> Use Profile</label>
                 <label><input type="radio" name="cl-resume-source" value="pdf" /> Upload Resume</label>
               </div>
-              <div id="cl-profile-source" class="cl-source-panel">
-                <div class="cl-profile-badge">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                  <span id="cl-profile-source-status">Using saved Profile as candidate context</span>
-                </div>
-              </div>
+              <div id="cl-profile-source" class="cl-source-panel" hidden></div>
               <div id="cl-pdf-source" class="cl-source-panel" hidden>
                 <div class="file-dropzone" id="cl-dropzone">
                   <input id="cl-resume-pdf" class="file-input" type="file" accept="application/pdf,.pdf" />
@@ -562,8 +616,8 @@
                   <div><label class="subfield-label" for="cl-linkedin">LinkedIn / Portfolio</label><input type="text" id="cl-linkedin" class="career-input" placeholder="e.g. linkedin.com/in/alex" /></div>
                 </div>
               </div>
-              <label class="field-label cl-resume-preview-label" for="cl-resume-text">Candidate Context Preview</label>
-              <textarea id="cl-resume-text" class="career-textarea" rows="4" placeholder="Your Profile or extracted resume text will appear here…"></textarea>
+              <label class="field-label cl-resume-preview-label" for="cl-resume-text" hidden>Candidate Context Preview</label>
+              <textarea id="cl-resume-text" class="career-textarea" rows="4" hidden></textarea>
             </div>
 
             <!-- Target Job Description -->
@@ -627,7 +681,6 @@
       <!-- TAB 5: PROFILE -->
       <div id="tab-profile" class="tab-pane" hidden>
         <section class="hero profile-hero">
-          <p class="eyebrow">CANDIDATE PROFILE / 05</p>
           <h1>Turn your resume into reusable career data.</h1>
           <p class="hero-copy">Import an English text-based PDF or LaTeX source, review every field, and keep one profile for matching and applications.</p>
         </section>
@@ -667,8 +720,7 @@
       <div id="tab-tracker" class="tab-pane" hidden>
         <section class="hero tracker-hero">
           <div>
-            <p class="eyebrow">APPLICATION WORKSPACE / 05</p>
-            <h1>Your search, under control.</h1>
+              <h1>Your search, under control.</h1>
             <p class="hero-copy">Find what needs attention, move applications forward, and learn from every search.</p>
           </div>
           <div class="tracker-hero-actions">
@@ -724,76 +776,64 @@
       <!-- TAB 8: AI AGENT -->
       <div id="tab-agent" class="tab-pane" hidden>
         <section class="hero">
-          <p class="eyebrow">AI AGENT / 08</p>
           <h1>Your job-search copilot.</h1>
           <p class="hero-copy">Ask in plain language — organize jobs, manage your Tracker, fill your Profile, or get recommendations.</p>
         </section>
         <section class="agent-workspace">
-          <div class="agent-layout">
-            <aside class="agent-sidebar">
-              <button id="agent-new-session" class="primary-button agent-new-session-btn" type="button">+ New conversation</button>
-              <div class="agent-sidebar-section">
-                <div class="agent-sidebar-heading">Conversations</div>
-                <div id="agent-session-list" class="agent-session-list" aria-label="Conversations"></div>
+          <div id="agent-layout" class="agent-layout">
+            <aside id="agent-sidebar" class="agent-sidebar" aria-label="AI conversation history">
+              <div class="agent-sidebar-top">
+                <button id="agent-new-session" class="primary-button agent-new-session-btn" type="button">
+                  <span class="agent-new-session-icon" aria-hidden="true">＋</span>
+                  <span class="agent-sidebar-copy">New conversation</span>
+                </button>
+                <button id="agent-sidebar-toggle" class="agent-sidebar-toggle" type="button" aria-label="Collapse conversation sidebar" aria-expanded="true" title="Collapse sidebar">‹</button>
               </div>
-              <details id="agent-memory-panel" class="agent-memory-panel" open>
-                <summary>Long-term memory</summary>
-                <div id="agent-memory-list" class="agent-memory-list"></div>
-                <div id="agent-memory-status" class="agent-memory-status">No conversation yet.</div>
-              </details>
-              <details id="agent-preferences-panel" class="agent-memory-panel">
-                <summary>Preferences</summary>
-                <div class="agent-memory-body">
-                  <div class="agent-memory-grid agent-memory-grid-vertical">
-                    <label class="field-group"><span class="field-label">Long-term memory</span>
-                      <select id="agent-pref-ltm" class="career-select">
-                        <option value="ENABLED">Enabled</option>
-                        <option value="DISABLED">Disabled</option>
-                      </select>
-                    </label>
-                    <label class="field-group"><span class="field-label">Target locations</span>
-                      <input id="agent-pref-locations" class="career-input" placeholder="e.g. Toronto, Vancouver" />
-                    </label>
-                    <label class="field-group"><span class="field-label">Target roles</span>
-                      <input id="agent-pref-roles" class="career-input" placeholder="e.g. Backend, Data Science" />
-                    </label>
-                    <label class="field-group"><span class="field-label">Work mode</span>
-                      <select id="agent-pref-work-mode" class="career-select">
-                        <option value="">Any</option>
-                        <option value="REMOTE">Remote</option>
-                        <option value="HYBRID">Hybrid</option>
-                        <option value="ONSITE">In-person</option>
-                      </select>
-                    </label>
-                    <label class="field-group"><span class="field-label">Salary range</span>
-                      <input id="agent-pref-salary" class="career-input" placeholder="e.g. $40+/hr" />
-                    </label>
-                    <label class="field-group"><span class="field-label">Answer language</span>
-                      <input id="agent-pref-language" class="career-input" placeholder="e.g. 中文 / English" />
-                    </label>
-                  </div>
-                  <div class="agent-memory-actions">
-                    <span id="agent-pref-feedback" class="settings-save-feedback" hidden>✓ Saved</span>
-                    <button id="agent-pref-save" class="primary-button compact-button" type="button">Save preferences</button>
-                  </div>
+              <div class="agent-sidebar-content">
+                <div class="agent-sidebar-section">
+                  <div class="agent-sidebar-heading">Recent conversations</div>
+                  <div id="agent-session-list" class="agent-session-list" aria-label="Conversations"></div>
                 </div>
-              </details>
+                <details id="agent-memory-panel" class="agent-memory-panel">
+                  <summary>
+                    <span>What AI remembers</span>
+                    <span id="agent-memory-count" class="agent-memory-count">0</span>
+                  </summary>
+                  <p class="agent-memory-explainer">Useful details from your conversations that help personalize future answers.</p>
+                  <div id="agent-memory-list" class="agent-memory-list"></div>
+                  <div id="agent-memory-status" class="agent-memory-status">Nothing saved yet.</div>
+                </details>
+              </div>
             </aside>
             <div class="agent-main">
-              <div class="agent-context-bar">
-                <span class="agent-context-label">Context:</span>
-                <button id="agent-context-job" class="agent-context-chip" type="button" hidden></button>
-                <span id="agent-context-empty" class="agent-context-empty">No job selected — open a job in Jobs to attach it.</span>
-              </div>
               <div id="agent-chat" class="agent-chat" aria-live="polite">
                 <div class="agent-message agent-assistant">
-                  <div class="agent-bubble"><p class="md-p">Hi! I'm your AI Agent. Try: <em>“Add this job to Interested”</em>, <em>“Recommend jobs from my profile”</em>, <em>“What's in my Tracker?”</em>, or <em>“Fill in my graduation year”</em>.</p></div>
+                  <div class="agent-bubble agent-welcome">
+                    <span class="agent-welcome-kicker">AI JOB-SEARCH COPILOT</span>
+                    <h3>What can I help you move forward?</h3>
+                    <p class="md-p">I can find matching roles, explain job descriptions, and keep your application pipeline organized.</p>
+                    <div class="agent-suggestion-list">
+                      <button type="button" data-agent-prompt="Recommend internships that match my profile">Recommend jobs for me</button>
+                      <button type="button" data-agent-prompt="Show me the jobs currently in my Tracker">Review my Tracker</button>
+                      <button type="button" data-agent-prompt="Find software engineering internships in Toronto">Find Toronto internships</button>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <form id="agent-form" class="agent-composer" autocomplete="off">
-                <input id="agent-input" class="career-input" type="text" placeholder="e.g. Add the job I'm viewing to Interested" />
-                <button class="primary-button" type="submit">Send</button>
-              </form>
+              <div class="agent-composer-shell">
+                <div id="agent-attachment-preview" class="agent-attachment-preview" hidden>
+                  <span class="agent-attachment-icon" aria-hidden="true">▣</span>
+                  <span class="agent-attachment-copy"><small>Attached job</small><strong id="agent-attached-job-title"></strong></span>
+                  <button id="agent-remove-attachment" type="button" aria-label="Remove attached job" title="Remove attached job">×</button>
+                </div>
+                <form id="agent-form" class="agent-composer" autocomplete="off">
+                  <button id="agent-attach-job" class="agent-attach-button" type="button" aria-label="Attach a job" title="Attach a job">
+                    <span aria-hidden="true">＋</span><span>Attach job</span>
+                  </button>
+                  <textarea id="agent-input" class="career-input" rows="1" maxlength="4000" placeholder="Ask about roles, job descriptions, or your application tracker…"></textarea>
+                  <button class="primary-button agent-send-button" type="submit" aria-label="Send message">Send</button>
+                </form>
+              </div>
             </div>
           </div>
         </section>
@@ -1020,6 +1060,30 @@
       </div>
     </dialog>
 
+    <dialog id="agent-attach-dialog" class="settings-dialog agent-attach-dialog">
+      <div class="settings-dialog-header">
+        <div class="settings-title-wrap">
+          <div class="settings-icon-badge" aria-hidden="true">＋</div>
+          <div>
+            <h3>Attach a job</h3>
+            <p class="settings-subtitle">Choose a Job Board or WaterlooWorks role to add as chat context.</p>
+          </div>
+        </div>
+        <button id="close-agent-attach-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="settings-body agent-attach-dialog-body">
+        <div id="agent-current-job-option" class="agent-current-job-option" hidden></div>
+        <div class="agent-attach-search">
+          <input id="agent-attach-query" class="career-input" type="search" placeholder="Search title, company, skill, or WaterlooWorks Job ID" autocomplete="off" />
+          <button id="agent-attach-search-button" class="primary-button" type="button">Search</button>
+        </div>
+        <div id="agent-attach-results" class="agent-attach-results" aria-live="polite"></div>
+      </div>
+      <div class="settings-dialog-footer">
+        <button id="cancel-agent-attach-dialog" class="secondary-button" type="button">Cancel</button>
+      </div>
+    </dialog>
+
     <dialog id="job-dialog" class="job-dialog">
       <button id="close-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
       <div id="job-detail"></div>
@@ -1030,6 +1094,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script type="module" src="/modules/main.js?v=20260828-fix-v26"></script>
+    <script type="module" src="/modules/main.js?v=20260829-header-v3"></script>
   </body>
 </html>
