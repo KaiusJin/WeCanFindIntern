@@ -9,17 +9,32 @@ import {
   setupInfiniteScroll,
   setupBackToTop,
 } from "./jobs.js";
-import { fetchTrackerData } from "./tracker.js";
-import { loadProfileWorkspace } from "./profile.js";
-// Cache-busted so browsers re-fetch the module after the formatDate import fix.
-import { loadWaterlooWorksStatus, loadWaterlooWorksJobs } from "./waterlooworks.js?v=20260828-fix-v26";
-import { updateContextChip, renderSessionList } from "./agent.js";
-import "./ats.js";
-import "./interview.js";
-import "./cover-letter.js";
 
 // Settings must be applied before any AI feature runs.
 loadSettings();
+
+// Non-default tabs load their modules on first activation: switching to a tab
+// fires its activator (see navigation.js), which dynamically imports the
+// module graph for that feature. The initial page load only pulls the Jobs
+// tab plus shared helpers.
+setTabActivators({
+  "tab-tracker": () => import("./tracker.js").then((m) => m.fetchTrackerData()),
+  "tab-profile": () => import("./profile.js").then((m) => m.loadProfileWorkspace()),
+  "tab-waterlooworks": () =>
+    import("./waterlooworks.js?v=20260828-fix-v26").then((m) => {
+      m.loadWaterlooWorksStatus();
+      m.loadWaterlooWorksJobs();
+    }),
+  "tab-agent": () =>
+    import("./agent.js").then((m) => {
+      m.updateContextChip();
+      m.renderSessionList();
+    }),
+  "tab-heatmap": () => import("./heatmap.js"),
+  "tab-ats": () => import("./ats.js"),
+  "tab-interview": () => import("./interview.js"),
+  "tab-cover-letter": () => import("./cover-letter.js"),
+});
 
 // Cross-tab AI action linking from a job detail dialog.
 document.addEventListener("click", (event) => {
@@ -42,30 +57,19 @@ document.addEventListener("click", (event) => {
       $("#cl-resume-text").focus();
     } else if (targetTab === "tab-agent") {
       switchTab("tab-agent");
+      import("./agent.js").then((m) => {
+        m.attachActiveJobContext();
+        m.updateContextChip();
+      });
       $("#agent-input")?.focus();
     }
     $("#job-dialog")?.close();
   }
 });
 
-// Tab activation callbacks (wired here to avoid circular imports).
-setTabActivators({
-  "tab-tracker": () => fetchTrackerData(),
-  "tab-profile": () => loadProfileWorkspace(),
-  "tab-waterlooworks": () => {
-    loadWaterlooWorksStatus();
-    loadWaterlooWorksJobs();
-  },
-  "tab-agent": () => {
-    updateContextChip();
-    renderSessionList();
-  },
-});
-
-// Initial page load.
+// Initial page load: default tab (Jobs) plus shared infrastructure only.
 updateSliderFill();
 loadFacets();
 loadJobs();
-fetchTrackerData();
 setupInfiniteScroll();
 setupBackToTop();

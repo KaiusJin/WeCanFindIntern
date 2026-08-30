@@ -207,16 +207,24 @@ def create_app() -> FastAPI:
     # Keep the browser experience in the same deployable service as the data API.
     # API routes are declared first, so the catch-all static route does not shadow them.
     @app.middleware("http")
-    async def no_cache_frontend(request: Request, call_next):
+    async def frontend_cache_headers(request: Request, call_next):
         response = await call_next(request)
-        if (
-            request.url.path in ("/", "/index.html")
-            or request.url.path.startswith("/modules/")
-            or request.url.path == "/styles.css"
-        ):
+        path = request.url.path
+        if path in ("/", "/index.html"):
+            # The entry document must always revalidate so new deployments are
+            # picked up immediately.
             response.headers["Cache-Control"] = "no-store"
+        elif (
+            path.startswith("/modules/")
+            or path.startswith("/vendor/")
+            or path == "/styles.css"
+        ):
+            # Static assets: short client cache; StaticFiles emits ETags, so
+            # expired entries revalidate with a 304 instead of a full download.
+            response.headers["Cache-Control"] = "public, max-age=300"
         return response
 
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
     return app
 
