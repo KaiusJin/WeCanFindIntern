@@ -21,6 +21,8 @@ from wecanfindintern.agent.models import (
     AgentTurnResult,
 )
 from wecanfindintern.agent.orchestrator import AgentOrchestrator
+from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig
+from wecanfindintern.agent.recommend.repository import RecommendationRepository
 from wecanfindintern.agent.repository import AgentRepository
 from wecanfindintern.agent.tools import AgentDeps, LlmConfig, ToolError
 from wecanfindintern.api.routes.profile import get_profile_repo
@@ -58,6 +60,16 @@ def _deps(request: Request, payload: AgentMessageRequest) -> AgentDeps:
         raise HTTPException(
             status_code=422, detail=f"Missing {payload.provider} API key in AI Settings."
         )
+    try:
+        embedding_config = EmbeddingConfig.from_values(
+            provider=payload.embedding_provider,
+            model=payload.embedding_model,
+            dimensions=payload.embedding_dimensions,
+            api_key=payload.embedding_api_key,
+            api_base=payload.embedding_api_base,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     return AgentDeps(
         job_repo=_job_repo(request),
         tracker_repo=get_tracker_repo(request),
@@ -69,7 +81,9 @@ def _deps(request: Request, payload: AgentMessageRequest) -> AgentDeps:
             api_key=payload.api_key,
             api_base=payload.api_base,
         ),
+        embedding_config=embedding_config,
         memory=_memory_manager(request),
+        recommendation_repo=RecommendationRepository(request.app.state.database.pool),
     )
 
 
@@ -83,6 +97,7 @@ def _execution_deps(request: Request) -> AgentDeps:
         waterlooworks=request.app.state.waterlooworks,
         llm_config=None,
         memory=_memory_manager(request),
+        recommendation_repo=RecommendationRepository(request.app.state.database.pool),
     )
 
 

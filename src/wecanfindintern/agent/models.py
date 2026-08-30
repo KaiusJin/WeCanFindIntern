@@ -62,6 +62,11 @@ class AgentMessageRequest(BaseModel):
     model_name: str | None = None
     api_key: str | None = None
     api_base: str | None = None
+    embedding_provider: Literal["OpenAI", "Gemini", "Ollama"] | None = None
+    embedding_model: str | None = None
+    embedding_dimensions: int | None = Field(default=None, ge=1, le=4096)
+    embedding_api_key: str | None = None
+    embedding_api_base: str | None = None
     context: dict[str, Any] | None = None
 
 
@@ -149,3 +154,20 @@ class UpdateProfileArgs(BaseModel):
 class RecommendJobsArgs(BaseModel):
     limit: int = Field(default=10, ge=1, le=20)
     source: Literal["all", "public", "waterloo_work"] = "all"
+    target_roles: list[str] = Field(default_factory=list, max_length=10)
+    locations: list[str] = Field(default_factory=list, max_length=10)
+    work_modes: list[Literal["remote", "hybrid", "onsite"]] = Field(
+        default_factory=list, max_length=3
+    )
+    opportunity_types: list[str] = Field(default_factory=list, max_length=10)
+    use_semantic_retrieval: bool = True
+    use_llm_rerank: bool = True
+    exclude_tracked: bool = True
+
+
+class GenerateInterviewQuestionsArgs(BaseModel):
+    """Generate mock interview questions for one job or a raw description."""
+
+    job_id: str | None = Field(default=None, max_length=255)
+    source: Literal["public", "waterloo_work"] = "public"
+    job_description: str | None = Field(default=None, max_length=8000)

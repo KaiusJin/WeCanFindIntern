@@ -3186,6 +3186,62 @@ button.tracker-stat-card.active {
   flex: 1;
 }
 
+.agent-recommendation-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin: 4px 0 18px;
+  width: 100%;
+}
+
+.agent-recommendation-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(25, 42, 36, 0.06);
+  padding: 14px;
+}
+
+.agent-recommendation-card h4 {
+  font-size: 15px;
+  margin: 8px 0 3px;
+}
+
+.agent-recommendation-card p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 4px 0;
+}
+
+.agent-recommendation-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.agent-recommendation-score {
+  color: var(--dark-mint);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.agent-recommendation-company {
+  color: var(--ink) !important;
+  font-weight: 700;
+}
+
+.agent-recommendation-reason {
+  min-height: 34px;
+}
+
+.agent-recommendation-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0;
+}
+
 @media (max-width: 640px) {
   .agent-workspace {
     padding-left: 16px;

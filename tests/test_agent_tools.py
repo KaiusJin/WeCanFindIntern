@@ -491,3 +491,101 @@ def test_update_profile_rejects_malformed_payload_structure():
             )
         )
     assert exc.value.error_type == "invalid_profile"
+
+
+# ---------------------------------------------------------------------------
+# generate_interview_questions tool
+# ---------------------------------------------------------------------------
+
+
+def test_generate_interview_questions_resolves_job_description():
+    from unittest.mock import patch
+
+    from wecanfindintern.agent.tools import LlmConfig
+    from wecanfindintern.interview.models import InterviewQuestionItem
+    from wecanfindintern.interview.service import InterviewQuestionsResponse
+
+    job = make_job(
+        title="Backend Intern",
+        skills=("python",),
+        description="Build Python APIs with FastAPI and PostgreSQL.",
+    )
+    deps = _deps(job_repo=FakeJobRepo([job]))
+    deps.llm_config = LlmConfig(provider="OpenAI", model_name="gpt-4o", api_key="key")
+
+    fake_response = InterviewQuestionsResponse(
+        ok=True,
+        questions=[
+            InterviewQuestionItem(
+                id=1,
+                category="behavioral",
+                category_label="Behavioral",
+                question="Describe a project you led.",
+            )
+        ],
+    )
+    with patch(
+        "wecanfindintern.interview.service.generate_interview_questions",
+        return_value=fake_response,
+    ) as mock_generate:
+        result = asyncio.run(
+            run_tool(
+                "generate_interview_questions",
+                {"job_id": str(job.id), "source": "public"},
+                deps,
+                phase="plan",
+            )
+        )
+    assert mock_generate.call_args.kwargs["job_description"].startswith("Build Python APIs")
+    assert result["ok"] is True
+    assert result["data"]["questions"][0]["question"] == "Describe a project you led."
+    assert "Backend Intern" in result["summary"]
+
+
+def test_generate_interview_questions_requires_job_or_description():
+    from wecanfindintern.agent.tools import LlmConfig
+
+    deps = _deps()
+    deps.llm_config = LlmConfig(provider="OpenAI", model_name="gpt-4o", api_key="key")
+    with pytest.raises(ToolError) as exc:
+        asyncio.run(
+            run_tool("generate_interview_questions", {}, deps, phase="plan")
+        )
+    assert exc.value.error_type == "invalid_arguments"
+
+
+def test_generate_interview_questions_uses_raw_description():
+    from unittest.mock import patch
+
+    from wecanfindintern.agent.tools import LlmConfig
+    from wecanfindintern.interview.models import InterviewQuestionItem
+    from wecanfindintern.interview.service import InterviewQuestionsResponse
+
+    deps = _deps()
+    deps.llm_config = LlmConfig(provider="Ollama", model_name="llama3", api_key="")
+    fake_response = InterviewQuestionsResponse(
+        ok=True,
+        questions=[
+            InterviewQuestionItem(
+                id=1,
+                category="technical",
+                category_label="Technical",
+                question="Explain REST idempotency.",
+            )
+        ],
+    )
+    with patch(
+        "wecanfindintern.interview.service.generate_interview_questions",
+        return_value=fake_response,
+    ) as mock_generate:
+        result = asyncio.run(
+            run_tool(
+                "generate_interview_questions",
+                {"job_description": "REST API intern role."},
+                deps,
+                phase="plan",
+            )
+        )
+    assert mock_generate.call_args.kwargs["provider"] == "Ollama"
+    assert result["ok"] is True
+    assert result["data"]["job"] == "the provided description"

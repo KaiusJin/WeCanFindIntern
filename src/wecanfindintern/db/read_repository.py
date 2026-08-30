@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 from uuid import UUID
@@ -207,6 +208,82 @@ class JobReadRepository:
             has_more=has_more,
         )
 
+    async def jobs_library_version(self) -> str:
+        """Cheap fingerprint of the active job library for cache keys."""
+
+        async with self.pool.connection() as connection:
+            row = await (
+                await connection.execute(
+                    """
+                    SELECT count(*) AS total,
+                           coalesce(max(last_seen_at)::text, '') AS newest
+                    FROM jobs WHERE status = 1
+                    """
+                )
+            ).fetchone()
+        return f"{int(row['total']) if row else 0}:{row['newest'] if row else ''}"
+
+    async def list_jobs_for_recommendation(
+        self,
+        *,
+        skills: list[str],
+        exclude_public_ids: list[UUID],
+        limit: int = 120,
+    ) -> list[dict[str, Any]]:
+        """Recall recommendation candidates in one query.
+
+        Matches normalized ``skill_tags`` (GIN-indexed array overlap) or the
+        title/company full-text document, excludes already-tracked jobs, and
+        returns the description excerpt plus one application URL inline so the
+        caller never needs per-job follow-up queries.
+        """
+
+        from wecanfindintern.domain.classification import normalize_tag
+
+        predicates = ["j.status = 1"]
+        parameters: list[Any] = []
+        if exclude_public_ids:
+            predicates.append("j.public_id <> ALL(%s)")
+            parameters.append([str(value) for value in exclude_public_ids])
+        normalized_tags = sorted({normalize_tag(skill) for skill in skills if skill})
+        tsquery = _recommendation_tsquery(skills)
+        if normalized_tags or tsquery:
+            predicates.append(
+                "(j.skill_tags && %s::text[] "
+                "OR j.search_document @@ to_tsquery('simple', %s))"
+            )
+            parameters.extend((normalized_tags, tsquery))
+        parameters.append(limit)
+        sql = f"""
+            SELECT {JOB_SELECT},
+                   j.requirement_tags,
+                   LEFT(j.description, 4000) AS description_excerpt,
+                   (
+                       SELECT js.direct_url
+                       FROM job_sources js
+                       WHERE js.job_id = j.id
+                       ORDER BY js.first_seen_at, js.id
+                       LIMIT 1
+                   ) AS application_url
+            FROM jobs j
+            WHERE {" AND ".join(predicates)}
+            ORDER BY j.published_sort_at DESC, j.id DESC
+            LIMIT %s
+        """
+        async with self.pool.connection() as connection:
+            rows = await (await connection.execute(sql, parameters)).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            results.append(
+                {
+                    "item": job_list_item(row),
+                    "description": row["description_excerpt"],
+                    "url": row["application_url"],
+                    "requirement_tags": row["requirement_tags"] or [],
+                }
+            )
+        return results
+
     async def get_job(self, public_id: UUID) -> JobDetail | None:
         sql = f"""
             SELECT {JOB_SELECT},
@@ -381,6 +458,23 @@ class JobReadRepository:
         _facets_cache_at = now
         _facets_cache_payload = response
         return response
+
+def _recommendation_tsquery(skills: list[str], max_phrases: int = 20) -> str:
+    """Build a safe OR-of-AND tsquery from free-text profile skills.
+
+    ``to_tsquery`` treats ``& | ! ( ) : *`` as operators, and skills like
+    ``c++`` or ``c#`` cannot round-trip through lexemes. Strip every skill to
+    alphanumeric tokens; skills without tokens are skipped and rely on the
+    ``skill_tags`` array overlap instead.
+    """
+
+    phrases: list[str] = []
+    for skill in skills[:max_phrases]:
+        tokens = re.findall(r"[a-z0-9]+", skill.lower())
+        if tokens:
+            phrases.append(" & ".join(tokens))
+    return " | ".join(phrases)
+
 
 def job_list_item(row: dict[str, Any]) -> JobListItem:
     salary = None

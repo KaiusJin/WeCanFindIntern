@@ -202,6 +202,43 @@ function renderApprovalCard(approval) {
   });
 }
 
+function renderRecommendationCards(toolCalls) {
+  const call = (toolCalls || []).find(
+    (item) => item.tool_name === "recommend_jobs" && item.status === "succeeded"
+  );
+  const recommendations = call?.result?.data?.recommendations;
+  if (!Array.isArray(recommendations) || !recommendations.length) return;
+  const safeUrl = (value) => {
+    try {
+      const url = new URL(value);
+      return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+    } catch (_) {
+      return "";
+    }
+  };
+  const wrapper = document.createElement("div");
+  wrapper.className = "agent-recommendation-grid";
+  wrapper.innerHTML = recommendations.map((job) => {
+    const url = safeUrl(job.application_url);
+    const matched = (job.matched_skills || []).slice(0, 5);
+    const reason = (job.reasons || [])[0] || "Limited matching evidence.";
+    return `<article class="agent-recommendation-card">
+      <div class="agent-recommendation-head">
+        <span class="agent-recommendation-score">${escapeHtml(job.match_score)}%</span>
+        <span class="tag">${escapeHtml(job.confidence || "unknown")}</span>
+      </div>
+      <h4>${escapeHtml(job.title || "Untitled")}</h4>
+      <p class="agent-recommendation-company">${escapeHtml(job.company || "Unknown company")}</p>
+      <p>${escapeHtml(job.location || "Location not specified")} · ${escapeHtml(job.work_mode || "unknown")}</p>
+      <p class="agent-recommendation-reason">${escapeHtml(reason)}</p>
+      <div class="agent-recommendation-skills">${matched.map((skill) => `<span class="tag">${escapeHtml(skill)}</span>`).join("")}</div>
+      ${url ? `<a class="primary-button compact-button" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">View job</a>` : ""}
+    </article>`;
+  }).join("");
+  $("#agent-chat").appendChild(wrapper);
+  $("#agent-chat").scrollTop = $("#agent-chat").scrollHeight;
+}
+
 async function decideApproval(approvalId, approved, card) {
   card.querySelectorAll("button").forEach((button) => { button.disabled = true; });
   try {
@@ -271,6 +308,11 @@ async function sendAgentMessage(text) {
           model_name: config.model_name,
           api_key: config.api_key,
           api_base: config.api_base || "",
+          embedding_provider: config.embedding_provider,
+          embedding_model: config.embedding_model,
+          embedding_dimensions: config.embedding_dimensions,
+          embedding_api_key: config.embedding_api_key,
+          embedding_api_base: config.embedding_api_base || "",
           context: buildContext(),
         }),
       },
@@ -280,6 +322,7 @@ async function sendAgentMessage(text) {
     if (!res.ok) throw new Error(data.detail || "Agent request failed");
     thinking.remove();
     appendMessage("assistant", renderMarkdown(data.message.content));
+    renderRecommendationCards(data.tool_calls);
     if (data.pending_approval) {
       renderApprovalCard(data.pending_approval);
     }

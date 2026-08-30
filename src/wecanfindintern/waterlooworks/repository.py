@@ -177,14 +177,16 @@ class WaterlooWorksRepository:
                             INSERT INTO waterlooworks_jobs(
                                 source_job_id, title, organization, division, location_text,
                                 city, province, country, work_mode,
-                                salary_min, salary_max, salary_interval, salary_currency, date_posted,
+                                salary_min, salary_max, salary_interval, salary_currency,
+                                date_posted,
                                 application_deadline, application_url, application_delivery,
                                 application_documents, source_url, description, raw_payload,
                                 first_seen_at, last_seen_at
                             ) VALUES (
                                 :source_job_id, :title, :organization, :division, :location_text,
                                 :city, :province, :country, :work_mode,
-                                :salary_min, :salary_max, :salary_interval, :salary_currency, :date_posted,
+                                :salary_min, :salary_max, :salary_interval, :salary_currency,
+                                :date_posted,
                                 :application_deadline, :application_url, :application_delivery,
                                 :application_documents, :source_url, :description, :raw_payload,
                                 :first_seen_at, :last_seen_at

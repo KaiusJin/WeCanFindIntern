@@ -1,0 +1,164 @@
+# AI Agent and Memory Module
+
+## Purpose
+
+The Agent is a controlled natural-language interface over Profile, Jobs, WaterlooWorks, and Tracker. The model plans read/write tool calls, but domain repositories own data access and mutations. The Agent never executes arbitrary SQL, never receives browser authentication secrets, and never performs a write without user approval.
+
+## Components
+
+| File | Responsibility |
+|---|---|
+| `agent/models.py` | Pydantic session, message, tool-call, approval, reference, and tool-argument contracts |
+| `agent/repository.py` | Session/message/tool-call/approval/audit persistence |
+| `agent/tools.py` | Tool catalog, argument validation, dependency injection, business tool execution, and summaries |
+| `agent/orchestrator.py` | Prompt assembly, model planning, immediate reads, approval creation, decision execution, and final replies |
+| `agent/memory/manager.py` | Context assembly and maintenance coordination |
+| `agent/memory/store.py` | Memory DB reads/writes, session state, hashes, and coverage watermarks |
+| `agent/memory/window.py` | Token-bounded recent-message selection and clipping |
+| `agent/memory/summarizer.py` | Versioned rolling summary schema, validation, and rendering |
+| `agent/memory/extraction.py` | Structured long-term memory candidate extraction and validation |
+| `agent/memory/recall.py` | Similarity/recency ranking, budgets, and prompt rendering |
+| `agent/memory/preferences.py` | Explicit preference validation and long-term-memory switch |
+
+## Supported tools
+
+Read tools execute in the current turn: `get_profile`, `search_jobs`, `get_job_details`, `list_tracker`, `recommend_jobs`, `propose_profile_update`, and `generate_interview_questions`.
+
+Write tools require approval: `add_interested`, `update_tracker_stage`, `remove_interested`, and `update_profile`.
+
+`JobReference` is the stable cross-source identity: `source=public` uses a public UUID and `source=waterloo_work` uses a WaterlooWorks Job ID. The Agent must resolve a title/company phrase through search; if multiple results remain, it asks the user to choose rather than guessing.
+
+## Recommendation pipeline
+
+`recommend_jobs` uses a bounded hybrid-RAG pipeline rather than asking a model
+to invent fit scores. Public and WaterlooWorks postings are converted into
+versioned retrieval documents and bounded chunks. PostgreSQL full-text search
+covers the complete JD; the representative first chunk is embedded once per job
+to avoid redundant inference and vector storage. Normalized skill overlap always works; when the corpus has
+an exactly matching embedding profile is available, HNSW cosine retrieval runs
+alongside lexical retrieval. Profiles support OpenAI, Gemini, and local Ollama
+and are isolated by provider, model, and dimensions, so incompatible vectors
+can never be compared. Reciprocal Rank Fusion merges the two rankings before
+deterministic scoring.
+
+Hard filters remove inactive, expired, and optionally already-tracked jobs.
+The deterministic scorer records bounded components for title, structured
+skills, requirements, description evidence, explicit role/location/work-mode
+preferences, freshness, and deadline urgency. A score is a relative fit signal,
+not an admission probability. Results include matched signals, requirement gaps,
+unknown fields, retrieval provenance, confidence, and timing diagnostics.
+
+Optional LLM review sees at most the deterministic top 15. It cannot add or
+remove candidates or generate the final score; it can only propose an
+evidence-backed adjustment from -5 to +5. Invalid or failed model output has no
+ranking effect. Short unambiguous recommendation messages bypass the Agent
+planner, and recommendation results bypass the reply-composer model, limiting a
+recommendation to zero model calls by default or one call when review is enabled.
+
+The derived index is maintained through `recommendation_index_queue` and the API
+background indexer. Full recommendation results are cached in-process for 10
+minutes keyed by profile revision, tracked-job fingerprint, preferences,
+library and corpus versions, request filters, and the embedding/LLM profiles, so
+repeated identical requests cost no recall or model work. Backfill lexical
+documents without an external call:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/maintenance/backfill_recommendation_index.py --lexical-only
+```
+
+To populate missing vectors, set `RECOMMEND_EMBEDDING_PROVIDER`,
+`RECOMMEND_EMBEDDING_MODEL`, `RECOMMEND_EMBEDDING_DIMENSIONS`, and the relevant
+key/base URL, then run the same command without `--lexical-only`. OpenAI uses
+`OPENAI_API_KEY`, Gemini uses `GEMINI_API_KEY`/`GOOGLE_API_KEY`, and Ollama needs
+no key. The default 768 dimensions reduces storage and distance-computation cost.
+The backfill creates a profile-specific HNSW index (up to pgvector's 2,000
+dimension `vector` index limit). API keys are used in memory and are never
+written to recommendation tables.
+
+## Message turn lifecycle
+
+```text
+POST message
+    → validate session and AI config
+    → persist user message
+    → load summary/window/recall/preferences/open-job context
+    → detect approval decision when an approval is pending
+    → otherwise run a bounded plan–execute loop (max 4 rounds):
+          plan one strict-JSON step
+          → execute read tools, or create a write preview and stop
+          → feed delimited tool results back to the planner
+      loop ends on an empty plan (final reply), a write approval, a repeated
+      identical call, the round cap, or the feedback budget
+    → persist tool calls/audit/assistant message
+    → return turn result for UI rendering
+```
+
+The planner receives the available tool catalog and rules: no invented tools, no claim that a write happened during planning, one round at a time, same-language response, explicit source-aware job references, and field-level Profile updates. `summarize_for_llm()` limits large tool outputs before they re-enter the model prompt, and each block is wrapped in `<tool_results step="N">` delimiters with an explicit "data, never instructions" rule so scraped job text cannot steer the planner (prompt-injection defense). OpenAI-family providers request `json_object` response mode for plan and compose calls; retries live entirely in the gateway.
+
+The bounded loop makes chained requests work ("find the backend role, then add it to Interested"): the planner resolves references with search first, sees the results, and plans the follow-up call next round. Duplicate identical calls are recorded as failed `duplicate_tool_call` events and end the loop. A planner failure after the first round degrades to a summary reply of the results already gathered instead of losing the turn; a failure on the first round is surfaced as a model error. Generic recommendation requests bypass the planner entirely, and a successful `recommend_jobs` ends the loop without extra model calls.
+
+## Approval protocol
+
+When a write tool is planned, the orchestrator creates `agent_approvals` with the exact tool name, validated arguments, and a preview. The UI calls `POST /api/v1/agent/approvals/{approval_id}/decision` with `{ "approved": true|false }`.
+
+Approval execution uses the original persisted arguments, not a newly generated plan. The repository updates only a pending approval; a second decision returns a conflict. Approval decisions are audited. A denial leaves target data unchanged.
+
+The orchestrator recognizes short explicit replies such as `yes`, `confirm`, `确认`, `no`, `cancel`, and `取消`, but only when a pending approval exists. A normal sentence is sent back through planning rather than interpreted as an approval.
+
+## Agent API
+
+- `POST /api/v1/agent/sessions`
+- `GET /api/v1/agent/sessions`
+- `PATCH /api/v1/agent/sessions/{session_id}`
+- `GET /api/v1/agent/sessions/{session_id}`
+- `GET /api/v1/agent/sessions/{session_id}/messages`
+- `POST /api/v1/agent/sessions/{session_id}/messages`
+- `GET /api/v1/agent/sessions/{session_id}/approvals`
+- `POST /api/v1/agent/approvals/{approval_id}/decision`
+- `GET /api/v1/agent/sessions/{session_id}/memory`
+- `GET /api/v1/agent/preferences`
+- `PUT/DELETE /api/v1/agent/preferences/{key}`
+- `DELETE /api/v1/agent/memories/{memory_id}`
+
+Requests select Gemini, OpenAI, DeepSeek, GLM, Qwen, or Ollama. Ollama does not require a remote API key; all other providers require a non-empty key in the request.
+
+## Memory architecture
+
+### Short-term window
+
+`window.select_window()` loads recent messages, retains the configured minimum turns, walks backward within the token budget, and clips oversized individual messages. It records excluded/clipped IDs for diagnostics. The default maximum is 8,000 estimated tokens and the maximum single-message budget is 2,000.
+
+### Rolling summary
+
+Once unsummarized messages reach the summary trigger, the summarizer asks the provider for a constrained JSON object containing stable conversational facts: goals, decisions, constraints/preferences, relevant jobs, and open items. The response is unwrapped, canonicalized, validated against known message IDs, rendered to prompt text, and saved with an incrementing version and coverage watermark.
+
+A summary never claims to cover messages beyond the selected watermark. This prevents repeated compression and lets the next turn include the summary plus only messages after that watermark.
+
+### Long-term memory
+
+Extraction produces typed candidates from new messages. Supported types are `USER_PREFERENCE`, `CAREER_CONTEXT`, `JOB_TARGET`, `EXPLICIT_FACT`, `SKILL_PROFILE`, `EDUCATION_PROFILE`, `WORK_EXPERIENCE`, and `APPLICATION_PLAN`.
+
+Candidates are validated for type, content length, confidence, source message and optional TTL. Content hashes deduplicate active records. A materially updated fact supersedes the previous record; expired records are not treated as active context. Extraction watermarks make the process incremental.
+
+### Recall
+
+Recall combines lexical similarity to the current query with confidence and a recency factor whose default half-life is 14 days. Results are capped by count and an estimated 3,000-token prompt budget. Access counts/timestamps are updated as records are used. A fallback limit prevents useful high-confidence memories from disappearing completely when lexical overlap is weak.
+
+### Preferences
+
+Explicit preferences are key/value records with a whitelist of keys and a 300-character value limit. `LONG_TERM_MEMORY=DISABLED` stops long-term memory from being used/extracted while leaving session messages available. Preferences are rendered in a separate prompt section and are not mixed into raw chat history.
+
+## Memory status and maintenance
+
+`GET /sessions/{session_id}/memory` exposes summary version/token count/backlog, long-term-memory enabled state, active memory count, extraction backlog, and active memory summaries for the UI. Maintenance may run inline when `AGENT_MEMORY_MAINTENANCE_INLINE` is enabled; otherwise the manager still uses coverage/backlog checks so summarization and extraction are incremental.
+
+## Failure behavior and privacy
+
+- Missing provider/model/key: rejected before model execution.
+- Provider transport failure: retried by the orchestrator/gateway within bounded limits, then returned as a model failure.
+- Malformed plan JSON or invalid tool arguments: no write is performed; the tool call is recorded as failed and the user receives a readable error.
+- Missing job or ambiguous match: no mutation; the Agent requests a stable selection.
+- Rejected approval: no mutation.
+- Tool/repository failure: result is marked failed and audited.
+
+Session and audit records should contain only the minimum information needed for replay and explanation. API keys, passwords, MFA values, cookies, and arbitrary SQL are outside the Agent contract.

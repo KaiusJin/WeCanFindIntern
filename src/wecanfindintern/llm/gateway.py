@@ -123,6 +123,17 @@ def _find_last_json(text: str) -> Any:
     return None
 
 
+JSON_RESPONSE_PROVIDERS = frozenset({"OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"})
+
+
+def json_response_format(provider: str) -> dict[str, str] | None:
+    """``json_object`` mode for providers that support it; ``None`` otherwise."""
+
+    if provider in JSON_RESPONSE_PROVIDERS:
+        return {"type": "json_object"}
+    return None
+
+
 def complete_json(
     *,
     provider: str,

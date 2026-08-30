@@ -978,6 +978,23 @@
           <p class="field-hint">Leave empty to use http://localhost:11434/v1. Point to a remote Ollama host if needed.</p>
         </div>
 
+        <div class="field-group" style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border);">
+          <label class="field-label" for="setting-embedding-provider">Recommendation Embedding</label>
+          <select id="setting-embedding-provider" class="career-select">
+            <option value="Ollama" selected>Ollama (Local)</option>
+            <option value="Gemini">Google Gemini</option>
+            <option value="OpenAI">OpenAI</option>
+          </select>
+          <label class="field-label" for="setting-embedding-model" style="margin-top: 14px;">Embedding Model</label>
+          <input type="text" id="setting-embedding-model" class="career-input" value="qwen3-embedding:0.6b" autocomplete="off" />
+          <p class="field-hint">The corpus and query must use the same provider, model, and dimensions.</p>
+          <label class="field-label" for="setting-embedding-dimensions" style="margin-top: 14px;">Dimensions</label>
+          <input type="number" id="setting-embedding-dimensions" class="career-input" value="768" min="128" max="4096" step="128" />
+          <label class="field-label" for="setting-embedding-base-url" style="margin-top: 14px;">Embedding Base URL (optional)</label>
+          <input type="text" id="setting-embedding-base-url" class="career-input" value="http://localhost:11434" autocomplete="off" />
+          <p class="field-hint">Ollama uses /api/embed. OpenAI and Gemini reuse their API key saved above.</p>
+        </div>
+
         <div class="settings-dialog-footer">
           <span id="settings-save-feedback" class="settings-save-feedback" hidden>✓ Saved to localStorage!</span>
           <div class="settings-footer-actions">

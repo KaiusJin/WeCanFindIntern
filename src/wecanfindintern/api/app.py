@@ -1,6 +1,8 @@
 """FastAPI application factory exposing the stable job data contract and web UI."""
 
-from contextlib import asynccontextmanager
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -8,6 +10,8 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 
+from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig, EmbeddingGateway
+from wecanfindintern.agent.recommend.indexer import RecommendationIndexer
 from wecanfindintern.api.models import (
     JobDetail,
     JobFacetsResponse,
@@ -27,6 +31,37 @@ from wecanfindintern.db.read_repository import JobReadRepository
 from wecanfindintern.waterlooworks import WaterlooWorksService
 
 WEB_DIR = Path(__file__).resolve().parents[3] / "web"
+logger = logging.getLogger(__name__)
+
+
+async def _recommendation_index_loop(
+    database: Database, waterlooworks: WaterlooWorksService
+) -> None:
+    """Keep the derived lexical RAG index fresh without delaying API startup."""
+
+    embedding_config = EmbeddingConfig.from_env()
+    indexer = RecommendationIndexer(
+        database.pool,
+        embedder=(
+            EmbeddingGateway(embedding_config) if embedding_config is not None else None
+        ),
+    )
+    iteration = 0
+    while True:
+        try:
+            report = await indexer.index_pending(limit=100)
+            if iteration % 10 == 0:
+                waterloo_page = await waterlooworks.list_jobs(
+                    limit=10000, include_description=True
+                )
+                await indexer.index_waterloo_jobs(waterloo_page["items"])
+            iteration += 1
+            await asyncio.sleep(2 if report.scanned >= 100 else 30)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.warning("Recommendation index maintenance failed: %s", error)
+            await asyncio.sleep(30)
 
 
 def create_app() -> FastAPI:
@@ -39,7 +74,13 @@ def create_app() -> FastAPI:
         await database.open()
         app.state.database = database
         app.state.waterlooworks = WaterlooWorksService()
+        recommendation_index_task = asyncio.create_task(
+            _recommendation_index_loop(database, app.state.waterlooworks)
+        )
         yield
+        recommendation_index_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await recommendation_index_task
         await app.state.waterlooworks.close()
         await database.close()
 

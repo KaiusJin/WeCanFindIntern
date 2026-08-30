@@ -1,120 +1,86 @@
-# JobSpy 集成与返回格式
+# JobSpy Integration Reference
 
-## 版本基线
+This document is the stable reference for the external JobSpy boundary. For the complete ingestion lifecycle, see [Job Ingestion](modules/job-ingestion.md). For the canonical job and derived fields, see [Domain and Data Normalization](modules/domain-normalization.md).
 
-- 上游仓库：<https://github.com/speedyapply/JobSpy>
-- Python 包名：`python-jobspy`
-- 检查版本：`1.1.82`
-- Vendored 提交：`fda080a373e8226f3fd60635323f5da9af9892b1`
-- Python 要求：3.10 或更高版本
+## Version baseline
 
-上游源码保存在 `vendor/JobSpy`。项目代码通过本地 editable 安装使用这份源码，便于固定版本、审计行为和有计划地升级。
+- Upstream project: <https://github.com/speedyapply/JobSpy>
+- Package: `python-jobspy`
+- Audited version: `1.1.82`
+- Vendored commit: `fda080a373e8226f3fd60635323f5da9af9892b1`
+- Python requirement: 3.10+
 
-## `scrape_jobs()` 返回值
+The source lives in `vendor/JobSpy` and is installed as the project’s local editable dependency. This keeps scraper behavior reproducible and makes source upgrades reviewable.
 
-`jobspy.scrape_jobs()` 返回 `pandas.DataFrame`，不是 `JobPost` 列表。JobSpy 先让各来源返回 Pydantic `JobPost`，再统一压平成 DataFrame。
+## JobSpy DataFrame columns
 
-在 `1.1.82` 中，非空结果按以下 34 个字段排序：
+`jobspy.scrape_jobs()` returns a pandas DataFrame. The adapter stabilizes these 34 fields:
 
-| 字段 | 常见类型 | 含义 |
-|---|---|---|
-| `id` | string / null | 来源职位 ID |
-| `site` | string | 来源标识 |
-| `job_url` | string | 来源页面 URL |
-| `job_url_direct` | string / null | 直接申请 URL |
-| `title` | string | 原始职位名称 |
-| `company` | string / null | 公司名称 |
-| `location` | string / null | 已压平的地点文本 |
-| `date_posted` | date / null | 发布日期 |
-| `job_type` | string / null | 多个类型以逗号连接 |
-| `salary_source` | string / null | `direct_data` 或 `description` |
-| `interval` | string / null | yearly/monthly/weekly/daily/hourly |
-| `min_amount` | number / null | 最低薪资 |
-| `max_amount` | number / null | 最高薪资 |
-| `currency` | string / null | 币种 |
-| `is_remote` | boolean / null | 是否远程 |
-| `job_level` | string / null | LinkedIn 职级 |
-| `job_function` | string / null | 职能 |
-| `listing_type` | string / null | 职位列表类型 |
-| `emails` | string / null | 多个邮箱以逗号连接 |
-| `description` | string / null | 职位描述 |
-| `company_industry` | string / null | 公司行业 |
-| `company_url` | string / null | 公司在来源站点的 URL |
-| `company_logo` | string / null | 公司 Logo URL |
-| `company_url_direct` | string / null | 公司官方网站 URL |
-| `company_addresses` | string / null | 公司地址 |
-| `company_num_employees` | string / null | 员工数量标签 |
-| `company_revenue` | string / null | 营收标签 |
-| `company_description` | string / null | 公司简介 |
-| `skills` | string / null | Naukri 技能，多值以逗号连接 |
-| `experience_range` | string / null | Naukri 经验范围 |
-| `company_rating` | number / null | Naukri 公司评分 |
-| `company_reviews_count` | integer / null | Naukri 评价数量 |
-| `vacancy_count` | integer / null | Naukri 职位空缺数量 |
-| `work_from_home_type` | string / null | Naukri 工作地点类型 |
+| Field | Meaning |
+|---|---|
+| `id` | Source job ID |
+| `site` | Source name |
+| `job_url` | Source listing URL |
+| `job_url_direct` | Direct application URL |
+| `title` | Job title |
+| `company` | Company name |
+| `location` | Flattened source location |
+| `date_posted` | Source posted date |
+| `job_type` | Comma-separated source employment types |
+| `salary_source` | Provider salary origin |
+| `interval` | Salary interval |
+| `min_amount` / `max_amount` | Salary bounds |
+| `currency` | Salary currency |
+| `is_remote` | Provider remote flag |
+| `job_level` | Source seniority value where supplied |
+| `job_function` | Source function |
+| `listing_type` | Source listing type |
+| `emails` | Comma-separated contact emails |
+| `description` | Job description |
+| `company_industry` | Company industry |
+| `company_url` | Source company URL |
+| `company_logo` | Logo URL |
+| `company_url_direct` | Company website URL |
+| `company_addresses` | Company addresses |
+| `company_num_employees` | Employee-count label |
+| `company_revenue` | Revenue label |
+| `company_description` | Company description |
+| `skills` | Source skill string |
+| `experience_range` | Source experience range |
+| `company_rating` | Source rating |
+| `company_reviews_count` | Source review count |
+| `vacancy_count` | Number of vacancies |
+| `work_from_home_type` | Source work-from-home type |
 
-## 重要行为
+JobSpy may return zero rows and zero columns for an empty search. `stabilize_jobspy_frame()` adds the full column set and preserves the same output contract for empty and non-empty runs.
 
-1. **空结果格式不同**：JobSpy 原生在没有职位时返回零行、零列 DataFrame；本项目的 `stabilize_jobspy_frame()` 会补成零行、34 列。
-2. **嵌套对象已丢失**：`Location` 和 `Compensation` 在返回前已被压平；如果以后需要原始嵌套对象，需要直接对接各 scraper，而不是只使用 `scrape_jobs()`。
-3. **多值字段已压平**：`job_type`、`emails`、Naukri 的 `skills` 都是逗号分隔字符串。
-4. **来源字段不对称**：很多字段只属于单一来源，大量空值属于正常现象。
-5. **薪资来源有区别**：`direct_data` 表示来源直接提供；`description` 表示 JobSpy 从描述中解析。后者当前主要面向美国薪资文本。
-6. **描述格式可选**：支持 `markdown`、`html` 和 `plain`，项目默认保存 Markdown。
+## Project boundary
 
-## 项目内部格式
+`NormalizedJob` in `ingestion/jobspy_adapter.py` is the project boundary. It converts provider rows into typed fields while keeping a cleaned raw dictionary for diagnostics. Downstream code uses `NormalizedJob` and `CanonicalJobInput`, never a provider DataFrame.
 
-业务代码使用 `NormalizedJob`，不直接使用第三方 DataFrame。主要结构如下：
+Source fields are asymmetric by design. Missing company metadata, salary, skills, descriptions, or IDs are valid provider outcomes. The adapter uses `None`/empty lists rather than inventing values. Flattened source strings are split only where the internal contract needs a list.
 
-```json
-{
-  "source_fingerprint": "sha256...",
-  "source": "indeed",
-  "source_job_id": "abc123",
-  "source_url": "https://...",
-  "direct_url": "https://...",
-  "title": "Software Engineer Intern",
-  "company_name": "Example Co",
-  "location_text": "Toronto, ON, Canada",
-  "date_posted": "2026-08-24",
-  "employment_types": ["internship"],
-  "is_remote": false,
-  "description": "...",
-  "contact_emails": [],
-  "salary": {
-    "interval": "hourly",
-    "minimum": 25,
-    "maximum": 32,
-    "currency": "CAD",
-    "source": "direct_data"
-  },
-  "company": {
-    "industry": null,
-    "url": null,
-    "direct_url": null,
-    "logo_url": null,
-    "addresses": null,
-    "employee_count_label": null,
-    "revenue_label": null,
-    "description": null,
-    "rating": null,
-    "reviews_count": null
-  },
-  "source_skills": [],
-  "vacancy_count": null,
-  "work_from_home_type": null,
-  "raw": {}
-}
-```
+## Error distinction
 
-`raw` 会保留清洗后的 JobSpy 原始行，便于排查字段映射和未来重新处理。
+Some scrapers log errors and return an empty DataFrame. `scrape_checked()` captures ERROR records from JobSpy loggers:
 
-## 升级规则
+- no jobs and no captured error: normal empty result;
+- no jobs plus a captured error: raises a retryable exception;
+- jobs returned: normal result, with any non-fatal source logs left to the run log.
 
-升级 JobSpy 时应：
+This distinction is used by the campaign retry policy.
 
-1. 更新 `vendor/JobSpy`；
-2. 对比 `jobspy.util.desired_order` 和 `JobPost` 模型；
-3. 更新 `JOBSPY_COLUMNS` 与本说明；
-4. 运行测试；
-5. 小规模运行 `inspect_jobspy_output.py`，确认真实来源返回格式。
+## Query constraints
+
+Callers must obey source-specific JobSpy constraints. Indeed’s `hours_old`, `job_type + is_remote`, and `easy_apply` combinations are mutually constrained. LinkedIn’s `hours_old` and `easy_apply` combination is constrained. `source_overrides` in `collection_plans.json` is the supported place for source-specific query changes. LinkedIn description fetching adds requests and is controlled by the query/configuration.
+
+## Upgrade procedure
+
+When upgrading JobSpy:
+
+1. Update `vendor/JobSpy` and record the commit/version.
+2. Compare upstream `JobPost` and desired column ordering.
+3. Update `JOBSPY_COLUMNS` and this table.
+4. Run adapter, normalization, and route tests.
+5. Run `inspect_jobspy_output.py` against a small real query.
+6. Verify raw CSV, normalized JSONL, PostgreSQL ingest, and public API output separately.

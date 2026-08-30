@@ -15,6 +15,10 @@ const aiSettings = {
   qwenKey: "",
   ollamaModel: "",
   ollamaBaseUrl: "",
+  embeddingProvider: "Ollama",
+  embeddingModel: "qwen3-embedding:0.6b",
+  embeddingDimensions: 768,
+  embeddingBaseUrl: "http://localhost:11434",
 };
 
 let currentActiveProvider = "Gemini";
@@ -124,6 +128,14 @@ function loadSettings() {
   if (modelEl) modelEl.value = selectedModel;
   currentActiveProvider = provider;
   syncKeyFieldWithModel();
+  const embeddingProvider = $("#setting-embedding-provider");
+  const embeddingModel = $("#setting-embedding-model");
+  const embeddingDimensions = $("#setting-embedding-dimensions");
+  const embeddingBaseUrl = $("#setting-embedding-base-url");
+  if (embeddingProvider) embeddingProvider.value = aiSettings.embeddingProvider || "Ollama";
+  if (embeddingModel) embeddingModel.value = aiSettings.embeddingModel || "qwen3-embedding:0.6b";
+  if (embeddingDimensions) embeddingDimensions.value = aiSettings.embeddingDimensions || 768;
+  if (embeddingBaseUrl) embeddingBaseUrl.value = aiSettings.embeddingBaseUrl || "";
 }
 
 function saveSettings() {
@@ -146,6 +158,10 @@ function saveSettings() {
   } else if (provider === "Gemini") {
     aiSettings.geminiKey = currentKey;
   }
+  aiSettings.embeddingProvider = $("#setting-embedding-provider")?.value || "Ollama";
+  aiSettings.embeddingModel = $("#setting-embedding-model")?.value.trim() || "";
+  aiSettings.embeddingDimensions = Number($("#setting-embedding-dimensions")?.value || 768);
+  aiSettings.embeddingBaseUrl = $("#setting-embedding-base-url")?.value.trim() || "";
 
   try {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(aiSettings));
@@ -181,11 +197,22 @@ function getEffectiveAiConfig() {
   } else if (provider === "Gemini") {
     apiKey = aiSettings.geminiKey || null;
   }
+  const embeddingProvider = aiSettings.embeddingProvider || "Ollama";
+  const embeddingKeys = {
+    OpenAI: aiSettings.openaiKey || null,
+    Gemini: aiSettings.geminiKey || null,
+    Ollama: null,
+  };
   return {
     provider: provider || null,
     model_name: modelName || null,
     api_key: apiKey,
     api_base: apiBase,
+    embedding_provider: embeddingProvider,
+    embedding_model: aiSettings.embeddingModel || null,
+    embedding_dimensions: Number(aiSettings.embeddingDimensions || 768),
+    embedding_api_key: embeddingKeys[embeddingProvider] || null,
+    embedding_api_base: aiSettings.embeddingBaseUrl || null,
   };
 }
 
@@ -256,6 +283,20 @@ $("#setting-ollama-model")?.addEventListener("input", (e) => {
 
 $("#setting-ollama-base-url")?.addEventListener("input", (e) => {
   aiSettings.ollamaBaseUrl = e.target.value.trim();
+});
+
+$("#setting-embedding-provider")?.addEventListener("change", (e) => {
+  const defaults = {
+    Ollama: { model: "qwen3-embedding:0.6b", base: "http://localhost:11434" },
+    Gemini: { model: "gemini-embedding-001", base: "" },
+    OpenAI: { model: "text-embedding-3-small", base: "" },
+  };
+  const selected = defaults[e.target.value];
+  if (!selected) return;
+  const modelInput = $("#setting-embedding-model");
+  const baseInput = $("#setting-embedding-base-url");
+  if (modelInput) modelInput.value = selected.model;
+  if (baseInput) baseInput.value = selected.base;
 });
 
 $("#toggle-key-visibility")?.addEventListener("click", () => {
