@@ -182,7 +182,12 @@ Profile provides a `profile.v1` record and a resume-to-draft-to-confirm workflow
 
 Tracker stores current application state and event history. Public jobs, WaterlooWorks Job IDs, and custom entries have separate source identity. Bookmark writes are idempotent; stage/field updates create events; bulk actions report per-operation results.
 
-ATS, cover letters, and interview coaching all use the shared LLM gateway. Cover letters add a bounded Writer/Reviewer loop; interview answers are transcribed locally with faster-whisper and analyzed as text with any provider; TTS returns audio from gTTS. These services return user-facing `ok/error` results for provider failures rather than leaking provider stack traces.
+ATS parsing readiness and resume-job matching are deterministic, evidence-backed
+scorers and do not use an AI provider. Cover letters use the shared LLM gateway
+with a bounded Writer/Reviewer loop; interview answers are transcribed locally
+with faster-whisper and analyzed as text with any provider; TTS returns audio
+from gTTS. These services return user-facing `ok/error` results rather than
+leaking provider stack traces.
 
 ## 10. AI Agent architecture
 

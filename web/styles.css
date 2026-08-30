@@ -1593,6 +1593,135 @@ main {
   min-width: 0;
 }
 
+.ats-results-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.ats-module-card {
+  min-height: 190px;
+}
+
+.ats-module-pending {
+  align-items: center;
+  background: #f7f9f7;
+  border: 1px dashed #c9d8cd;
+  border-radius: 14px;
+  display: flex;
+  gap: 16px;
+  padding: 20px;
+}
+
+.ats-module-number {
+  align-items: center;
+  background: var(--dark-mint);
+  border-radius: 12px;
+  color: white;
+  display: inline-flex;
+  flex: 0 0 42px;
+  font-size: 18px;
+  font-weight: 800;
+  height: 42px;
+  justify-content: center;
+}
+
+.ats-module-pending strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.ats-module-pending p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 6px 0 0;
+}
+
+.ats-card-title-row,
+.ats-breakdown-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.ats-card-title-row {
+  border-bottom: 1px solid var(--line);
+  gap: 16px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+}
+
+.ats-card-title-row h3,
+.ats-card-title-row .eyebrow {
+  margin: 0;
+}
+
+.ats-card-title-row .eyebrow {
+  margin-bottom: 4px;
+}
+
+.ats-breakdown-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ats-breakdown-item {
+  background: #f7f9f7;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.ats-breakdown-head {
+  font-size: 12px;
+  gap: 12px;
+}
+
+.ats-breakdown-head span,
+.ats-breakdown-item p {
+  color: var(--muted);
+}
+
+.ats-breakdown-item p {
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 7px 0 0;
+}
+
+.ats-breakdown-track {
+  background: #e2e8e3;
+  border-radius: 999px;
+  height: 5px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.ats-breakdown-track span {
+  background: var(--dark-mint);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
+.ats-fail .ats-breakdown-track span {
+  background: #bc5151;
+}
+
+.ats-warning .ats-breakdown-track span {
+  background: #c89535;
+}
+
+.ats-unavailable {
+  opacity: 0.72;
+}
+
+.ats-method-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0 4px;
+}
+
 .field-group {
   margin-bottom: 18px;
 }

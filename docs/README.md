@@ -14,7 +14,8 @@ This directory contains the English technical documentation for the current impl
 | [Profile and Resume Import](modules/profile.md) | Profile schema, PDF/LaTeX validation, extraction, import drafts, confirmation, and storage |
 | [Application Tracker](modules/tracker.md) | Application stages, bookmarks, events, bulk actions, custom jobs, and CSV export |
 | [AI Agent and Memory](modules/ai-agent.md) | Sessions, tool planning, approvals, tool contracts, audit, summaries, recall, and preferences |
-| [LLM-Assisted Career Tools](modules/llm-assisted-tools.md) | LLM gateway, ATS, cover letters, interview coaching, TTS, prompts, and provider behavior |
+| [ATS-Style Resume Diagnostics](modules/ats-review.md) | Deterministic parsing readiness, resume-job matching, evidence, formulas, and limits |
+| [LLM-Assisted Career Tools](modules/llm-assisted-tools.md) | LLM gateway, cover letters, interview coaching, TTS, prompts, and provider behavior |
 | [Frontend](modules/frontend.md) | Static application shell, ES modules, API integration, state, rendering, and browser storage |
 | [Operations and Verification](modules/operations.md) | Setup, migrations, collection operations, launchd, maintenance scripts, tests, and checks |
 

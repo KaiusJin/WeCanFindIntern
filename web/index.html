@@ -313,14 +313,14 @@
       <div id="tab-ats" class="tab-pane" hidden>
         <section class="hero">
           <h1>Optimize for the algorithm.</h1>
-          <p class="hero-copy">Instant ATS match scoring, keyword gap detection, and actionable bullet improvements.</p>
+          <p class="hero-copy">Check whether your resume parses cleanly, then measure its evidence-backed match to a specific job.</p>
         </section>
 
         <section class="career-workspace">
           <div class="career-form-panel">
-            <div class="filter-heading">
+            <div class="career-panel-heading">
               <h2>Resume & Job Target</h2>
-              <button id="clear-ats" class="text-button" type="button">Reset</button>
+              <button id="clear-ats" class="text-button career-reset-button" type="button">Reset</button>
             </div>
 
             <div class="field-group">
@@ -347,57 +347,66 @@
             </div>
 
             <button id="btn-run-ats" class="primary-button career-btn" type="button">
-              <span>Evaluate ATS Match Score ↗</span>
+              <span>Evaluate Resume–Job Match ↗</span>
             </button>
           </div>
 
           <div class="career-results-panel">
             <div class="results-toolbar">
               <div>
-                <p class="eyebrow">DIAGNOSTIC REPORT</p>
-                <h2>ATS Match Analysis</h2>
+                <p class="eyebrow">TRANSPARENT DIAGNOSTIC REPORT</p>
+                <h2>Resume Analysis</h2>
               </div>
-            </div>
-
-            <div id="ats-empty" class="empty-state">
-              <div class="empty-icon">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
-              </div>
-              <h3>Ready for analysis</h3>
-              <p>Upload a resume PDF and target job description to compute your real-time ATS match score and skill gaps.</p>
             </div>
 
             <div id="ats-loading" class="loading-state" hidden>
               <div class="spinner"></div>
-              <span>Analyzing resume against job requirements…</span>
+              <span>Calculating deterministic resume and job evidence…</span>
             </div>
 
-            <div id="ats-result-card" class="career-card" hidden>
-              <div class="score-card-header">
-                <div class="score-badge-circle">
-                  <span class="score-number" id="ats-score-num">0</span>
-                  <span class="score-max">/100</span>
+            <div id="ats-results-stack" class="ats-results-stack">
+              <div id="ats-readiness-card" class="career-card ats-module-card">
+                <div class="ats-card-title-row">
+                  <div><p class="eyebrow">MODULE 1</p><h3>Resume Parsing Readiness</h3></div>
+                  <span id="ats-readiness-mode" class="score-level-pill">Waiting for PDF</span>
                 </div>
-                <div class="score-meta-text">
-                  <span class="score-level-pill" id="ats-level-pill">Match Level</span>
-                  <p class="score-summary-text" id="ats-summary-text"></p>
+                <div id="ats-readiness-pending" class="ats-module-pending">
+                  <span class="ats-module-number">1</span>
+                  <div><strong>Can an ATS read your resume correctly?</strong><p>Upload your PDF to evaluate text extraction, section recognition, contact fields, dates, and reading order.</p></div>
+                </div>
+                <div id="ats-readiness-result" hidden>
+                  <div class="score-card-header">
+                    <div class="score-badge-circle"><span class="score-number" id="ats-readiness-score">0</span><span class="score-max">/100</span></div>
+                    <div class="score-meta-text"><span class="score-level-pill" id="ats-readiness-level">Readiness</span><p class="score-summary-text" id="ats-readiness-summary"></p></div>
+                  </div>
+                  <div class="report-block"><h4>Score breakdown</h4><div id="ats-readiness-breakdown" class="ats-breakdown-list"></div></div>
+                  <div class="report-block"><h4>Parsing issues</h4><ul id="ats-readiness-issues" class="career-bullet-list"></ul><p id="ats-readiness-limitations" class="muted-copy"></p></div>
                 </div>
               </div>
 
-              <div class="report-block">
-                <h4>Key Matching Strengths</h4>
-                <div id="ats-strengths-wrap" class="tag-badges-grid"></div>
+              <div id="ats-match-card" class="career-card ats-module-card">
+                <div class="ats-card-title-row">
+                  <div><p class="eyebrow">MODULE 2</p><h3>Resume–Job Match</h3></div>
+                  <span id="ats-match-mode" class="score-level-pill">Waiting for job</span>
+                </div>
+                <div id="ats-match-pending" class="ats-module-pending">
+                  <span class="ats-module-number">2</span>
+                  <div><strong>How well does your evidence match this job?</strong><p>Add a job description to compare required skills, preferred skills, experience, education, and role alignment.</p></div>
+                </div>
+                <div id="ats-match-result" hidden>
+                  <div class="score-card-header">
+                    <div class="score-badge-circle"><span class="score-number" id="ats-match-score">0</span><span class="score-max">/100</span></div>
+                    <div class="score-meta-text"><span class="score-level-pill" id="ats-match-level">Match level</span><p class="score-summary-text" id="ats-match-summary"></p></div>
+                  </div>
+                  <div class="report-block"><h4>Score breakdown</h4><div id="ats-match-breakdown" class="ats-breakdown-list"></div></div>
+                  <div class="report-block"><h4>Matched evidence</h4><div id="ats-match-evidence" class="tag-badges-grid"></div></div>
+                  <div class="report-block"><h4>Missing or partial requirements</h4><div id="ats-match-gaps" class="tag-badges-grid gap-grid"></div></div>
+                  <div id="ats-eligibility-block" class="report-block" hidden><h4>Eligibility flags from the job description</h4><ul id="ats-eligibility-flags" class="career-bullet-list"></ul></div>
+                  <div class="report-block"><h4>Evidence-backed improvements</h4><ul id="ats-match-suggestions" class="career-bullet-list"></ul></div>
+                </div>
               </div>
 
-              <div class="report-block">
-                <h4>Missing Skills & Critical Gaps</h4>
-                <div id="ats-gaps-wrap" class="tag-badges-grid gap-grid"></div>
-              </div>
-
-              <div class="report-block">
-                <h4>Actionable Bullet Improvements</h4>
-                <ul id="ats-suggestions-wrap" class="career-bullet-list"></ul>
-              </div>
+              <p class="ats-method-note">These are transparent ATS-style diagnostics, not a simulation of a specific employer, Workday, Greenhouse, or admission probability.</p>
             </div>
           </div>
         </section>

@@ -1,0 +1,34 @@
+[
+  {
+    "name": "strong software match",
+    "resume": "Software Developer\nExperience\nDeveloper Intern, 2025 - Present\nBuilt Python and SQL services with Docker and AWS.\nProjects\nCreated a React TypeScript application.\nEducation\nBachelor of Computer Science",
+    "job_description": "Software Developer Intern\nRequired: Python, SQL, Docker, and AWS.\nPreferred: React and TypeScript.\nBachelor's degree in Computer Science required.",
+    "minimum": 80,
+    "maximum": 100,
+    "insufficient_evidence": false
+  },
+  {
+    "name": "partial frontend match",
+    "resume": "Frontend Developer\nExperience\nFrontend Intern, 2025 - Present\nBuilt interfaces with React and JavaScript.\nEducation\nBachelor of Computer Science",
+    "job_description": "Software Developer\nRequired: React, TypeScript, and Python.\nPreferred: AWS.\nTwo years of experience required.\nBachelor's degree required.",
+    "minimum": 35,
+    "maximum": 75,
+    "insufficient_evidence": false
+  },
+  {
+    "name": "unrelated healthcare role",
+    "resume": "Software Developer\nExperience\nDeveloper Intern, 2025 - Present\nBuilt Python web services.\nEducation\nBachelor of Computer Science",
+    "job_description": "Registered Nurse\nClinical nursing and patient care experience required.\nFive years of hospital experience required.",
+    "minimum": 0,
+    "maximum": 25,
+    "insufficient_evidence": false
+  },
+  {
+    "name": "vague description",
+    "resume": "Software Developer with Python experience.",
+    "job_description": "Join our collaborative software team.",
+    "minimum": null,
+    "maximum": null,
+    "insufficient_evidence": true
+  }
+]

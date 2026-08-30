@@ -73,4 +73,8 @@ Invalid file type, MIME mismatch, unsafe content, extraction failure, and invali
 
 ## Data handling rules
 
-The profile is personal data. It should be sent to external LLM providers only when the user explicitly uses ATS, cover-letter, interview, or Agent functionality and selects that provider. Provider keys remain in browser settings and are not persisted in the profile tables.
+The profile is personal data. ATS scores are calculated locally by deterministic
+server code and do not send resume content to an LLM. Profile data should be
+sent to external LLM providers only when the user explicitly uses cover-letter,
+interview, or Agent functionality and selects that provider. Provider keys
+remain in browser settings and are not persisted in the profile tables.

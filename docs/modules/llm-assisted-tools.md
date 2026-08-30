@@ -14,11 +14,16 @@ Prompt templates live in `llm/prompts/` and are separated from business services
 
 ## ATS review
 
-`ats/service.py` validates non-empty resume text and JD, resolves the provider key, sends the ATS prompt, validates the JSON object, and maps it to `AtsReviewResponse`.
+ATS scoring no longer uses the LLM gateway. `ats/parsing_readiness.py` computes
+PDF/text parsing diagnostics, while `ats/match_scoring.py` computes a separate
+resume-to-job score from source-backed requirements and published weights. The
+provider fields remain accepted for request compatibility but cannot influence
+either score.
 
-The public result includes score, level, summary, strengths, gaps, suggestions, and usage. `match_level()` maps scores of 80 or higher to High Match, 55–79 to Medium Match, and lower scores to Low Match. Provider/model/parse failures are returned as `ok=false` with a readable error.
-
-`POST /api/v1/ats/extract-pdf` obtains text through the PDF extraction boundary. `POST /api/v1/ats/review` consumes resume text and a job description.
+`POST /api/v1/ats/extract-pdf` returns text plus page-aware parsing readiness.
+`POST /api/v1/ats/review` consumes resume text and a job description and returns
+text-only readiness plus deterministic job-match evidence. See
+[ATS-Style Resume Diagnostics](ats-review.md) for formulas and limitations.
 
 ## Cover-letter generation
 
@@ -54,4 +59,8 @@ The system does not assume every provider supports structured response formattin
 
 ## Frontend responsibilities
 
-The ATS, cover-letter, interview, and settings modules load/save provider configuration from localStorage, prevent requests with missing required input, show bounded progress states, render escaped/sanitized model output, preserve reviewer warnings and usage, and reset temporary state when the user clears a feature.
+The cover-letter, interview, Agent, and settings modules load/save provider
+configuration from localStorage. ATS does not require an AI key. Career modules
+prevent requests with missing required input, show bounded progress states,
+render escaped output, preserve warnings, and reset temporary state when the
+user clears a feature.

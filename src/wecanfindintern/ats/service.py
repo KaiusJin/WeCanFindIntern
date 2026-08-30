@@ -1,10 +1,10 @@
-"""ATS resume review and keyword evaluation service."""
+"""Transparent ATS-style resume diagnostics and job matching."""
 
 from __future__ import annotations
 
+from wecanfindintern.ats.match_scoring import score_job_match
 from wecanfindintern.ats.models import AtsReviewResponse
-from wecanfindintern.llm.gateway import LLMError, complete_json, resolve_api_key
-from wecanfindintern.llm.prompts.ats import ATS_SYSTEM_PROMPT, build_ats_prompt
+from wecanfindintern.ats.parsing_readiness import score_parsing_readiness
 
 
 def match_level(score: int) -> str:
@@ -23,43 +23,16 @@ def generate_ats_review(
     api_key: str | None = None,
     api_base: str | None = None,
 ) -> AtsReviewResponse:
-    """Evaluate candidate resume against a target job description."""
+    """Compute both scores in code; model settings cannot influence results."""
+
+    del provider, model_name, api_key, api_base
     if not resume_text.strip():
         return AtsReviewResponse(ok=False, error="Resume text cannot be empty.")
     if not job_description.strip():
         return AtsReviewResponse(ok=False, error="Job description cannot be empty.")
-
-    try:
-        resolved_key = resolve_api_key(provider, api_key)
-    except LLMError as exc:
-        return AtsReviewResponse(ok=False, error=str(exc))
-
-    try:
-        result = complete_json(
-            provider=provider,
-            model_name=model_name,
-            api_key=resolved_key,
-            api_base=api_base,
-            system_prompt=ATS_SYSTEM_PROMPT,
-            user_prompt=build_ats_prompt(resume_text, job_description),
-            response_format=(
-                {"type": "json_object"}
-                if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama")
-                else None
-            ),
-            use_cache=True,
-        )
-        data = result.data
-        score = int(data.get("score", 0))
-        return AtsReviewResponse(
-            ok=True,
-            score=score,
-            level=match_level(score),
-            summary=data.get("summary", ""),
-            strengths=data.get("strengths", []),
-            gaps=data.get("gaps", []),
-            suggestions=data.get("suggestions", []),
-            usage=result.usage,
-        )
-    except (LLMError, ValueError, TypeError, KeyError) as exc:
-        return AtsReviewResponse(ok=False, error=f"{provider} ATS error: {exc}")
+    return AtsReviewResponse(
+        ok=True,
+        parsing_readiness=score_parsing_readiness(resume_text),
+        job_match=score_job_match(resume_text, job_description),
+        usage={"scoring": "deterministic", "version": "ats-match.v1"},
+    )

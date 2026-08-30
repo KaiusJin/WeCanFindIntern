@@ -39,7 +39,7 @@ The Tracker module keeps filters in the URL, fetches applications and both bookm
 
 ## Profile and generated-content flow
 
-Profile forms are generated from section configuration. Repeated records can be added/removed in local state and then saved. Resume upload shows an import draft without overwriting saved data. ATS/cover-letter/interview modules share provider settings and use feature-specific response renderers; reviewer warnings and model errors remain visible.
+Profile forms are generated from section configuration. Repeated records can be added/removed in local state and then saved. Resume upload shows an import draft without overwriting saved data. Cover-letter and interview tools use the selected provider; ATS parsing readiness and job matching are deterministic and do not use provider settings.
 
 ## Agent flow
 

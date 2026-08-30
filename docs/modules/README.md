@@ -8,6 +8,7 @@
 - [Application Tracker](tracker.md)
 - [AI Agent and Memory](ai-agent.md)
 - [LLM-Assisted Career Tools](llm-assisted-tools.md)
+- [ATS-Style Resume Diagnostics](ats-review.md)
 - [Frontend](frontend.md)
 - [Operations and Verification](operations.md)
 

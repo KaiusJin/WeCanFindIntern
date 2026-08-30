@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import io
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from pypdf import PdfReader
 
 from wecanfindintern.ats.models import AtsReviewRequest, AtsReviewResponse
+from wecanfindintern.ats.parsing_readiness import score_parsing_readiness
 from wecanfindintern.ats.service import generate_ats_review
 from wecanfindintern.profile.security import extract_text_pdf_plain
 
@@ -21,7 +24,15 @@ async def extract_pdf(file: Annotated[UploadFile, File()]):
     try:
         content = await file.read()
         text = extract_text_pdf_plain(file.filename, file.content_type, content)
-        return {"ok": True, "text": text, "filename": file.filename}
+        reader = PdfReader(io.BytesIO(content), strict=True)
+        page_texts = [(page.extract_text() or "") for page in reader.pages]
+        readiness = score_parsing_readiness(text, page_texts=page_texts)
+        return {
+            "ok": True,
+            "text": text,
+            "filename": file.filename,
+            "parsing_readiness": readiness.model_dump(mode="json"),
+        }
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:

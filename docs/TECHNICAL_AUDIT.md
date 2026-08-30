@@ -30,7 +30,8 @@ WeCanFindIntern/
 │   ├── api/
 │   │   ├── app.py                   # create_app + jobs 系列路由内联（⚠ 见 4.2）
 │   │   └── routes/                  # 7 个 router（agent/ats/cover_letter/interview/profile/tracker/waterlooworks）
-│   ├── ats/ cover_letter/ interview/  # LLM 求职工具（服务层）
+│   ├── ats/                           # 确定性简历解析与岗位匹配评分
+│   ├── cover_letter/ interview/       # LLM 求职工具（服务层）
 │   ├── db/                          # 连接池 + 读仓库 + 仓库集合
 │   ├── domain/                      # 纯领域逻辑（规范化/分类/地点/薪资）
 │   ├── ingestion/                   # JobSpy 适配与入库管道
