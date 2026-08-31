@@ -13,8 +13,10 @@ from wecanfindintern.agent.recommend.scoring import (
     enforce_company_diversity,
     expand_skill_tags,
     expand_skill_terms,
+    expand_target_roles,
     is_expired,
     score_candidate,
+    target_role_matches,
 )
 from wecanfindintern.agent.tools import LlmConfig
 from wecanfindintern.llm.gateway import LLMError
@@ -135,6 +137,38 @@ def test_preference_components_apply():
     assert components["work_mode_preference"] == 5
 
 
+def test_role_aliases_match_without_loose_substrings():
+    assert "platform engineer" in expand_target_roles(["devops"])
+    assert target_role_matches("Site Reliability Engineer Intern", ["devops"])
+    assert not target_role_matches("Sales Representative", ["devops"])
+
+
+def test_early_career_scoring_promotes_internships_and_penalizes_senior_roles():
+    internship = score_candidate(
+        {"python"},
+        {
+            "title": "Software Engineer Intern",
+            "opportunity_type": "internship",
+            "skill_tags": ["python"],
+        },
+        early_career=True,
+        today=TODAY,
+    )
+    senior = score_candidate(
+        {"python"},
+        {
+            "title": "Senior Software Engineer",
+            "opportunity_type": "full_time",
+            "skill_tags": ["python"],
+        },
+        early_career=True,
+        today=TODAY,
+    )
+    assert internship.score > senior.score
+    assert internship.signals["components"]["opportunity_fit"] == 12
+    assert senior.signals["penalties"]["senior_role"] == 25
+
+
 def test_semantic_component_is_bounded_and_validated():
     scored = score_candidate(
         set(),
@@ -215,6 +249,42 @@ def test_company_diversity_keeps_cap_when_other_companies_fill_limit():
     assert len(selected) == 4
 
 
+def test_company_diversity_deduplicates_normalized_company_title_location():
+    ranked = [
+        {
+            "company": "Acme, Inc.",
+            "title": "Software Engineer Intern",
+            "location": "Toronto, ON",
+            "job_id": "one",
+        },
+        {
+            "company": "ACME INC",
+            "title": "Software Engineer Intern",
+            "location": "Toronto, ON",
+            "job_id": "two",
+        },
+    ]
+    assert enforce_company_diversity(ranked, limit=5) == [ranked[0]]
+
+
+def test_company_diversity_collapses_locations_and_pipe_aliases():
+    ranked = [
+        {
+            "company": "Hewlett Packard Enterprise | HPE",
+            "title": "Cloud Engineer Intern",
+            "location": "Toronto",
+            "job_id": "one",
+        },
+        {
+            "company": "Hewlett Packard Enterprise",
+            "title": "Cloud Engineer Intern",
+            "location": "Vancouver",
+            "job_id": "two",
+        },
+    ]
+    assert enforce_company_diversity(ranked, limit=5) == [ranked[0]]
+
+
 def _llm_config() -> LlmConfig:
     return LlmConfig(provider="OpenAI", model_name="gpt-test", api_key="key")
 
@@ -240,6 +310,7 @@ def test_rerank_applies_valid_adjustments():
     assert outcome is not None
     assert outcome.adjustments == {1: 3, 0: -2}
     assert outcome.reasons[1] == "Closer skill overlap."
+    assert outcome.status == "applied"
 
 
 @pytest.mark.parametrize(
@@ -271,10 +342,11 @@ def test_rerank_rejects_invalid_payloads(payload):
             profile_summary={},
             preferences={},
         )
-    assert outcome is None or outcome.adjustments.keys() <= {0}
+    assert outcome.adjustments.keys() <= {0}
+    assert outcome.status in {"invalid_response", "no_adjustment"}
 
 
-def test_rerank_returns_none_on_transport_failure():
+def test_rerank_reports_transport_failure():
     with patch(
         "wecanfindintern.agent.recommend.rerank.complete_json",
         side_effect=LLMError("OpenAI", "boom"),
@@ -285,7 +357,9 @@ def test_rerank_returns_none_on_transport_failure():
             profile_summary={},
             preferences={},
         )
-    assert outcome is None
+    assert outcome.status == "failed"
+    assert outcome.error_type == "LLMError"
+    assert outcome.adjustments == {}
 
 
 def test_rerank_skips_short_lists():
@@ -295,4 +369,5 @@ def test_rerank_skips_short_lists():
         profile_summary={},
         preferences={},
     )
-    assert outcome is None
+    assert outcome.status == "skipped"
+    assert outcome.adjustments == {}

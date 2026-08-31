@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from wecanfindintern.domain.classification import normalize_for_matching
+from wecanfindintern.domain.normalization import normalize_company, normalize_title
 
 # Component caps keep one long skill list or description from dominating the
 # ranking. The score is relative fit evidence, never an admission probability.
@@ -23,6 +24,9 @@ MAX_SEMANTIC_SCORE = 12
 MAX_ROLE_PREFERENCE_SCORE = 12
 MAX_LOCATION_PREFERENCE_SCORE = 6
 MAX_WORK_MODE_PREFERENCE_SCORE = 5
+WEIGHT_OPPORTUNITY_FIT = 12
+WEIGHT_EARLY_CAREER_ROLE = 5
+PENALTY_SENIOR_ROLE = 25
 WEIGHT_FRESH_7D = 5
 WEIGHT_FRESH_30D = 2
 WEIGHT_DEADLINE_SOON = 3
@@ -58,7 +62,49 @@ SKILL_ALIASES: dict[str, tuple[str, ...]] = {
     "llm": ("large language models",),
 }
 
+ROLE_ALIASES: dict[str, tuple[str, ...]] = {
+    "software engineer": ("software developer",),
+    "machine learning": (
+        "artificial intelligence",
+        "ai engineer",
+        "ml engineer",
+        "data scientist",
+    ),
+    "frontend": ("front end", "front-end", "ui engineer", "web developer"),
+    "backend": ("back end", "back-end", "server engineer"),
+    "devops": ("site reliability", "platform engineer", "cloud engineer"),
+    "data analyst": ("business intelligence analyst", "analytics analyst"),
+}
+
+SENIOR_TITLE_PATTERN = re.compile(
+    r"\b(?:senior|sr\.?|staff|principal|lead|manager|director|architect|head)\b",
+    re.IGNORECASE,
+)
+EARLY_CAREER_TITLE_PATTERN = re.compile(
+    r"\b(?:intern(?:ship)?|co[ -]?op|junior|entry[ -]level|new grad(?:uate)?)\b",
+    re.IGNORECASE,
+)
+
 _PATTERN_CACHE: dict[str, re.Pattern[str]] = {}
+
+
+def expand_target_roles(roles: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    """Expand a bounded role phrase list without turning it into loose keywords."""
+
+    expanded: list[str] = []
+    for value in roles:
+        normalized = normalize_for_matching(value)
+        if not normalized:
+            continue
+        for phrase in (normalized, *ROLE_ALIASES.get(normalized, ())):
+            if phrase not in expanded:
+                expanded.append(phrase)
+    return tuple(expanded)
+
+
+def target_role_matches(title: str | None, roles: list[str] | tuple[str, ...]) -> bool:
+    title_text = normalize_for_matching(title or "")
+    return any(phrase in title_text for phrase in expand_target_roles(roles))
 
 
 def expand_skill_terms(skills: set[str]) -> set[str]:
@@ -133,6 +179,8 @@ def score_candidate(
     candidate: dict[str, Any],
     *,
     preferences: dict[str, str] | None = None,
+    early_career: bool = False,
+    desired_opportunity_types: set[str] | None = None,
     today: date | None = None,
 ) -> ScoredCandidate:
     """Score one candidate using bounded, inspectable fit components."""
@@ -167,11 +215,7 @@ def score_candidate(
     location_text = normalize_for_matching(
         candidate.get("location_text") or candidate.get("location") or ""
     )
-    target_roles = [
-        normalize_for_matching(item)
-        for item in preferences.get("TARGET_ROLES", "").split(",")
-        if normalize_for_matching(item)
-    ]
+    target_roles = expand_target_roles(preferences.get("TARGET_ROLES", "").split(","))
     if any(role in title_text for role in target_roles):
         components["role_preference"] = MAX_ROLE_PREFERENCE_SCORE
     target_locations = [
@@ -189,7 +233,22 @@ def score_candidate(
     ):
         components["work_mode_preference"] = MAX_WORK_MODE_PREFERENCE_SCORE
 
-    score = sum(components.values())
+    opportunity_type = (candidate.get("opportunity_type") or "").strip().lower()
+    title = candidate.get("title") or ""
+    is_internship = opportunity_type == "internship" or bool(
+        re.search(r"\b(?:intern(?:ship)?|co[ -]?op)\b", title, re.IGNORECASE)
+    )
+    desired = {value.strip().lower() for value in desired_opportunity_types or set()}
+    if (desired and opportunity_type in desired) or (early_career and is_internship):
+        components["opportunity_fit"] = WEIGHT_OPPORTUNITY_FIT
+    if early_career and EARLY_CAREER_TITLE_PATTERN.search(title):
+        components["early_career_role"] = WEIGHT_EARLY_CAREER_ROLE
+
+    penalties: dict[str, int] = {}
+    if early_career and SENIOR_TITLE_PATTERN.search(title):
+        penalties["senior_role"] = PENALTY_SENIOR_ROLE
+
+    score = sum(components.values()) - sum(penalties.values())
 
     matched = sorted(set(tag_overlap) | set(title_matches) | set(requirement_matches))
 
@@ -219,6 +278,7 @@ def score_candidate(
         "unmatched_requirement_tags": sorted(
             expand_skill_tags(candidate.get("requirement_tags") or []) - terms
         )[:10],
+        "penalties": penalties,
     }
     if freshness:
         signals["freshness"] = freshness
@@ -230,7 +290,7 @@ def score_candidate(
 
     # Ensure the public score stays a bounded relative signal even when future
     # components are added.
-    score = min(100, score)
+    score = max(0, min(100, score))
 
     return ScoredCandidate(score=score, matched_skills=matched, signals=signals)
 
@@ -252,10 +312,22 @@ def enforce_company_diversity(
     selected: list[dict[str, Any]] = []
     overflow: list[dict[str, Any]] = []
     per_company: dict[str, int] = {}
+    seen_jobs: set[tuple[str, str]] = set()
     for candidate in ranked:
-        company = (candidate.get("company") or "").strip().lower() or "unknown"
-        if per_company.get(company, 0) < max_per_company:
-            per_company[company] = per_company.get(company, 0) + 1
+        raw_company = candidate.get("company") or ""
+        company = normalize_company(raw_company.split("|", 1)[0])
+        title_key = normalize_title(candidate.get("title") or "")
+        identity = str(candidate.get("job_id") or id(candidate))
+        dedupe_key = (
+            company or f"unknown:{identity}",
+            title_key or f"job:{identity}",
+        )
+        if dedupe_key in seen_jobs:
+            continue
+        seen_jobs.add(dedupe_key)
+        company_bucket = company or "unknown"
+        if per_company.get(company_bucket, 0) < max_per_company:
+            per_company[company_bucket] = per_company.get(company_bucket, 0) + 1
             selected.append(candidate)
         else:
             overflow.append(candidate)

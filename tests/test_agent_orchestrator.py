@@ -247,7 +247,7 @@ def test_personalized_waterlooworks_question_uses_recommendations():
     assert call["name"] == "recommend_jobs"
     assert call["arguments"]["source"] == "waterloo_work"
     assert call["arguments"]["use_semantic_retrieval"] is True
-    assert call["arguments"]["use_llm_rerank"] is True
+    assert call["arguments"]["use_llm_rerank"] is False
 
 
 def test_recommendation_reply_names_top_role_and_explains_why():

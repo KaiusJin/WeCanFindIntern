@@ -18,7 +18,12 @@ import pytest
 from wecanfindintern.agent.recommend.cache import recommendation_cache
 from wecanfindintern.agent.tools import AgentDeps, LlmConfig, run_tool
 from wecanfindintern.llm.gateway import LLMError
-from wecanfindintern.profile.models import ProfileBasics, SkillEntry, UserProfile
+from wecanfindintern.profile.models import (
+    EducationEntry,
+    ProfileBasics,
+    SkillEntry,
+    UserProfile,
+)
 from wecanfindintern.tracker.models import TrackerStatsResponse
 
 
@@ -130,11 +135,16 @@ class FakeWaterlooWorks:
         return {"items": [dict(job) for job in self.jobs], "total": len(self.jobs)}
 
 
-def make_profile(*skills):
+def make_profile(*skills, studying=False):
     return UserProfile(
         id=uuid4(),
         schema_version="profile.v1",
         basics=ProfileBasics(full_name="Alex Chen"),
+        education=(
+            [EducationEntry(institution="Waterloo", status="studying")]
+            if studying
+            else []
+        ),
         skills=[SkillEntry(name=skill) for skill in skills],
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
@@ -299,6 +309,7 @@ def test_llm_rerank_applies_adjustments_and_reasons():
     assert recommendations[0]["job_id"] == str(weaker.id)
     assert any("Better team-level fit." in reason for reason in recommendations[0]["reasons"])
     assert result["data"]["timings_ms"]["llm_rerank"] >= 0
+    assert result["data"]["llm_rerank"]["status"] == "applied"
 
 
 def test_llm_rerank_failure_degrades_to_rule_order():
@@ -316,6 +327,34 @@ def test_llm_rerank_failure_degrades_to_rule_order():
     recommendations = result["data"]["recommendations"]
     assert recommendations[0]["job_id"] == str(strong.id)
     assert all("llm_reason" not in rec or not rec.get("llm_reason") for rec in recommendations)
+    assert result["data"]["llm_rerank"] == {
+        "status": "failed",
+        "applied": False,
+        "error_type": "LLMError",
+    }
+
+
+def test_student_profile_ranks_internship_above_senior_role():
+    senior = make_job(
+        title="Senior Python Software Engineer",
+        company="Senior Co",
+        skills=("python", "fastapi"),
+    )
+    senior.opportunity_type = "full_time"
+    internship = make_job(
+        title="Python Software Engineer Intern",
+        company="Intern Co",
+        skills=("python",),
+    )
+    deps = make_deps(
+        job_repo=RecallJobRepo(
+            [(senior, senior.description), (internship, internship.description)]
+        ),
+        profile=FakeProfileRepo(make_profile("python", studying=True)),
+    )
+    result = run_recommend(deps)
+    assert result["data"]["profile_used"]["early_career"] is True
+    assert result["data"]["recommendations"][0]["job_id"] == str(internship.id)
 
 
 def test_waterloo_source_excludes_tracked_and_filters_expired():
@@ -355,3 +394,24 @@ def test_waterloo_source_excludes_tracked_and_filters_expired():
     result = run_recommend(deps, source="all")
     returned = {rec["job_id"] for rec in result["data"]["recommendations"]}
     assert returned == {"WW-2"}
+
+
+def test_waterloo_internship_board_survives_explicit_opportunity_filter():
+    internship = {
+        "source_job_id": "WW-INTERN",
+        "title": "Backend Developer",
+        "organization": "Acme",
+        "boards": ["full_cycle"],
+    }
+    deps = make_deps(
+        job_repo=CompatJobRepo([]),
+        ww=FakeWaterlooWorks([internship]),
+    )
+    result = run_recommend(
+        deps,
+        source="waterloo_work",
+        opportunity_types=["internship"],
+    )
+    recommendation = result["data"]["recommendations"][0]
+    assert recommendation["job_id"] == "WW-INTERN"
+    assert recommendation["opportunity_type"] == "internship"

@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from wecanfindintern.domain.location import (
+    CANADIAN_REGION_NAMES,
+    COUNTRY_ALIASES,
+    COUNTRY_NAMES,
+    US_REGION_NAMES,
+    normalize_region_code,
+)
 from wecanfindintern.waterlooworks.extractor import (
     normalize_waterlooworks_job,
     waterlooworks_salary,
@@ -288,6 +295,13 @@ class WaterlooWorksRepository:
         *,
         board: str | None = None,
         query: str | None = None,
+        company: str | None = None,
+        city: str | None = None,
+        region: str | None = None,
+        country: str | None = None,
+        work_modes: list[str] | None = None,
+        opportunity_types: list[str] | None = None,
+        posted_after: str | None = None,
         limit: int = 50,
         offset: int = 0,
         include_description: bool = False,
@@ -304,6 +318,69 @@ class WaterlooWorksRepository:
             predicates.append("(j.title LIKE ? OR j.organization LIKE ? OR j.description LIKE ?)")
             term = f"%{query}%"
             params.extend([term, term, term])
+        if company:
+            predicates.append("lower(j.organization) LIKE ?")
+            params.append(f"%{company.lower()}%")
+        if city:
+            predicates.append("lower(j.city) = ?")
+            params.append(city.lower())
+        if region:
+            country_code = COUNTRY_ALIASES.get((country or "").lower())
+            region_code = normalize_region_code(region, country_code)
+            region_values = {region.lower()}
+            if region_code:
+                region_values.add(region_code.lower())
+                region_name = (
+                    CANADIAN_REGION_NAMES.get(region_code)
+                    if country_code == "CA"
+                    else US_REGION_NAMES.get(region_code)
+                )
+                if region_name:
+                    region_values.add(region_name.lower())
+            placeholders = ",".join("?" for _ in region_values)
+            predicates.append(f"lower(j.province) IN ({placeholders})")
+            params.extend(sorted(region_values))
+        if country:
+            country_code = COUNTRY_ALIASES.get(country.lower(), country.upper())
+            country_values = {
+                alias for alias, code in COUNTRY_ALIASES.items() if code == country_code
+            }
+            country_values.add(country_code.lower())
+            if country_code in COUNTRY_NAMES:
+                country_values.add(COUNTRY_NAMES[country_code].lower())
+            placeholders = ",".join("?" for _ in country_values)
+            predicates.append(f"lower(j.country) IN ({placeholders})")
+            params.extend(sorted(country_values))
+        if work_modes:
+            placeholders = ",".join("?" for _ in work_modes)
+            predicates.append(f"j.work_mode IN ({placeholders})")
+            params.extend(work_modes)
+        if posted_after:
+            predicates.append("j.date_posted >= ?")
+            params.append(posted_after)
+        if opportunity_types:
+            board_mapping = {
+                "internship": ["full_cycle", "employer_student_direct"],
+                "full_time": ["graduating"],
+                "contract": ["contract"],
+            }
+            boards = sorted(
+                {
+                    board_name
+                    for opportunity_type in opportunity_types
+                    for board_name in board_mapping.get(opportunity_type.lower(), [])
+                }
+            )
+            if not boards:
+                predicates.append("0")
+            else:
+                placeholders = ",".join("?" for _ in boards)
+                predicates.append(
+                    "EXISTS (SELECT 1 FROM waterlooworks_job_boards b "
+                    "WHERE b.source_job_id=j.source_job_id "
+                    f"AND b.board IN ({placeholders}))"
+                )
+                params.extend(boards)
         where = f"WHERE {' AND '.join(predicates)}" if predicates else ""
         with self._connect() as connection:
             total = connection.execute(

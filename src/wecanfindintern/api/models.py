@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import math
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
@@ -50,6 +51,7 @@ class JobListFilters(BaseModel):
     hourly_salary_max: Decimal | None = Field(default=None, ge=0)
     has_salary: bool | None = None
     currency: str | None = Field(default=None, min_length=3, max_length=3)
+    sort_by_relevance: bool = False
     cursor: str | None = Field(default=None, max_length=256)
     limit: int = Field(default=30, ge=1, le=100)
 
@@ -216,22 +218,32 @@ class JobFacetsResponse(BaseModel):
     last_updated_at: datetime | None = None
 
 
-def encode_cursor(published_at: datetime, row_id: int) -> str:
-    payload = json.dumps(
-        {"published_at": published_at.isoformat(), "id": row_id},
-        separators=(",", ":"),
-    ).encode("utf-8")
+def encode_cursor(
+    published_at: datetime, row_id: int, *, relevance: float | None = None
+) -> str:
+    cursor_payload: dict[str, str | int | float] = {
+        "published_at": published_at.isoformat(),
+        "id": row_id,
+    }
+    if relevance is not None:
+        cursor_payload["relevance"] = relevance
+    payload = json.dumps(cursor_payload, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
 
-def decode_cursor(value: str) -> tuple[datetime, int]:
+def decode_cursor(value: str) -> tuple[datetime, int, float | None]:
     try:
         padding = "=" * (-len(value) % 4)
         payload = json.loads(base64.urlsafe_b64decode(value + padding))
         published_at = datetime.fromisoformat(payload["published_at"])
         row_id = int(payload["id"])
-        if published_at.tzinfo is None or row_id < 1:
+        relevance = (
+            float(payload["relevance"]) if payload.get("relevance") is not None else None
+        )
+        if published_at.tzinfo is None or row_id < 1 or (
+            relevance is not None and not math.isfinite(relevance)
+        ):
             raise ValueError
-        return published_at, row_id
+        return published_at, row_id, relevance
     except (ValueError, TypeError, KeyError, json.JSONDecodeError, binascii.Error) as error:
         raise ValueError("Invalid pagination cursor") from error

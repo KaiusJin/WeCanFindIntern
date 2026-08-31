@@ -12,6 +12,7 @@ from wecanfindintern.agent.models import (
     AgentSession,
     AgentToolCall,
     JobReference,
+    RecommendJobsArgs,
     SearchJobsArgs,
     UpdateTrackerStageArgs,
 )
@@ -82,6 +83,28 @@ def test_tool_argument_models_validate():
         stage=ApplicationStage.INTERVIEW,
     )
     assert stage.stage == ApplicationStage.INTERVIEW
+
+
+def test_search_jobs_supports_ranking_filters_and_pagination():
+    search = SearchJobsArgs(
+        query="backend intern",
+        work_modes=["remote", "hybrid"],
+        opportunity_types=["internship"],
+        recruiting_terms=["Fall 2026"],
+        posted_after="2026-08-01",
+        cursor="cursor",
+        offset=25,
+        limit=50,
+    )
+    assert search.posted_after.isoformat() == "2026-08-01"
+    assert search.cursor == "cursor"
+    assert search.offset == 25
+    assert search.limit == 50
+
+
+def test_recommend_jobs_uses_low_latency_ranking_by_default():
+    assert RecommendJobsArgs().use_semantic_retrieval is True
+    assert RecommendJobsArgs().use_llm_rerank is False
 
 
 def test_decision_detection_keywords():

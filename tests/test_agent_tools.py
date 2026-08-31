@@ -50,8 +50,10 @@ def make_job(
 class FakeJobRepo:
     def __init__(self, jobs=None):
         self.jobs = jobs or []
+        self.last_filters = None
 
     async def list_jobs(self, filters):
+        self.last_filters = filters
         items = self.jobs
         if filters.query:
             lowered = filters.query.lower()
@@ -170,7 +172,11 @@ class FakeWaterlooWorks:
                 "organization": job.get("organization"),
                 "division": job.get("division"),
                 "location_text": job.get("location_text"),
+                "city": job.get("city"),
+                "province": job.get("province"),
+                "country": job.get("country"),
                 "work_mode": job.get("work_mode", "unknown"),
+                "date_posted": job.get("date_posted"),
                 "application_deadline": job.get("application_deadline"),
                 "application_url": job.get("application_url"),
                 "boards": job.get("boards", []),
@@ -227,6 +233,76 @@ def test_search_jobs_public_and_waterloo():
     assert result["data"]["public"][0]["title"] == "Python Backend Intern"
     assert result["data"]["waterloo_work"][0]["job_id"] == "WW-42"
     assert "Found" in result["summary"]
+
+
+def test_search_jobs_passes_public_filters_and_relevance_sort():
+    repo = FakeJobRepo([make_job(title="Python Backend Intern", company="Acme")])
+    deps = _deps(job_repo=repo)
+    result = asyncio.run(
+        run_tool(
+            "search_jobs",
+            {
+                "query": "python",
+                "company": "Acme",
+                "work_modes": ["hybrid"],
+                "opportunity_types": ["internship"],
+                "recruiting_terms": ["Fall 2026"],
+                "posted_after": "2026-08-01",
+                "source": "public",
+                "limit": 7,
+            },
+            deps,
+            phase="plan",
+        )
+    )
+    filters = repo.last_filters
+    assert filters.query == "python"
+    assert filters.company == "Acme"
+    assert filters.work_modes == ["hybrid"]
+    assert filters.opportunity_types == ["internship"]
+    assert filters.recruiting_terms == ["Fall 2026"]
+    assert filters.posted_after.isoformat() == "2026-08-01"
+    assert filters.sort_by_relevance is True
+    assert filters.limit == 7
+    assert result["pagination"]["public"]["has_more"] is False
+
+
+def test_search_jobs_filters_waterloo_metadata_consistently():
+    matching = {
+        "source_job_id": "WW-MATCH",
+        "title": "Backend Developer",
+        "organization": "Acme Labs",
+        "location_text": "Toronto, ON, Canada",
+        "city": "Toronto",
+        "province": "ON",
+        "country": "CA",
+        "work_mode": "remote",
+        "date_posted": "2026-08-20",
+        "boards": ["full_cycle"],
+    }
+    wrong_mode = {**matching, "source_job_id": "WW-WRONG", "work_mode": "onsite"}
+    deps = _deps(ww=FakeWaterlooWorks([matching, wrong_mode]))
+    result = asyncio.run(
+        run_tool(
+            "search_jobs",
+            {
+                "company": "Acme",
+                "city": "Toronto",
+                "country": "CA",
+                "region": "ON",
+                "work_modes": ["remote"],
+                "opportunity_types": ["internship"],
+                "posted_after": "2026-08-01",
+                "source": "waterloo_work",
+            },
+            deps,
+            phase="plan",
+        )
+    )
+    assert [item["job_id"] for item in result["data"]["waterloo_work"]] == [
+        "WW-MATCH"
+    ]
+    assert result["data"]["waterloo_work"][0]["opportunity_type"] == "internship"
 
 
 def test_get_job_details_missing_raises():

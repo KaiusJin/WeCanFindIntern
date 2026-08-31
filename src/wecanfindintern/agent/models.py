@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -115,8 +115,16 @@ class SearchJobsArgs(BaseModel):
     region: str | None = Field(default=None, max_length=32)
     skill: str | None = Field(default=None, max_length=80)
     category: str | None = Field(default=None, max_length=60)
+    work_modes: list[Literal["remote", "hybrid", "onsite"]] = Field(
+        default_factory=list, max_length=3
+    )
+    opportunity_types: list[str] = Field(default_factory=list, max_length=10)
+    recruiting_terms: list[str] = Field(default_factory=list, max_length=10)
+    posted_after: date | None = None
     source: Literal["all", "public", "waterloo_work"] = "all"
-    limit: int = Field(default=10, ge=1, le=30)
+    cursor: str | None = Field(default=None, max_length=256)
+    offset: int = Field(default=0, ge=0, le=10000)
+    limit: int = Field(default=10, ge=1, le=50)
 
 
 class GetJobDetailsArgs(BaseModel):
@@ -162,7 +170,7 @@ class RecommendJobsArgs(BaseModel):
     )
     opportunity_types: list[str] = Field(default_factory=list, max_length=10)
     use_semantic_retrieval: bool = True
-    use_llm_rerank: bool = True
+    use_llm_rerank: bool = False
     exclude_tracked: bool = True
 
 

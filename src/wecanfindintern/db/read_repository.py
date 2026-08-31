@@ -189,20 +189,46 @@ class JobReadRepository:
             WHERE {" AND ".join(filter_predicates)}
         """
 
+        relevance_sort = bool(filters.query and filters.sort_by_relevance)
+        rank_select = "NULL::real AS search_rank"
+        rank_parameters: list[Any] = []
+        if relevance_sort:
+            rank_select = (
+                "ts_rank_cd(j.search_document, websearch_to_tsquery('simple', %s)) "
+                "AS search_rank"
+            )
+            rank_parameters.append(filters.query)
+
         select_predicates = list(filter_predicates)
-        select_parameters = list(filter_parameters)
+        select_parameters = [*rank_parameters, *filter_parameters]
 
         if filters.cursor:
-            cursor_time, cursor_id = decode_cursor(filters.cursor)
-            select_predicates.append("(j.published_sort_at, j.id) < (%s, %s)")
-            select_parameters.extend((cursor_time, cursor_id))
+            cursor_time, cursor_id, cursor_relevance = decode_cursor(filters.cursor)
+            if relevance_sort:
+                if cursor_relevance is None:
+                    raise ValueError("A relevance cursor is required for ranked search")
+                select_predicates.append(
+                    "(ts_rank_cd(j.search_document, websearch_to_tsquery('simple', %s)), "
+                    "j.published_sort_at, j.id) < (%s, %s, %s)"
+                )
+                select_parameters.extend(
+                    (filters.query, cursor_relevance, cursor_time, cursor_id)
+                )
+            else:
+                select_predicates.append("(j.published_sort_at, j.id) < (%s, %s)")
+                select_parameters.extend((cursor_time, cursor_id))
 
         select_parameters.append(filters.limit + 1)
+        order_by = (
+            "search_rank DESC, j.published_sort_at DESC, j.id DESC"
+            if relevance_sort
+            else "j.published_sort_at DESC, j.id DESC"
+        )
         sql = f"""
-            SELECT {JOB_SELECT}
+            SELECT {JOB_SELECT},{rank_select}
             FROM jobs j
             WHERE {" AND ".join(select_predicates)}
-            ORDER BY j.published_sort_at DESC, j.id DESC
+            ORDER BY {order_by}
             LIMIT %s
         """
         async with self.pool.connection() as connection:
@@ -221,7 +247,13 @@ class JobReadRepository:
         next_cursor = None
         if has_more and page_rows:
             last = page_rows[-1]
-            next_cursor = encode_cursor(last["published_sort_at"], last["internal_id"])
+            next_cursor = encode_cursor(
+                last["published_sort_at"],
+                last["internal_id"],
+                relevance=(
+                    float(last["search_rank"]) if relevance_sort else None
+                ),
+            )
         return JobPage(
             items=items,
             total_count=total_count,
@@ -250,6 +282,10 @@ class JobReadRepository:
         *,
         skills: list[str],
         exclude_public_ids: list[UUID],
+        target_roles: list[str] | None = None,
+        locations: list[str] | None = None,
+        work_modes: list[str] | None = None,
+        opportunity_types: list[str] | None = None,
         limit: int = 120,
     ) -> list[dict[str, Any]]:
         """Recall recommendation candidates in one query.
@@ -267,6 +303,18 @@ class JobReadRepository:
         if exclude_public_ids:
             predicates.append("j.public_id <> ALL(%s)")
             parameters.append([str(value) for value in exclude_public_ids])
+        if target_roles:
+            predicates.append("lower(j.title) LIKE ANY(%s)")
+            parameters.append([f"%{value.lower()}%" for value in target_roles])
+        if locations:
+            predicates.append("lower(coalesce(j.location_text,'')) LIKE ANY(%s)")
+            parameters.append([f"%{value.lower()}%" for value in locations])
+        if work_modes:
+            predicates.append("j.work_mode = ANY(%s)")
+            parameters.append(work_modes)
+        if opportunity_types:
+            predicates.append("j.opportunity_type = ANY(%s)")
+            parameters.append(opportunity_types)
         normalized_tags = sorted({normalize_tag(skill) for skill in skills if skill})
         tsquery = _recommendation_tsquery(skills)
         if normalized_tags or tsquery:

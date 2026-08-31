@@ -5,8 +5,10 @@ from wecanfindintern.agent.recommend.rerank import RerankOutcome, rerank_with_ll
 from wecanfindintern.agent.recommend.scoring import (
     ScoredCandidate,
     enforce_company_diversity,
+    expand_target_roles,
     is_expired,
     score_candidate,
+    target_role_matches,
 )
 
 __all__ = [
@@ -16,6 +18,8 @@ __all__ = [
     "rerank_with_llm",
     "ScoredCandidate",
     "enforce_company_diversity",
+    "expand_target_roles",
     "is_expired",
     "score_candidate",
+    "target_role_matches",
 ]

@@ -10,7 +10,7 @@ from typing import Any
 
 from wecanfindintern.profile.models import UserProfile
 
-DOCUMENT_VERSION = "recommend-document.v1"
+DOCUMENT_VERSION = "recommend-document.v2"
 CHUNK_WORDS = 360
 CHUNK_OVERLAP_WORDS = 50
 
@@ -129,7 +129,19 @@ def build_public_document(row: dict[str, Any]) -> RecommendationDocument:
     )
 
 
+def infer_waterloo_opportunity_type(boards: list[str] | None) -> str | None:
+    normalized = {value.strip().lower() for value in boards or [] if value.strip()}
+    if normalized & {"full_cycle", "employer_student_direct"}:
+        return "internship"
+    if "graduating" in normalized:
+        return "full_time"
+    if "contract" in normalized:
+        return "contract"
+    return None
+
+
 def build_waterloo_document(row: dict[str, Any]) -> RecommendationDocument:
+    opportunity_type = infer_waterloo_opportunity_type(row.get("boards"))
     skills = sorted(
         {
             value.strip().lower()
@@ -144,6 +156,7 @@ def build_waterloo_document(row: dict[str, Any]) -> RecommendationDocument:
         "Tags: " + ", ".join(skills),
         f"Location: {row.get('location_text') or ''}",
         f"Work mode: {row.get('work_mode') or ''}",
+        f"Opportunity type: {opportunity_type or ''}",
         "Description:\n" + (row.get("description") or ""),
     ]
     document_text = "\n".join(fields)
@@ -154,6 +167,7 @@ def build_waterloo_document(row: dict[str, Any]) -> RecommendationDocument:
         "company": row.get("organization"),
         "location": row.get("location_text"),
         "work_mode": row.get("work_mode"),
+        "opportunity_type": opportunity_type,
         "date_posted": row.get("date_posted"),
         "application_deadline": row.get("application_deadline"),
         "application_url": row.get("application_url"),

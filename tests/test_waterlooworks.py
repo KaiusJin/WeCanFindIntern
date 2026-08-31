@@ -154,6 +154,65 @@ def test_storage_record_includes_salary():
     assert record["salary_currency"] == "CAD"
 
 
+def test_repository_applies_search_filters_before_pagination(tmp_path):
+    db = tmp_path / "waterlooworks.sqlite3"
+    repo = WaterlooWorksRepository(db)
+    with sqlite3.connect(db) as connection:
+        rows = [
+            (
+                "match",
+                "Backend Developer",
+                "Acme Labs",
+                "Toronto, Ontario, Canada",
+                "Toronto",
+                "Ontario",
+                "Canada",
+                "remote",
+                "2026-08-20",
+            ),
+            (
+                "wrong",
+                "Backend Developer",
+                "Other Corp",
+                "Vancouver, British Columbia, Canada",
+                "Vancouver",
+                "British Columbia",
+                "Canada",
+                "onsite",
+                "2026-07-01",
+            ),
+        ]
+        connection.executemany(
+            """
+            INSERT INTO waterlooworks_jobs (
+                source_job_id,title,organization,location_text,city,province,country,
+                work_mode,date_posted,source_url,raw_payload,first_seen_at,last_seen_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,'https://example.com','{}','2026-01-01','2026-01-01')
+            """,
+            rows,
+        )
+        connection.executemany(
+            """INSERT INTO waterlooworks_job_boards (
+                source_job_id,board,first_seen_at,last_seen_at
+            ) VALUES (?,?,'2026-01-01','2026-01-01')""",
+            [("match", "full_cycle"), ("wrong", "graduating")],
+        )
+
+    result = repo.list_jobs(
+        query="backend",
+        company="Acme",
+        city="Toronto",
+        region="ON",
+        country="CA",
+        work_modes=["remote"],
+        opportunity_types=["internship"],
+        posted_after="2026-08-01",
+        limit=1,
+    )
+    assert result["total"] == 1
+    assert [item["source_job_id"] for item in result["items"]] == ["match"]
+
+
 def test_existing_library_backfills_structured_salary():
     with tempfile.TemporaryDirectory() as tmp:
         db = Path(tmp) / "waterlooworks.sqlite3"

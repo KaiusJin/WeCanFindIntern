@@ -285,23 +285,49 @@ class RecommendationIndexer:
                 )
             ).fetchone()
             document_id = row_result["id"]
+            chunk_rows = await self._sync_chunks(
+                connection, document_id, document.chunks
+            )
+        return True, chunk_rows
+
+    async def _sync_chunks(
+        self, connection: Any, document_id: int, chunks: list[str]
+    ) -> list[tuple[int, str]]:
+        """Preserve embeddings for unchanged chunks during metadata/version refreshes."""
+
+        existing_rows = await (
             await connection.execute(
-                "DELETE FROM recommendation_chunks WHERE document_id=%s;",
+                """SELECT id,chunk_index,chunk_hash
+                FROM recommendation_chunks WHERE document_id=%s;""",
                 (document_id,),
             )
-            chunk_rows: list[tuple[int, str]] = []
-            for index, text in enumerate(document.chunks):
-                chunk_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
-                inserted = await (
-                    await connection.execute(
-                        """INSERT INTO recommendation_chunks (
-                            document_id,chunk_index,chunk_type,chunk_text,chunk_hash
-                        ) VALUES (%s,%s,'description',%s,%s) RETURNING id;""",
-                        (document_id, index, text, chunk_hash),
-                    )
-                ).fetchone()
-                chunk_rows.append((inserted["id"], text))
-        return True, chunk_rows
+        ).fetchall()
+        existing = {row["chunk_index"]: row for row in existing_rows}
+        changed: list[tuple[int, str]] = []
+        for index, text in enumerate(chunks):
+            chunk_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            current = existing.get(index)
+            if current is not None and current["chunk_hash"] == chunk_hash:
+                continue
+            if current is not None:
+                await connection.execute(
+                    "DELETE FROM recommendation_chunks WHERE id=%s;",
+                    (current["id"],),
+                )
+            inserted = await (
+                await connection.execute(
+                    """INSERT INTO recommendation_chunks (
+                        document_id,chunk_index,chunk_type,chunk_text,chunk_hash
+                    ) VALUES (%s,%s,'description',%s,%s) RETURNING id;""",
+                    (document_id, index, text, chunk_hash),
+                )
+            ).fetchone()
+            changed.append((inserted["id"], text))
+        await connection.execute(
+            "DELETE FROM recommendation_chunks WHERE document_id=%s AND chunk_index >= %s;",
+            (document_id, len(chunks)),
+        )
+        return changed
 
     async def _embed_chunks(self, chunks: list[tuple[int, str]]) -> int:
         if self.embedder is None:
@@ -379,20 +405,5 @@ class RecommendationIndexer:
                 )
             ).fetchone()
             document_id = inserted_document["id"]
-            await connection.execute(
-                "DELETE FROM recommendation_chunks WHERE document_id=%s;",
-                (document_id,),
-            )
-            chunks: list[tuple[int, str]] = []
-            for index, text in enumerate(document.chunks):
-                chunk_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
-                inserted = await (
-                    await connection.execute(
-                        """INSERT INTO recommendation_chunks (
-                            document_id,chunk_index,chunk_type,chunk_text,chunk_hash
-                        ) VALUES (%s,%s,'description',%s,%s) RETURNING id;""",
-                        (document_id, index, text, chunk_hash),
-                    )
-                ).fetchone()
-                chunks.append((inserted["id"], text))
+            chunks = await self._sync_chunks(connection, document_id, document.chunks)
         return True, chunks

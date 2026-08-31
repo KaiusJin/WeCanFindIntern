@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +19,18 @@ from wecanfindintern.domain.classification import normalize_tag
 RRF_K = 60
 LEXICAL_LIMIT = 200
 SEMANTIC_CHUNK_LIMIT = 300
+SEMANTIC_RRF_WEIGHT = 0.7
+LEXICAL_FLOOR_RATIO = 0.5
+
+
+@dataclass(frozen=True, slots=True)
+class RecommendationFilters:
+    """Eligibility constraints applied before retrieval ranking and truncation."""
+
+    target_roles: tuple[str, ...] = ()
+    locations: tuple[str, ...] = ()
+    work_modes: tuple[str, ...] = ()
+    opportunity_types: tuple[str, ...] = ()
 
 
 class RecommendationRepository:
@@ -45,7 +58,9 @@ class RecommendationRepository:
             ).fetchone()
         return f"{row['corpus_version']}:{row['updated_at'].isoformat()}" if row else "0"
 
-    async def has_embeddings(self, config: EmbeddingConfig) -> bool:
+    async def has_embeddings(
+        self, config: EmbeddingConfig, *, source: str | None = None
+    ) -> bool:
         if not await self.available():
             return False
         async with self.pool.connection() as connection:
@@ -54,11 +69,19 @@ class RecommendationRepository:
                     """SELECT
                         count(e.chunk_id) >= greatest(1,ceil(count(c.id)*0.95)) AS present
                     FROM recommendation_chunks c
+                    JOIN recommendation_documents d ON d.id=c.document_id
                     LEFT JOIN recommendation_chunk_embeddings e
                       ON e.chunk_id=c.id AND e.provider=%s AND e.model=%s
                      AND e.dimensions=%s
-                    WHERE c.chunk_index=0;""",
-                    (config.provider, config.model, config.dimensions),
+                    WHERE c.chunk_index=0
+                      AND (%s::text IS NULL OR d.source=%s::text);""",
+                    (
+                        config.provider,
+                        config.model,
+                        config.dimensions,
+                        source,
+                        source,
+                    ),
                 )
             ).fetchone()
         return bool(row and row["present"])
@@ -72,14 +95,17 @@ class RecommendationRepository:
         query_embedding: list[float] | None,
         limit: int,
         embedding_config: EmbeddingConfig | None = None,
+        filters: RecommendationFilters | None = None,
     ) -> list[dict[str, Any]]:
         if not await self.available():
             return []
         lexical = await self._lexical_source(
-            source="public", query_text=query_text, skills=skills
+            source="public", query_text=query_text, skills=skills, filters=filters
         )
         semantic = (
-            await self._semantic_source("public", query_embedding, embedding_config)
+            await self._semantic_source(
+                "public", query_embedding, embedding_config, filters=filters
+            )
             if query_embedding is not None and embedding_config is not None
             else []
         )
@@ -92,14 +118,15 @@ class RecommendationRepository:
             evidence[job_id]["lexical_score"] = float(row["score"] or 0)
         for rank, row in enumerate(semantic, start=1):
             job_id = row["source_job_id"]
-            fused[job_id] += 1.0 / (RRF_K + rank)
+            fused[job_id] += SEMANTIC_RRF_WEIGHT / (RRF_K + rank)
             evidence[job_id]["semantic_rank"] = rank
             evidence[job_id]["semantic_score"] = float(row["semantic_score"] or 0)
-        ranked_ids = [
-            job_id
-            for job_id, _ in sorted(fused.items(), key=lambda item: item[1], reverse=True)
-            if job_id not in {str(value) for value in exclude_public_ids}
-        ][:limit]
+        ranked_ids = _ranked_ids_with_lexical_floor(
+            lexical=lexical,
+            fused=fused,
+            excluded={str(value) for value in exclude_public_ids},
+            limit=limit,
+        )
         if not ranked_ids:
             return []
         details = await self._load_public_details(ranked_ids)
@@ -138,14 +165,20 @@ class RecommendationRepository:
         query_embedding: list[float] | None,
         limit: int,
         embedding_config: EmbeddingConfig | None = None,
+        filters: RecommendationFilters | None = None,
     ) -> list[dict[str, Any]]:
         if not await self.available():
             return []
         lexical = await self._lexical_source(
-            source="waterloo_work", query_text=query_text, skills=skills
+            source="waterloo_work",
+            query_text=query_text,
+            skills=skills,
+            filters=filters,
         )
         semantic = (
-            await self._semantic_source("waterloo_work", query_embedding, embedding_config)
+            await self._semantic_source(
+                "waterloo_work", query_embedding, embedding_config, filters=filters
+            )
             if query_embedding is not None and embedding_config is not None
             else []
         )
@@ -159,17 +192,18 @@ class RecommendationRepository:
             )
         for rank, row in enumerate(semantic, start=1):
             job_id = row["source_job_id"]
-            fused[job_id] += 1.0 / (RRF_K + rank)
+            fused[job_id] += SEMANTIC_RRF_WEIGHT / (RRF_K + rank)
             evidence[job_id].update(
                 semantic_rank=rank,
                 semantic_score=float(row["semantic_score"] or 0),
             )
         excluded = set(exclude_external_ids)
-        ranked_ids = [
-            job_id
-            for job_id, _ in sorted(fused.items(), key=lambda item: item[1], reverse=True)
-            if job_id not in excluded
-        ][:limit]
+        ranked_ids = _ranked_ids_with_lexical_floor(
+            lexical=lexical,
+            fused=fused,
+            excluded=excluded,
+            limit=limit,
+        )
         if not ranked_ids:
             return []
         async with self.pool.connection() as connection:
@@ -204,6 +238,7 @@ class RecommendationRepository:
                     "division": metadata.get("division") or row["role_family"],
                     "location_text": metadata.get("location"),
                     "work_mode": metadata.get("work_mode"),
+                    "opportunity_type": metadata.get("opportunity_type"),
                     "date_posted": metadata.get("date_posted"),
                     "application_deadline": metadata.get("application_deadline"),
                     "application_url": metadata.get("application_url"),
@@ -217,7 +252,12 @@ class RecommendationRepository:
         return results
 
     async def _lexical_source(
-        self, *, source: str, query_text: str, skills: list[str]
+        self,
+        *,
+        source: str,
+        query_text: str,
+        skills: list[str],
+        filters: RecommendationFilters | None,
     ) -> list[dict[str, Any]]:
         normalized_skills = sorted({normalize_tag(skill) for skill in skills if skill})
         # Full profile responsibilities belong in the embedding query. Feeding
@@ -239,17 +279,19 @@ class RecommendationRepository:
         )
         if not search_text and not normalized_skills:
             return []
-        sql = """
+        filter_sql, filter_parameters = _document_filter_sql("d", filters)
+        sql = f"""
             WITH query AS (SELECT websearch_to_tsquery('simple', %s) AS tsq)
-            SELECT source_job_id,
-                   ts_rank_cd(search_document,query.tsq)
-                   + CASE WHEN normalized_skills && %s::text[] THEN 1.0 ELSE 0 END AS score
-            FROM recommendation_documents,query
-            WHERE source=%s AND (
-                search_document @@ query.tsq
-                OR normalized_skills && %s::text[]
+            SELECT d.source_job_id,
+                   ts_rank_cd(d.search_document,query.tsq)
+                   + CASE WHEN d.normalized_skills && %s::text[] THEN 1.0 ELSE 0 END AS score
+            FROM recommendation_documents d,query
+            WHERE d.source=%s AND (
+                d.search_document @@ query.tsq
+                OR d.normalized_skills && %s::text[]
             )
-            ORDER BY score DESC, indexed_at DESC
+            {filter_sql}
+            ORDER BY score DESC, d.indexed_at DESC
             LIMIT %s;
         """
         parameters = (
@@ -257,6 +299,7 @@ class RecommendationRepository:
             normalized_skills,
             source,
             normalized_skills,
+            *filter_parameters,
             LEXICAL_LIMIT,
         )
         async with self.pool.connection() as connection:
@@ -267,9 +310,14 @@ class RecommendationRepository:
         source: str,
         query_embedding: list[float],
         config: EmbeddingConfig,
+        *,
+        filters: RecommendationFilters | None,
     ) -> list[dict[str, Any]]:
         vector = vector_literal(query_embedding)
         dimension = config.dimensions
+        filter_sql, filter_parameters = _document_filter_sql(
+            "source_document", filters
+        )
         sql = f"""
             WITH nearest_chunks AS (
                 SELECT c.document_id,
@@ -282,6 +330,7 @@ class RecommendationRepository:
                 WHERE e.provider=%s AND e.model=%s AND e.dimensions=%s
                   AND c.chunk_index=0
                   AND source_document.source=%s
+                  {filter_sql}
                 ORDER BY e.embedding::vector({dimension}) <=> %s::vector({dimension})
                 LIMIT %s
             )
@@ -303,6 +352,7 @@ class RecommendationRepository:
                         config.model,
                         dimension,
                         source,
+                        *filter_parameters,
                         vector,
                         SEMANTIC_CHUNK_LIMIT,
                         source,
@@ -325,3 +375,69 @@ class RecommendationRepository:
         """
         async with self.pool.connection() as connection:
             return await (await connection.execute(sql, (ranked_ids,))).fetchall()
+
+
+def _document_filter_sql(
+    alias: str, filters: RecommendationFilters | None
+) -> tuple[str, list[Any]]:
+    """Build fixed-column SQL predicates; all user values remain parameters."""
+
+    if filters is None:
+        return "", []
+    predicates: list[str] = []
+    parameters: list[Any] = []
+    if filters.target_roles:
+        predicates.append(f"lower({alias}.title) LIKE ANY(%s)")
+        parameters.append([f"%{value.lower()}%" for value in filters.target_roles])
+    if filters.locations:
+        predicates.append(
+            f"lower(coalesce({alias}.metadata->>'location','')) LIKE ANY(%s)"
+        )
+        parameters.append([f"%{value.lower()}%" for value in filters.locations])
+    if filters.work_modes:
+        predicates.append(
+            f"lower(coalesce({alias}.metadata->>'work_mode','')) = ANY(%s)"
+        )
+        parameters.append([value.lower() for value in filters.work_modes])
+    if filters.opportunity_types:
+        predicates.append(
+            f"lower(coalesce({alias}.metadata->>'opportunity_type','')) = ANY(%s)"
+        )
+        parameters.append([value.lower() for value in filters.opportunity_types])
+    if not predicates:
+        return "", []
+    return "AND " + " AND ".join(predicates), parameters
+
+
+def _ranked_ids_with_lexical_floor(
+    *,
+    lexical: list[dict[str, Any]],
+    fused: dict[str, float],
+    excluded: set[str],
+    limit: int,
+) -> list[str]:
+    """Keep strong exact recall while semantic retrieval broadens the candidate set."""
+
+    lexical_available = sum(
+        row["source_job_id"] not in excluded for row in lexical
+    )
+    floor_count = min(
+        lexical_available, max(1, round(limit * LEXICAL_FLOOR_RATIO))
+    )
+    ranked: list[str] = []
+    seen = set(excluded)
+    for row in lexical:
+        job_id = row["source_job_id"]
+        if job_id not in seen:
+            ranked.append(job_id)
+            seen.add(job_id)
+        if len(ranked) >= floor_count:
+            break
+    for job_id, _ in sorted(fused.items(), key=lambda item: item[1], reverse=True):
+        if job_id in seen:
+            continue
+        ranked.append(job_id)
+        seen.add(job_id)
+        if len(ranked) >= limit:
+            break
+    return ranked[:limit]

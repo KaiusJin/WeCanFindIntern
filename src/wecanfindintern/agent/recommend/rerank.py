@@ -27,6 +27,8 @@ EXCERPT_CHARS = 320
 class RerankOutcome:
     adjustments: dict[int, int]
     reasons: dict[int, str]
+    status: str = "applied"
+    error_type: str | None = None
 
 
 def _candidate_line(index: int, candidate: dict[str, Any]) -> str:
@@ -52,11 +54,11 @@ def rerank_with_llm(
     profile_summary: dict[str, Any],
     preferences: dict[str, str],
     language: str = "match the user's language",
-) -> RerankOutcome | None:
-    """Re-rank candidates; returns None on any failure (caller degrades)."""
+) -> RerankOutcome:
+    """Re-rank candidates with an explicit status for observability."""
 
     if len(candidates) < 2:
-        return None
+        return RerankOutcome({}, {}, status="skipped")
     shortlist = candidates[:MAX_RERANK_CANDIDATES]
     system_prompt = (
         "You are a conservative job-match reviewer. A deterministic ranker has "
@@ -90,43 +92,45 @@ def rerank_with_llm(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             response_format=json_response_format(llm_config.provider),
-            timeout_seconds=8.0,
+            timeout_seconds=llm_config.timeout_seconds,
             max_retries=0,
         )
         data = result.data
     except Exception as error:
         logger.warning("Recommendation rerank failed: %s", error)
-        return None
+        return RerankOutcome(
+            {}, {}, status="failed", error_type=type(error).__name__
+        )
     if not isinstance(data, dict):
-        return None
+        return RerankOutcome({}, {}, status="invalid_response")
 
     raw_adjustments = data.get("adjustments")
     if not isinstance(raw_adjustments, list):
-        return None
+        return RerankOutcome({}, {}, status="invalid_response")
     adjustments: dict[int, int] = {}
     reasons: dict[int, str] = {}
     seen: set[int] = set()
     for value in raw_adjustments:
         if not isinstance(value, dict):
-            continue
-        try:
-            index = int(value.get("candidate"))
-            delta = int(value.get("delta"))
-        except (TypeError, ValueError):
-            continue
+            return RerankOutcome({}, {}, status="invalid_response")
+        index = value.get("candidate")
+        delta = value.get("delta")
         reason = value.get("reason")
         if (
-            isinstance(value.get("candidate"), bool)
+            not isinstance(index, int)
+            or isinstance(index, bool)
+            or not isinstance(delta, int)
+            or isinstance(delta, bool)
             or not 0 <= index < len(shortlist)
             or index in seen
             or not -MAX_ABS_ADJUSTMENT <= delta <= MAX_ABS_ADJUSTMENT
             or not isinstance(reason, str)
             or not reason.strip()
         ):
-            continue
+            return RerankOutcome({}, {}, status="invalid_response")
         seen.add(index)
         adjustments[index] = delta
         reasons[index] = reason.strip()[:240]
     if not adjustments:
-        return None
+        return RerankOutcome({}, {}, status="no_adjustment")
     return RerankOutcome(adjustments=adjustments, reasons=reasons)

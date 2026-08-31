@@ -123,7 +123,9 @@ def _fast_recommend_plan(content: str) -> dict[str, Any] | None:
                     "source": source,
                     "exclude_tracked": True,
                     "use_semantic_retrieval": True,
-                    "use_llm_rerank": True,
+                    # Deterministic hybrid ranking is the low-latency default.
+                    # The planner may opt into LLM reranking when explicitly useful.
+                    "use_llm_rerank": False,
                 },
             }
         ],
