@@ -22,19 +22,6 @@ let wwBusy = false;
 // WATERLOOWORKS LOCAL IMPORT
 // =========================================================
 
-const WW_STATUS_LABELS = {
-  idle: "Not connected",
-  browser_starting: "Starting Chrome",
-  waiting_for_login: "Waiting for login",
-  waiting_for_job_page: "Open job search",
-  ready: "Connected",
-  collecting: "Collecting",
-  importing: "Importing",
-  completed: "Completed",
-  partial: "Partially completed",
-  failed: "Needs attention",
-};
-
 const WW_BOARD_LABELS = {
   full_cycle: "Co-op: Full-Cycle",
   employer_student_direct: "Employer-Student Direct",
@@ -55,15 +42,8 @@ function renderWaterlooWorksStatus(data) {
     "collecting",
     "importing",
   ].includes(status);
-  const pill = $("#ww-status-pill");
-  pill.className = `ww-status-pill ${status}`;
-  pill.querySelector("span").textContent = WW_STATUS_LABELS[status] || status;
-  $("#ww-status-title").textContent = WW_STATUS_LABELS[status] || "WaterlooWorks";
-  $("#ww-status-message").textContent = data.message || "";
-  $("#ww-status-icon").classList.toggle("active", ["ready", "collecting", "importing", "completed", "partial"].includes(status));
   $("#ww-unique-count").textContent = Number(data.unique_job_count || 0).toLocaleString();
   $("#ww-posting-success-count").textContent = Number(data.posting_success_count || 0).toLocaleString();
-  $("#ww-posting-failed-count").textContent = Number(data.posting_failed_count || 0).toLocaleString();
   $("#ww-board-failed-count").textContent = Number(data.board_failed_count || 0).toLocaleString();
   $("#ww-finished-at").textContent = data.finished_at
     ? `Finished ${formatRelativeTime(data.finished_at)}`

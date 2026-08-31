@@ -160,7 +160,6 @@
           <section class="results-panel" aria-live="polite">
             <div class="results-toolbar">
               <div>
-                <p class="eyebrow">OPEN ROLES</p>
                 <h2 id="results-title">Latest jobs</h2>
               </div>
               <div class="results-meta">
@@ -246,16 +245,14 @@
           <article class="ww-connection-card">
             <div class="ww-card-heading">
               <div>
-                <p class="eyebrow">LOCAL CONNECTION</p>
+                <h2>Run summary</h2>
               </div>
-              <span id="ww-status-pill" class="ww-status-pill idle" hidden><i></i><span>Not connected</span></span>
+              <span id="ww-finished-at" class="muted-copy">No import yet</span>
             </div>
-            <div class="ww-status-body" hidden>
-              <div id="ww-status-icon" class="ww-status-icon">W</div>
-              <div>
-                <strong id="ww-status-title">Ready to connect</strong>
-                <p id="ww-status-message">Open a dedicated Chrome window to begin. Your password and MFA never enter WeCanFindIntern.</p>
-              </div>
+            <div class="ww-stat-grid">
+              <div><span>Stored jobs</span><strong id="ww-unique-count">0</strong></div>
+              <div><span>Seen in latest import</span><strong id="ww-posting-success-count">0</strong></div>
+              <div><span>Boards failed</span><strong id="ww-board-failed-count">0</strong></div>
             </div>
             <div class="ww-actions">
               <button id="ww-launch" class="primary-button" type="button">Log into WaterlooWorks ↗</button>
@@ -274,22 +271,9 @@
             </div>
           </aside>
 
-          <div class="ww-run-card">
-            <div class="ww-card-heading">
-              <div><p class="eyebrow">LATEST IMPORT</p><h2>Run summary</h2></div>
-              <span id="ww-finished-at" class="muted-copy">No import yet</span>
-            </div>
-            <div class="ww-stat-grid">
-              <div><span>Unique jobs</span><strong id="ww-unique-count">0</strong></div>
-              <div><span>Postings succeeded</span><strong id="ww-posting-success-count">0</strong></div>
-              <div><span>Postings failed</span><strong id="ww-posting-failed-count">0</strong></div>
-              <div><span>Boards failed</span><strong id="ww-board-failed-count">0</strong></div>
-            </div>
-          </div>
-
           <div id="ww-jobs-card" class="ww-jobs-card">
             <div class="ww-card-heading">
-              <div><p class="eyebrow">SEPARATE LIBRARY</p><h2>WaterlooWorks jobs</h2></div>
+              <div><h2>WaterlooWorks jobs</h2></div>
               <span id="ww-jobs-total" class="muted-copy">0 jobs</span>
             </div>
             <div class="ww-job-filters">
@@ -688,8 +672,8 @@
         </section>
         <section class="profile-workspace">
           <aside class="profile-import-panel">
-            <div class="profile-panel-head"><div><p class="eyebrow">RESUME IMPORT</p><h2>Source document</h2></div></div>
-            <p class="profile-help">PDF must contain selectable English text. Scans, encrypted PDFs, active content, embedded files, and disguised extensions are rejected. LaTeX is read as text and never compiled.</p>
+            <div class="profile-panel-head"><div><h2>Import your resume</h2></div></div>
+            <p class="profile-help">Upload your resume to quickly fill your Profile. Review and edit the imported details before using them across WeCanFindIntern.</p>
             <label class="profile-dropzone" for="profile-resume-file"><input id="profile-resume-file" type="file" accept=".pdf,.tex,application/pdf,application/x-tex,text/x-tex" hidden /><strong>Choose PDF or .tex</strong><span>Maximum 8 MB PDF / 1 MB LaTeX</span></label>
             <button id="profile-upload-file" class="primary-button profile-wide-button" type="button">Parse selected resume</button>
             <div class="profile-divider"><span>or paste LaTeX source</span></div>

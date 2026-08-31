@@ -67,7 +67,7 @@ class WaterlooWorksService:
                 state[key] = saved[key]
         return WaterlooWorksSnapshot(
             status=latest["status"],
-            message="Showing the latest WaterlooWorks sync stored on this device.",
+            message="",
             unique_job_count=latest["unique_job_count"],
             posting_success_count=latest["posting_success_count"],
             posting_failed_count=latest["posting_failed_count"],

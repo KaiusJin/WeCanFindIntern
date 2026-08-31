@@ -118,25 +118,10 @@ button {
 .ww-connection-card, .ww-side-panel, .ww-run-card, .ww-jobs-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 24px; }
 .ww-card-heading, .ww-side-heading { align-items: flex-start; display: flex; justify-content: space-between; gap: 16px; }
 .ww-card-heading h2 { font-size: 22px; margin: 3px 0 0; }
-.ww-status-pill { align-items: center; background: #f0f3f1; border-radius: 999px; color: var(--muted); display: inline-flex; font-size: 11px; font-weight: 750; gap: 7px; padding: 6px 10px; white-space: nowrap; }
-.ww-status-pill i { background: #9aa49e; border-radius: 50%; height: 7px; width: 7px; }
-.ww-status-pill.ready, .ww-status-pill.completed { background: #e9f7ed; color: #207144; }
-.ww-status-pill.ready i, .ww-status-pill.completed i { background: #2ea664; }
-.ww-status-pill.collecting, .ww-status-pill.importing { background: #edf3ff; color: #275fa0; }
-.ww-status-pill.collecting i, .ww-status-pill.importing i { animation: ww-pulse 1.2s infinite; background: #3b77bf; }
-.ww-status-pill.partial, .ww-status-pill.waiting_for_login, .ww-status-pill.waiting_for_job_page { background: #fff6df; color: #86661b; }
-.ww-status-pill.partial i, .ww-status-pill.waiting_for_login i, .ww-status-pill.waiting_for_job_page i { background: #d5a631; }
-.ww-status-pill.failed { background: #fff0f0; color: #a52a2a; }
-.ww-status-pill.failed i { background: #c64747; }
-.ww-status-body { align-items: center; border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); display: flex; gap: 17px; margin: 22px 0; padding: 22px 0; }
-.ww-status-body strong { display: block; font-size: 17px; margin-bottom: 4px; }
-.ww-status-body p { color: var(--muted); margin: 0; max-width: 580px; }
-.ww-status-icon { align-items: center; background: #edf1ee; border-radius: 14px; color: #839087; display: flex; flex: 0 0 50px; font-size: 21px; font-weight: 850; height: 50px; justify-content: center; }
-.ww-status-icon.active { background: var(--dark-mint); color: var(--mint); }
-.ww-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.ww-actions { align-items: center; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; padding-top: 20px; }
 .ww-actions .text-button { margin-left: auto; }
 .ww-actions button:disabled { cursor: not-allowed; opacity: .5; }
-.ww-side-panel { grid-row: span 2; }
+.ww-side-panel { grid-row: auto; }
 .ww-side-heading span { background: #eef4ef; border-radius: 999px; color: var(--dark-mint); font-size: 11px; font-weight: 700; padding: 5px 9px; }
 .ww-board-list { display: grid; margin-top: 15px; }
 .ww-board-list > div { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 12px; padding: 14px 0; }
@@ -147,7 +132,7 @@ button {
 .ww-board-state.completed { color: #207144; }
 .ww-board-state.failed { color: #c0392b; }
 .ww-run-card { grid-column: 1; }
-.ww-stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 20px; }
+.ww-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 20px; }
 .ww-stat-grid > div { border-left: 1px solid var(--line); display: grid; gap: 2px; padding: 2px 14px; }
 .ww-stat-grid > div:first-child { border-left: 0; padding-left: 0; }
 .ww-stat-grid span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
@@ -228,7 +213,6 @@ button {
 .profile-items { display: grid; gap: 12px; }
 .profile-item-card { background: #fafbfc; border: 1px solid #e5e8eb; border-radius: 10px; padding: 15px; }
 .profile-item-head { margin-bottom: 12px; }
-.profile-item-head > div { display: flex; align-items: center; gap: 10px; }
 .profile-section-skills .profile-items { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 8px; }
 .profile-skill-card { display: flex; align-items: end; gap: 6px; padding: 8px; }
 .profile-skill-card .profile-item-grid { display: block; flex: 1; min-width: 0; }
@@ -322,7 +306,6 @@ button {
   letter-spacing: 0.04em;
   margin-bottom: 6px;
 }
-.profile-confidence { font-size: 10px; color: #55705e; background: #eaf6ee; padding: 3px 7px; border-radius: 999px; }
 .profile-section-empty { border: 1px dashed #d8dce1; border-radius: 9px; padding: 18px; color: #8a929d; font-size: 12px; text-align: center; }
 .muted-copy { color: #7b8490; font-size: 12px; }
 
