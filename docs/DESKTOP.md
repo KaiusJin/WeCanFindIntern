@@ -151,10 +151,17 @@ publish to an app store.
 
 ## Signing and direct distribution
 
-Unsigned artifacts are suitable for internal verification. For normal direct
-distribution, set `APPLE_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
-`APPLE_TEAM_ID` in the macOS release environment. Electron Forge applies those
-settings during the macOS packaging/notarization path.
+macOS artifacts use a certificate-free ad-hoc signature over the complete app
+bundle. This signature seals the app resources and is checked with
+`codesign --verify --deep --strict` during release, but it does not establish a
+trusted developer identity and cannot be notarized by Apple. The DMG includes a
+Chinese first-launch guide. Users install the app in `/Applications`, try to open
+it once, and then choose **System Settings > Privacy & Security > Open Anyway**.
+They should verify the download against the release's `SHA256SUMS.txt` first.
+
+Do not instruct users to disable Gatekeeper globally. A normal double-click,
+Developer ID trust, and automatic notarization validation are intentionally not
+claimed for this certificate-free distribution model.
 
 Major PostgreSQL upgrades must not point a newer server directly at the existing
 data directory. Ship a backup/restore or `pg_upgrade` migration before changing the

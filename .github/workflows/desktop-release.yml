@@ -100,6 +100,20 @@ jobs:
             sleep $((attempt * 5))
           done
 
+      - name: Verify macOS ad-hoc app signature
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apps=(out/*/WeCanFindIntern.app)
+          if (( ${#apps[@]} != 1 )); then
+            echo "Expected exactly one packaged macOS app, found ${#apps[@]}." >&2
+            exit 1
+          fi
+          ../scripts/desktop/verify_macos_adhoc_app.sh "${apps[0]}"
+
       - name: Build Windows desktop installer
         if: runner.os == 'Windows'
         working-directory: desktop
@@ -170,7 +184,7 @@ jobs:
               --verify-tag \
               --title "WeCanFindIntern $GITHUB_REF_NAME" \
               --generate-notes \
-              --notes "Self-contained desktop builds for macOS and Windows. These artifacts are currently unsigned, so Gatekeeper or SmartScreen may show a warning." \
+              --notes "Self-contained desktop builds for macOS and Windows. macOS builds use a complete integrity-only ad-hoc signature and are not Apple-notarized: try opening the app once, then approve it in System Settings > Privacy & Security > Open Anyway. Windows builds are unsigned and may trigger SmartScreen. Verify downloads against SHA256SUMS.txt." \
               --draft
           fi
 

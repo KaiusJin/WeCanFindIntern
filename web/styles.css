@@ -4432,7 +4432,7 @@ main {
   align-items: center;
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
 }
 
 .topbar-row > .brand {
@@ -4452,7 +4452,7 @@ main {
   justify-self: center;
   margin-top: 0;
   min-width: 0;
-  width: auto;
+  width: 100%;
 }
 
 .topbar-row .nav-tab {
@@ -4611,6 +4611,30 @@ main {
   }
 }
 
+@media (max-width: 1440px) {
+  .topbar-row {
+    grid-template-areas:
+      "brand actions"
+      "navigation navigation";
+    grid-template-columns: minmax(0, 1fr) max-content;
+    row-gap: 10px;
+  }
+
+  .topbar-row > .brand {
+    grid-area: brand;
+  }
+
+  .topbar-row > .topbar-actions {
+    grid-area: actions;
+  }
+
+  .topbar-row > .topbar-nav {
+    grid-area: navigation;
+    justify-self: stretch;
+    width: 100%;
+  }
+}
+
 @media (max-width: 1100px) {
   .career-workspace {
     grid-template-columns: minmax(340px, 40%) minmax(0, 1fr);
@@ -4666,8 +4690,9 @@ main {
   }
 
   .topbar-row > .topbar-nav {
+    justify-self: stretch;
     margin-top: 0;
-    width: auto;
+    width: 100%;
   }
 
   .topbar-row .nav-tab {
