@@ -282,6 +282,159 @@ def test_recommendation_reply_names_top_role_and_explains_why():
     assert "80/100" in reply
 
 
+def test_add_this_job_reuses_top_prior_recommendation_without_planner(monkeypatch):
+    repo, session = make_repo_with_session()
+    domain = FakeDomain()
+    deps = make_deps(domain)
+    asyncio.run(
+        repo.add_tool_call(
+            session_id=session.id,
+            message_id=None,
+            tool_name="recommend_jobs",
+            arguments={"source": "all"},
+            result={
+                "data": {
+                    "recommendations": [
+                        {
+                            "job_id": JOB_ID,
+                            "source": "public",
+                            "title": "AWS Cloud Engineering Intern - Summer 2027",
+                            "company": "CACI International",
+                        },
+                        {
+                            "job_id": str(uuid4()),
+                            "source": "public",
+                            "title": "Cloud Engineering Intern",
+                            "company": "Skygate Advisors",
+                        },
+                    ]
+                }
+            },
+        )
+    )
+
+    def unexpected_plan(**kwargs):
+        raise AssertionError("the planner must not run for a resolved follow-up action")
+
+    monkeypatch.setattr(orchestrator_module, "plan_turn", unexpected_plan)
+    result = asyncio.run(
+        AgentOrchestrator(repo, deps).process_message(
+            session.id, "帮我把这个工作添加到interested"
+        )
+    )
+
+    assert result.pending_approval is not None
+    assert result.pending_approval.tool_name == "add_interested"
+    assert result.pending_approval.arguments == {
+        "jobs": [{"job_id": JOB_ID, "source": "public"}]
+    }
+    assert domain.bookmarked == []
+    current_calls = [call for call in repo.tool_calls if call.status == "awaiting_approval"]
+    assert [call.tool_name for call in current_calls] == ["add_interested"]
+
+
+def test_named_prior_job_is_resolved_without_another_search(monkeypatch):
+    repo, session = make_repo_with_session()
+    domain = FakeDomain()
+    deps = make_deps(domain)
+    other_job_id = str(uuid4())
+    asyncio.run(
+        repo.add_tool_call(
+            session_id=session.id,
+            message_id=None,
+            tool_name="search_jobs",
+            arguments={"query": "cloud intern"},
+            result={
+                "data": {
+                    "public": [
+                        {
+                            "job_id": JOB_ID,
+                            "source": "public",
+                            "title": "AWS Cloud Engineering Intern - Summer 2027",
+                            "company": "CACI International",
+                        },
+                        {
+                            "job_id": other_job_id,
+                            "source": "public",
+                            "title": "Cloud Engineering Intern",
+                            "company": "Skygate Advisors",
+                        },
+                    ]
+                }
+            },
+        )
+    )
+
+    def unexpected_plan(**kwargs):
+        raise AssertionError("the planner must not search for a job already in prior results")
+
+    monkeypatch.setattr(orchestrator_module, "plan_turn", unexpected_plan)
+    prior_call_count = len(repo.tool_calls)
+    result = asyncio.run(
+        AgentOrchestrator(repo, deps).process_message(
+            session.id,
+            "AWS Cloud Engineering Intern - CACI International添加到interested",
+        )
+    )
+
+    assert result.pending_approval is not None
+    assert result.pending_approval.arguments["jobs"][0]["job_id"] == JOB_ID
+    new_calls = repo.tool_calls[prior_call_count:]
+    assert [call.tool_name for call in new_calls] == ["add_interested"]
+
+
+def test_unresolved_this_job_asks_for_context_without_recalling_jobs(monkeypatch):
+    repo, session = make_repo_with_session()
+    deps = make_deps(FakeDomain())
+
+    def unexpected_plan(**kwargs):
+        raise AssertionError("an ambiguous deictic write must not trigger job recall")
+
+    monkeypatch.setattr(orchestrator_module, "plan_turn", unexpected_plan)
+    result = asyncio.run(
+        AgentOrchestrator(repo, deps).process_message(
+            session.id, "把这个岗位添加到interested"
+        )
+    )
+
+    assert result.pending_approval is None
+    assert "Attach" in result.message.content
+    assert repo.tool_calls == []
+
+
+def test_final_planner_reply_skips_redundant_reply_composer(monkeypatch):
+    repo, session = make_repo_with_session()
+    deps = make_deps(FakeDomain())
+    calls = {"count": 0}
+
+    def fake_plan(**kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {
+                "reply": "",
+                "tool_calls": [
+                    {"name": "search_jobs", "arguments": {"query": "python", "limit": 3}}
+                ],
+            }
+        return {"reply": "No matching roles were found.", "tool_calls": []}
+
+    def unexpected_stream(self, **kwargs):
+        raise AssertionError("the final planner reply should be reused directly")
+
+    monkeypatch.setattr(orchestrator_module, "plan_turn", fake_plan)
+    monkeypatch.setattr(
+        orchestrator_module.AgentOrchestrator,
+        "_stream_reply_events",
+        unexpected_stream,
+    )
+    result = asyncio.run(
+        AgentOrchestrator(repo, deps).process_message(session.id, "find python roles")
+    )
+
+    assert calls["count"] == 2
+    assert result.message.content == "No matching roles were found."
+
+
 def test_read_only_turn_records_tool_call_and_reply(monkeypatch):
     repo, session = make_repo_with_session()
     domain = FakeDomain()

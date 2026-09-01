@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import threading
+import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -42,7 +43,7 @@ from wecanfindintern.llm.gateway import (
 # Bounded plan–execute loop: each round plans one step, read-tool results are
 # fed back delimited, and the loop ends on a final reply, a write approval, a
 # repeated identical call, the round cap, or the feedback budget.
-MAX_PLANNING_ROUNDS = 4
+MAX_PLANNING_ROUNDS = 3
 MAX_FEEDBACK_CHARS = 6000
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,20 @@ PERSONALIZED_RECOMMEND_INTENT = re.compile(
     re.IGNORECASE,
 )
 
+ADD_INTERESTED_INTENT = re.compile(
+    r"(?is)(?:"
+    r"\b(?:add|save|bookmark)\b.{0,80}\b(?:interested|tracker)\b|"
+    r"\b(?:interested|tracker)\b.{0,40}\b(?:add|save|bookmark)\b|"
+    r"(?:加|添加|加入|放到|放入|收藏).{0,40}(?:interested|感兴趣|追踪)|"
+    r"(?:interested|感兴趣|追踪).{0,20}(?:加|添加|加入|放到|放入|收藏)"
+    r")"
+)
+
+DEICTIC_JOB_REFERENCE = re.compile(
+    r"(?i)(?:\b(?:this|that)\s+(?:job|role|position)\b|\bit\b|"
+    r"(?:这个|这份|该|那个|那份)(?:工作|岗位|职位)|(?:把|将)?它)"
+)
+
 
 def _fast_recommend_plan(content: str) -> dict[str, Any] | None:
     """Bypass the planner for short, unambiguous recommendation requests."""
@@ -129,6 +144,139 @@ def _fast_recommend_plan(content: str) -> dict[str, Any] | None:
             }
         ],
     }
+
+
+def _job_reference_from_context(context: dict[str, Any] | None) -> dict[str, str] | None:
+    """Return the canonical reference for an explicitly attached/open job."""
+
+    if not context:
+        return None
+    job = context.get("job") or context
+    if not isinstance(job, dict) or not job.get("id"):
+        return None
+    source = str(job.get("source") or "public")
+    if source not in {"public", "waterloo_work"}:
+        source = "public"
+    return {"job_id": str(job["id"]), "source": source}
+
+
+def _jobs_from_tool_call(call: AgentToolCall) -> list[dict[str, Any]]:
+    """Extract job candidates from one persisted read-tool result."""
+
+    if call.status != "succeeded" or not isinstance(call.result, dict):
+        return []
+    data = call.result.get("data")
+    if call.tool_name == "get_job_details" and isinstance(data, dict):
+        return [data]
+    if call.tool_name == "recommend_jobs" and isinstance(data, dict):
+        recommendations = data.get("recommendations")
+        return recommendations if isinstance(recommendations, list) else []
+    if call.tool_name == "search_jobs" and isinstance(data, dict):
+        candidates: list[dict[str, Any]] = []
+        for source, rows in data.items():
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if isinstance(row, dict):
+                    candidates.append({"source": source, **row})
+        return candidates
+    return []
+
+
+def _normalized_reference_text(value: Any) -> str:
+    return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", str(value or "").lower()).strip()
+
+
+def _job_reference_from_recent_tools(
+    content: str, tool_calls: list[AgentToolCall]
+) -> dict[str, str] | None:
+    """Resolve a follow-up job reference without issuing another job search.
+
+    An explicitly named title/company is matched against the most recent
+    persisted read results. A deictic reference ("this job"/"这个岗位") may use
+    the first item only when the immediately relevant result was a ranked
+    recommendation or a single-job detail result.
+    """
+
+    normalized_content = _normalized_reference_text(content)
+    deictic = bool(DEICTIC_JOB_REFERENCE.search(content))
+    for call in reversed(tool_calls):
+        candidates = [row for row in _jobs_from_tool_call(call) if row.get("job_id")]
+        if not candidates:
+            continue
+
+        scored: list[tuple[int, int, dict[str, Any]]] = []
+        for index, candidate in enumerate(candidates):
+            title = _normalized_reference_text(candidate.get("title"))
+            company = _normalized_reference_text(
+                candidate.get("company") or candidate.get("organization")
+            )
+            score = 0
+            if title and title in normalized_content:
+                score += 4
+            if company and company in normalized_content:
+                # Company identity disambiguates generic titles such as
+                # "Cloud Engineering Intern" more strongly than a title substring.
+                score += 6
+            if score:
+                scored.append((score, -index, candidate))
+        if scored:
+            scored.sort(reverse=True, key=lambda item: (item[0], item[1]))
+            best = scored[0][2]
+            return {
+                "job_id": str(best["job_id"]),
+                "source": str(best.get("source") or "public"),
+            }
+
+        if deictic and call.tool_name in {"recommend_jobs", "get_job_details"}:
+            best = candidates[0]
+            return {
+                "job_id": str(best["job_id"]),
+                "source": str(best.get("source") or "public"),
+            }
+        # Do not look through older job result sets after the newest relevant
+        # result failed to identify the user's target.
+        return None
+    return None
+
+
+def _fast_add_interested_plan(
+    content: str,
+    *,
+    context: dict[str, Any] | None,
+    recent_tool_calls: list[AgentToolCall],
+) -> dict[str, Any] | None:
+    """Reuse an existing job identity for an Interested follow-up action."""
+
+    if not ADD_INTERESTED_INTENT.search(content):
+        return None
+    reference = _job_reference_from_context(context)
+    if reference is None:
+        reference = _job_reference_from_recent_tools(content, recent_tool_calls)
+    if reference is None:
+        if DEICTIC_JOB_REFERENCE.search(content):
+            reply = (
+                "我还不能确定你指的是哪个岗位。请先 Attach 该岗位，或告诉我岗位名称和公司。"
+                if re.search(r"[\u4e00-\u9fff]", content)
+                else (
+                    "I cannot tell which job you mean yet. Attach it first, or provide "
+                    "the job title and company."
+                )
+            )
+            return {"reply": reply, "tool_calls": []}
+        return None
+    return {
+        "reply": "",
+        "tool_calls": [{"name": "add_interested", "arguments": {"jobs": [reference]}}],
+    }
+
+
+def _approval_reply(user_message: str) -> str:
+    """Deterministic approval copy avoids a redundant model round trip."""
+
+    if re.search(r"[\u4e00-\u9fff]", user_message):
+        return "已准备好这项更改，请检查确认内容后选择确认或取消。"
+    return "The change is ready. Review the confirmation details, then confirm or cancel."
 
 
 class PlannerToolCallPayload(BaseModel):
@@ -597,6 +745,7 @@ class AgentOrchestrator:
         ``done`` (the full AgentTurnResult payload).
         """
 
+        turn_started = time.perf_counter()
         session = await self._require_session(session_id)
         user_message = await self.repo.add_message(
             session_id, "user", content, token_count=estimate_tokens(content)
@@ -628,6 +777,14 @@ class AgentOrchestrator:
             return
 
         history = await self.repo.list_messages(session_id, limit=40)
+        recent_tool_calls: list[AgentToolCall] = []
+        if ADD_INTERESTED_INTENT.search(content):
+            recent_tool_calls = await self.repo.list_tool_calls(session_id, limit=12)
+        fast_add_plan = _fast_add_interested_plan(
+            content,
+            context=context,
+            recent_tool_calls=recent_tool_calls,
+        )
         working_context = None
         if self.deps.memory is not None:
             working_context = await self.deps.memory.build_context(session_id, content)
@@ -639,12 +796,22 @@ class AgentOrchestrator:
         executed_keys: set[str] = set()
         feedback_blocks: list[str] = []
         last_plan_reply = ""
+        planner_returned_final = False
+        rounds_run = 0
 
         for round_number in range(1, MAX_PLANNING_ROUNDS + 1):
+            rounds_run = round_number
             plan = (
-                _fast_recommend_plan(content) if round_number == 1 and not pending else None
+                fast_add_plan
+                if round_number == 1 and fast_add_plan is not None
+                else (
+                    _fast_recommend_plan(content)
+                    if round_number == 1 and not pending
+                    else None
+                )
             )
             if plan is None:
+                plan_started = time.perf_counter()
                 try:
                     plan = await asyncio.to_thread(
                         plan_turn,
@@ -656,6 +823,12 @@ class AgentOrchestrator:
                         working_context=working_context,
                         tool_feedback=feedback_blocks,
                         round_number=round_number,
+                    )
+                    logger.info(
+                        "Agent planning round completed: session=%s round=%s elapsed_ms=%s",
+                        session_id,
+                        round_number,
+                        round((time.perf_counter() - plan_started) * 1000),
                     )
                 except LLMError as error:
                     if round_number == 1:
@@ -714,11 +887,13 @@ class AgentOrchestrator:
                 executed_keys.add(key)
                 fresh_calls.append({"name": name, "arguments": arguments})
             if not fresh_calls:
+                planner_returned_final = not planned_calls and bool(last_plan_reply.strip())
                 break  # empty plan (final reply) or all calls were duplicates
 
             # Independent read tools run concurrently; writes stay sequential.
             read_calls = [call for call in fresh_calls if not is_write_tool(call["name"])]
             write_calls = [call for call in fresh_calls if is_write_tool(call["name"])]
+            tools_started = time.perf_counter()
             read_results = await asyncio.gather(
                 *(
                     run_tool(call["name"], call["arguments"], self.deps, phase="plan")
@@ -800,34 +975,36 @@ class AgentOrchestrator:
                     yield {"type": "tool", "tool_call": tool_call_records[-1]}
 
             if write_pending or recommend_done:
+                logger.info(
+                    "Agent tool round completed: session=%s round=%s calls=%s "
+                    "elapsed_ms=%s stop_reason=%s",
+                    session_id,
+                    round_number,
+                    len(fresh_calls),
+                    round((time.perf_counter() - tools_started) * 1000),
+                    "approval" if write_pending else "recommendation",
+                )
                 break
+            logger.info(
+                "Agent tool round completed: session=%s round=%s calls=%s elapsed_ms=%s",
+                session_id,
+                round_number,
+                len(fresh_calls),
+                round((time.perf_counter() - tools_started) * 1000),
+            )
             if sum(len(block) for block in feedback_blocks) > MAX_FEEDBACK_CHARS:
                 break
 
         sink: dict[str, str] = {}
         if pending_approval is not None:
-            fallback = (
-                "I've prepared the following change for your confirmation. "
-                "Please review the preview and confirm or cancel."
-            )
-            try:
-                async for event in self._stream_reply_events(
-                    user_message=content,
-                    tool_summaries=tool_summaries,
-                    context=context,
-                    awaiting_approval=True,
-                    working_context=working_context,
-                    fallback=fallback,
-                    sink=sink,
-                ):
-                    yield event
-            except (ToolError, LLMError):
-                reply = fallback
-                yield {"type": "text_delta", "delta": fallback}
-            else:
-                reply = sink["reply"]
+            reply = _approval_reply(content)
+            yield {"type": "text_delta", "delta": reply}
         elif direct_reply is not None and len(tool_call_records) == 1:
             reply = direct_reply
+            for index in range(0, len(reply), 120):
+                yield {"type": "text_delta", "delta": reply[index : index + 120]}
+        elif planner_returned_final:
+            reply = last_plan_reply
             for index in range(0, len(reply), 120):
                 yield {"type": "text_delta", "delta": reply[index : index + 120]}
         elif tool_summaries:
@@ -888,6 +1065,15 @@ class AgentOrchestrator:
             tool_calls=tool_calls,
             pending_approval=pending_approval,
             session=session,
+        )
+        logger.info(
+            "Agent turn completed: session=%s rounds=%s tools=%s approval=%s "
+            "elapsed_ms=%s",
+            session_id,
+            rounds_run,
+            len(tool_call_records),
+            pending_approval is not None,
+            round((time.perf_counter() - turn_started) * 1000),
         )
         yield {"type": "done", "result": turn_result.model_dump(mode="json")}
 
