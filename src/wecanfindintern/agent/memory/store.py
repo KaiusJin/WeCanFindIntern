@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from hashlib import sha256
-from typing import Any
 from uuid import UUID
 
 from psycopg.types.json import Jsonb
@@ -60,20 +59,6 @@ class AgentMemoryStore:
                 "extraction_covers_through_message_id"
             ],
         )
-
-    async def list_sessions_with_meta(
-        self, *, limit: int = 30
-    ) -> list[dict[str, Any]]:
-        async with self.pool.connection() as connection:
-            result = await connection.execute(
-                """SELECT public_id AS id, title, created_at, updated_at,
-                    last_message_at
-                FROM agent_sessions
-                ORDER BY COALESCE(last_message_at, updated_at) DESC, id DESC
-                LIMIT %s;""",
-                (limit,),
-            )
-            return [dict(row) for row in await result.fetchall()]
 
     async def touch_last_message(self, session_id: UUID) -> None:
         async with self.pool.connection() as connection:
@@ -256,13 +241,15 @@ class AgentMemoryStore:
     async def load_active_memories(self, limit: int) -> list[MemoryRecord]:
         async with self.pool.connection() as connection:
             result = await connection.execute(
-                """SELECT public_id AS id, session_id, memory_type, content,
-                    content_hash, confidence::float8 AS confidence, status,
-                    source_message_id, access_count, last_accessed_at, expires_at,
-                    created_at, updated_at
-                FROM agent_memories
-                WHERE status = %s AND (expires_at IS NULL OR expires_at > now())
-                ORDER BY updated_at DESC
+                """SELECT m.public_id AS id, s.public_id AS session_id,
+                    m.memory_type, m.content,
+                    m.content_hash, m.confidence::float8 AS confidence, m.status,
+                    m.source_message_id, m.access_count, m.last_accessed_at, m.expires_at,
+                    m.created_at, m.updated_at
+                FROM agent_memories m
+                LEFT JOIN agent_sessions s ON s.id=m.session_id
+                WHERE m.status = %s AND (m.expires_at IS NULL OR m.expires_at > now())
+                ORDER BY m.updated_at DESC
                 LIMIT %s;""",
                 (MEMORY_STATUS_ACTIVE, limit),
             )

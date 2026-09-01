@@ -1,31 +1,41 @@
 """Unit coverage for recommendation document metadata and hybrid fusion."""
 
+import asyncio
+
 from wecanfindintern.agent.recommend.documents import (
     DOCUMENT_VERSION,
     build_waterloo_document,
-    infer_waterloo_opportunity_type,
 )
+from wecanfindintern.agent.recommend.indexer import RecommendationIndexer
 from wecanfindintern.agent.recommend.repository import (
     RecommendationFilters,
     _document_filter_sql,
     _ranked_ids_with_lexical_floor,
 )
+from wecanfindintern.waterlooworks.taxonomy import infer_waterloo_opportunity_type
 
 
 def test_waterloo_opportunity_type_is_indexed():
-    assert infer_waterloo_opportunity_type(["full_cycle"]) == "internship"
-    assert infer_waterloo_opportunity_type(["graduating"]) == "full_time"
+    assert infer_waterloo_opportunity_type(["full_cycle"]) == "co_op"
+    assert infer_waterloo_opportunity_type(["graduating"]) == "new_grad"
     document = build_waterloo_document(
         {
             "source_job_id": "WW-1",
             "title": "Developer",
             "organization": "Acme",
             "boards": ["employer_student_direct"],
+            "opportunity_type": "internship",
+            "job_category": "software_engineering",
+            "skill_tags": ["python", "excel"],
+            "requirement_tags": ["bachelors"],
         }
     )
-    assert DOCUMENT_VERSION == "recommend-document.v2"
-    assert document.metadata["opportunity_type"] == "internship"
-    assert "Opportunity type: internship" in document.document_text
+    assert DOCUMENT_VERSION == "recommend-document.v6"
+    assert document.metadata["opportunity_type"] == "co_op"
+    assert "Opportunity type: co_op" in document.document_text
+    assert document.role_family == "software_engineering"
+    assert document.normalized_skills == ["excel", "python"]
+    assert document.requirement_tags == ["bachelors"]
 
 
 def test_retrieval_filters_are_parameterized_and_cover_eligibility_fields():
@@ -89,3 +99,37 @@ def test_hybrid_fusion_backfills_excluded_lexical_floor_entries():
         limit=4,
     )
     assert ranked[:2] == ["exact-1", "exact-2"]
+
+
+def test_index_queue_excludes_rows_that_reached_retry_limit():
+    class FakeConnection:
+        def __init__(self):
+            self.executed = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, query, params):
+            self.executed.append((query, params))
+            return self
+
+        async def fetchall(self):
+            return []
+
+    connection = FakeConnection()
+
+    class FakePool:
+        def connection(self):
+            return connection
+
+    report = asyncio.run(
+        RecommendationIndexer(FakePool()).index_pending(limit=20, max_attempts=3)
+    )
+
+    query, params = connection.executed[0]
+    assert "q.attempts < %s" in query
+    assert params == (3, 20)
+    assert report.scanned == 0

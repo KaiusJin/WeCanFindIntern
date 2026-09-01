@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from wecanfindintern.agent.contracts import AgentDeps, ToolError
 from wecanfindintern.agent.memory.config import settings as memory_settings
 from wecanfindintern.agent.memory.manager import render_context_sections
 from wecanfindintern.agent.memory.models import WorkingContext
@@ -27,8 +28,6 @@ from wecanfindintern.agent.models import (
 )
 from wecanfindintern.agent.repository import AgentRepository
 from wecanfindintern.agent.tools import (
-    AgentDeps,
-    ToolError,
     is_write_tool,
     run_tool,
     summarize_for_llm,
@@ -168,10 +167,21 @@ def _planner_failure_reply(user_message: str) -> str:
     """Public-safe fallback when both the initial and repair outputs are invalid."""
 
     if re.search(r"[\u4e00-\u9fff]", user_message):
-        return "抱歉，我暂时无法可靠地处理这次请求，请重试一次。你的数据没有被更改。"
+        return "抱歉，我暂时无法完成你的请求。请重试一次或换一种说法；你的数据没有被更改。"
     return (
-        "I couldn't reliably process that request. Please try once more; "
+        "I'm sorry, I couldn't complete that request. Please try again or rephrase it; "
         "your data was not changed."
+    )
+
+
+def _tool_reply_failure(user_message: str) -> str:
+    """Fallback when tools ran but the model could not summarize their results."""
+
+    if re.search(r"[\u4e00-\u9fff]", user_message):
+        return "我完成了能够执行的步骤，但暂时无法整理最终回复。请重试一次或换一种说法。"
+    return (
+        "I completed the steps I could, but I couldn't prepare the final response. "
+        "Please try again or rephrase your request."
     )
 
 
@@ -205,10 +215,18 @@ def _context_text(context: dict[str, Any] | None) -> str:
         parts.append(job["title"])
     if job.get("company"):
         parts.append(job["company"])
+    if job.get("location"):
+        parts.append(f"location: {job['location']}")
+    if job.get("work_mode"):
+        parts.append(f"work mode: {job['work_mode']}")
+    if job.get("application_deadline"):
+        parts.append(f"deadline: {job['application_deadline']}")
+    if job.get("source"):
+        parts.append(f"source: {job['source']}")
     if job.get("id"):
         parts.append(f"job id: {job['id']}")
     if job.get("jd"):
-        parts.append(f"description: {job['jd'][:600]}")
+        parts.append(f"description: {job['jd'][:6000]}")
     return " ".join(parts) if parts else "No job is open."
 
 
@@ -597,6 +615,15 @@ class AgentOrchestrator:
                 user_message=user_message,
                 session=session,
             )
+            for tool_call in decision_result.tool_calls:
+                yield {
+                    "type": "tool",
+                    "tool_call": tool_call.model_dump(mode="json"),
+                }
+            yield {
+                "type": "text_delta",
+                "delta": decision_result.message.content,
+            }
             yield {"type": "done", "result": decision_result.model_dump(mode="json")}
             return
 
@@ -632,9 +659,14 @@ class AgentOrchestrator:
                     )
                 except LLMError as error:
                     if round_number == 1:
-                        raise ToolError(
-                            "llm_failed", f"AI model error: {error}"
-                        ) from error
+                        logger.warning(
+                            "Agent model could not plan the first round; returning a "
+                            "conversation fallback: provider=%s model=%s error=%s",
+                            error.provider,
+                            error.model,
+                            error,
+                        )
+                        last_plan_reply = _planner_failure_reply(content)
                     break  # keep the results already gathered this turn
                 except ToolError as error:
                     if error.error_type == "planner_invalid_output":
@@ -799,7 +831,7 @@ class AgentOrchestrator:
             for index in range(0, len(reply), 120):
                 yield {"type": "text_delta", "delta": reply[index : index + 120]}
         elif tool_summaries:
-            fallback = last_plan_reply
+            fallback = _tool_reply_failure(content)
             try:
                 async for event in self._stream_reply_events(
                     user_message=content,

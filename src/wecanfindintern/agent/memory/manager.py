@@ -9,6 +9,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from wecanfindintern.agent.contracts import AgentDeps
 from wecanfindintern.agent.memory.config import settings
 from wecanfindintern.agent.memory.extraction import extract_memory_candidates
 from wecanfindintern.agent.memory.models import (
@@ -37,7 +38,6 @@ from wecanfindintern.agent.memory.window import (
     should_compress,
     split_for_compression,
 )
-from wecanfindintern.agent.tools import AgentDeps
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,16 @@ class AgentMemoryManager:
         task.add_done_callback(
             lambda _task: self._maintenance_tasks.pop(session_id, None)
         )
+
+    async def shutdown(self) -> None:
+        """Cancel and join process-scoped maintenance tasks before pool shutdown."""
+
+        tasks = list(self._maintenance_tasks.values())
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._maintenance_tasks.clear()
 
     async def run_maintenance(
         self, session_id: UUID, deps: AgentDeps

@@ -9,8 +9,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from wecanfindintern.profile.models import UserProfile
+from wecanfindintern.waterlooworks.dates import parse_waterlooworks_date
+from wecanfindintern.waterlooworks.taxonomy import resolve_waterloo_opportunity_type
 
-DOCUMENT_VERSION = "recommend-document.v2"
+DOCUMENT_VERSION = "recommend-document.v6"
 CHUNK_WORDS = 360
 CHUNK_OVERLAP_WORDS = 50
 
@@ -23,8 +25,7 @@ class RecommendationDocument:
     title: str
     role_family: str | None
     normalized_skills: list[str]
-    required_skills: list[str]
-    preferred_skills: list[str]
+    requirement_tags: list[str]
     document_text: str
     metadata: dict[str, Any]
     chunks: list[str]
@@ -91,7 +92,6 @@ def build_profile_query(profile: UserProfile, preferences: dict[str, str]) -> st
 def build_public_document(row: dict[str, Any]) -> RecommendationDocument:
     skills = sorted(set(row.get("skill_tags") or []))
     requirements = sorted(set(row.get("requirement_tags") or []))
-    preferred: list[str] = []
     fields = [
         f"Title: {row.get('title') or ''}",
         f"Company: {row.get('company_name') or ''}",
@@ -104,9 +104,6 @@ def build_public_document(row: dict[str, Any]) -> RecommendationDocument:
         "Description:\n" + (row.get("description") or ""),
     ]
     document_text = "\n".join(fields)
-    content_hash = hashlib.sha256(
-        (DOCUMENT_VERSION + "\x1f" + document_text).encode("utf-8")
-    ).hexdigest()
     metadata = {
         "company": row.get("company_name"),
         "location": row.get("location_text"),
@@ -114,6 +111,7 @@ def build_public_document(row: dict[str, Any]) -> RecommendationDocument:
         "opportunity_type": row.get("opportunity_type"),
         "date_posted": str(row.get("date_posted") or ""),
     }
+    content_hash = _document_hash(document_text, metadata)
     return RecommendationDocument(
         source_job_id=str(row["public_id"]),
         public_job_id=str(row["public_id"]),
@@ -121,48 +119,32 @@ def build_public_document(row: dict[str, Any]) -> RecommendationDocument:
         title=row.get("title") or "Untitled",
         role_family=row.get("job_category") or row.get("job_function"),
         normalized_skills=skills,
-        required_skills=requirements,
-        preferred_skills=preferred,
+        requirement_tags=requirements,
         document_text=document_text,
         metadata=metadata,
         chunks=chunk_document(document_text),
     )
 
 
-def infer_waterloo_opportunity_type(boards: list[str] | None) -> str | None:
-    normalized = {value.strip().lower() for value in boards or [] if value.strip()}
-    if normalized & {"full_cycle", "employer_student_direct"}:
-        return "internship"
-    if "graduating" in normalized:
-        return "full_time"
-    if "contract" in normalized:
-        return "contract"
-    return None
-
-
 def build_waterloo_document(row: dict[str, Any]) -> RecommendationDocument:
-    opportunity_type = infer_waterloo_opportunity_type(row.get("boards"))
-    skills = sorted(
-        {
-            value.strip().lower()
-            for value in (row.get("division"), *(row.get("boards") or []))
-            if value and value.strip()
-        }
+    opportunity_type = resolve_waterloo_opportunity_type(
+        row.get("opportunity_type"), row.get("boards")
     )
+    skills = sorted(set(row.get("skill_tags") or []))
+    requirements = sorted(set(row.get("requirement_tags") or []))
     fields = [
         f"Title: {row.get('title') or ''}",
         f"Organization: {row.get('organization') or ''}",
         f"Division: {row.get('division') or ''}",
-        "Tags: " + ", ".join(skills),
+        "Skills: " + ", ".join(skills),
+        "Requirements: " + ", ".join(requirements),
         f"Location: {row.get('location_text') or ''}",
         f"Work mode: {row.get('work_mode') or ''}",
         f"Opportunity type: {opportunity_type or ''}",
         "Description:\n" + (row.get("description") or ""),
     ]
     document_text = "\n".join(fields)
-    content_hash = hashlib.sha256(
-        (DOCUMENT_VERSION + "\x1f" + document_text).encode("utf-8")
-    ).hexdigest()
+    deadline_date = parse_waterlooworks_date(row.get("application_deadline"))
     metadata = {
         "company": row.get("organization"),
         "location": row.get("location_text"),
@@ -170,23 +152,39 @@ def build_waterloo_document(row: dict[str, Any]) -> RecommendationDocument:
         "opportunity_type": opportunity_type,
         "date_posted": row.get("date_posted"),
         "application_deadline": row.get("application_deadline"),
-        "application_url": row.get("application_url"),
+        "application_deadline_date": deadline_date.isoformat() if deadline_date else None,
+        "application_url": row.get("application_url") or row.get("source_url"),
         "division": row.get("division"),
-        "boards": row.get("boards") or [],
+        "boards": sorted(set(row.get("boards") or [])),
     }
+    content_hash = _document_hash(document_text, metadata)
     return RecommendationDocument(
         source_job_id=str(row["source_job_id"]),
         public_job_id=None,
         content_hash=content_hash,
         title=row.get("title") or "Untitled",
-        role_family=row.get("division"),
+        role_family=row.get("job_category") or row.get("division"),
         normalized_skills=skills,
-        required_skills=[],
-        preferred_skills=[],
+        requirement_tags=requirements,
         document_text=document_text,
         metadata=metadata,
         chunks=chunk_document(document_text),
     )
+
+
+def _document_hash(document_text: str, metadata: dict[str, Any]) -> str:
+    """Version both retrieval text and mutable result metadata as one document."""
+
+    payload = json.dumps(
+        metadata,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(
+        (DOCUMENT_VERSION + "\x1f" + document_text + "\x1f" + payload).encode("utf-8")
+    ).hexdigest()
 
 
 def chunk_document(text: str) -> list[str]:

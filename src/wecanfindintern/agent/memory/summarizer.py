@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 
+from wecanfindintern.agent.contracts import AgentDeps, ToolError
 from wecanfindintern.agent.memory.config import settings
 from wecanfindintern.agent.memory.models import MemoryMessage
 from wecanfindintern.agent.memory.tokens import estimate_tokens
-from wecanfindintern.agent.tools import AgentDeps, ToolError
 from wecanfindintern.llm.gateway import complete_json
 
 SUMMARY_KEYS = {

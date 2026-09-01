@@ -143,7 +143,7 @@ def test_role_aliases_match_without_loose_substrings():
     assert not target_role_matches("Sales Representative", ["devops"])
 
 
-def test_early_career_scoring_promotes_internships_and_penalizes_senior_roles():
+def test_early_career_scoring_promotes_early_career_opportunities_and_penalizes_senior_roles():
     internship = score_candidate(
         {"python"},
         {
@@ -164,8 +164,19 @@ def test_early_career_scoring_promotes_internships_and_penalizes_senior_roles():
         early_career=True,
         today=TODAY,
     )
+    co_op = score_candidate(
+        {"python"},
+        {
+            "title": "Software Developer",
+            "opportunity_type": "co_op",
+            "skill_tags": ["python"],
+        },
+        early_career=True,
+        today=TODAY,
+    )
     assert internship.score > senior.score
     assert internship.signals["components"]["opportunity_fit"] == 12
+    assert co_op.signals["components"]["opportunity_fit"] == 12
     assert senior.signals["penalties"]["senior_role"] == 25
 
 

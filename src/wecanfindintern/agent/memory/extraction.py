@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from wecanfindintern.agent.contracts import AgentDeps, ToolError
 from wecanfindintern.agent.memory.config import settings
 from wecanfindintern.agent.memory.models import (
     MEMORY_TYPES,
     MemoryCandidate,
     MemoryMessage,
 )
-from wecanfindintern.agent.tools import AgentDeps, ToolError
 from wecanfindintern.llm.gateway import complete_json
 
 

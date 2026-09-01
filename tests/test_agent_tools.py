@@ -163,8 +163,10 @@ class FakeProfileRepo:
 class FakeWaterlooWorks:
     def __init__(self, jobs=None):
         self.jobs = jobs or []
+        self.last_filters = None
 
     async def list_jobs(self, *, query=None, limit=50, include_description=False, **kwargs):
+        self.last_filters = {"query": query, "limit": limit, **kwargs}
         items = [
             {
                 "source_job_id": job["source_job_id"],
@@ -267,7 +269,7 @@ def test_search_jobs_passes_public_filters_and_relevance_sort():
     assert result["pagination"]["public"]["has_more"] is False
 
 
-def test_search_jobs_filters_waterloo_metadata_consistently():
+def test_search_jobs_delegates_complete_waterloo_filters():
     matching = {
         "source_job_id": "WW-MATCH",
         "title": "Backend Developer",
@@ -280,18 +282,20 @@ def test_search_jobs_filters_waterloo_metadata_consistently():
         "date_posted": "2026-08-20",
         "boards": ["full_cycle"],
     }
-    wrong_mode = {**matching, "source_job_id": "WW-WRONG", "work_mode": "onsite"}
-    deps = _deps(ww=FakeWaterlooWorks([matching, wrong_mode]))
+    waterloo = FakeWaterlooWorks([matching])
+    deps = _deps(ww=waterloo)
     result = asyncio.run(
         run_tool(
             "search_jobs",
             {
                 "company": "Acme",
+                "skill": "python",
+                "category": "software_engineering",
                 "city": "Toronto",
                 "country": "CA",
                 "region": "ON",
                 "work_modes": ["remote"],
-                "opportunity_types": ["internship"],
+                "opportunity_types": ["co_op"],
                 "posted_after": "2026-08-01",
                 "source": "waterloo_work",
             },
@@ -302,7 +306,10 @@ def test_search_jobs_filters_waterloo_metadata_consistently():
     assert [item["job_id"] for item in result["data"]["waterloo_work"]] == [
         "WW-MATCH"
     ]
-    assert result["data"]["waterloo_work"][0]["opportunity_type"] == "internship"
+    assert result["data"]["waterloo_work"][0]["opportunity_type"] == "co_op"
+    assert waterloo.last_filters["skill"] == "python"
+    assert waterloo.last_filters["category"] == "software_engineering"
+    assert waterloo.last_filters["opportunity_types"] == ["co_op"]
 
 
 def test_get_job_details_missing_raises():

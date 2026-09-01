@@ -12,8 +12,8 @@ from psycopg_pool import AsyncConnectionPool
 
 from wecanfindintern.agent.recommend.documents import vector_literal
 from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig
-from wecanfindintern.api.models import JobListItem
-from wecanfindintern.db.read_repository import JOB_SELECT, job_list_item
+from wecanfindintern.application.job_models import JobListItem
+from wecanfindintern.db.job_projection import JOB_SELECT, job_list_item
 from wecanfindintern.domain.classification import normalize_tag
 
 RRF_K = 60
@@ -210,7 +210,7 @@ class RecommendationRepository:
             rows = await (
                 await connection.execute(
                     """SELECT source_job_id,title,role_family,normalized_skills,
-                              document_text,metadata
+                              requirement_tags,document_text,metadata
                     FROM recommendation_documents
                     WHERE source='waterloo_work' AND source_job_id=ANY(%s);""",
                     (ranked_ids,),
@@ -241,10 +241,14 @@ class RecommendationRepository:
                     "opportunity_type": metadata.get("opportunity_type"),
                     "date_posted": metadata.get("date_posted"),
                     "application_deadline": metadata.get("application_deadline"),
+                    "application_deadline_date": metadata.get(
+                        "application_deadline_date"
+                    ),
                     "application_url": metadata.get("application_url"),
                     "boards": metadata.get("boards") or [],
                     "description": row["document_text"][:3000],
                     "skill_tags": row["normalized_skills"] or [],
+                    "requirement_tags": row["requirement_tags"] or [],
                     "retrieval": retrieval,
                     "retrieval_sources": sources,
                 }
@@ -290,6 +294,13 @@ class RecommendationRepository:
                 d.search_document @@ query.tsq
                 OR d.normalized_skills && %s::text[]
             )
+            AND (
+                d.source <> 'public'
+                OR EXISTS (
+                    SELECT 1 FROM jobs active_job
+                    WHERE active_job.public_id=d.public_job_id AND active_job.status=1
+                )
+            )
             {filter_sql}
             ORDER BY score DESC, d.indexed_at DESC
             LIMIT %s;
@@ -330,6 +341,14 @@ class RecommendationRepository:
                 WHERE e.provider=%s AND e.model=%s AND e.dimensions=%s
                   AND c.chunk_index=0
                   AND source_document.source=%s
+                  AND (
+                      source_document.source <> 'public'
+                      OR EXISTS (
+                          SELECT 1 FROM jobs active_job
+                          WHERE active_job.public_id=source_document.public_job_id
+                            AND active_job.status=1
+                      )
+                  )
                   {filter_sql}
                 ORDER BY e.embedding::vector({dimension}) <=> %s::vector({dimension})
                 LIMIT %s

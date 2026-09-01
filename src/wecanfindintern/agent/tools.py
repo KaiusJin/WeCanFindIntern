@@ -9,13 +9,30 @@ write tool without a recorded user approval.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import re
-import time
-from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+from wecanfindintern.agent.catalog import TOOL_CATALOG
+from wecanfindintern.agent.contracts import AgentDeps, ToolError
+from wecanfindintern.agent.contracts import LlmConfig as LlmConfig
+from wecanfindintern.agent.job_access import (
+    public_job_summary as _public_job_summary,
+)
+from wecanfindintern.agent.job_access import (
+    resolve_job as _resolve_job,
+)
+from wecanfindintern.agent.job_access import (
+    tracked_application_by_ref as _tracked_application_by_ref,
+)
+from wecanfindintern.agent.job_access import (
+    tracked_external_map as _tracked_external_map,
+)
+from wecanfindintern.agent.job_access import (
+    tracked_public_map as _tracked_public_map,
+)
+from wecanfindintern.agent.job_access import (
+    waterlooworks_job_summary as _ww_job_summary,
+)
 from wecanfindintern.agent.models import (
     AddInterestedArgs,
     GenerateInterviewQuestionsArgs,
@@ -23,157 +40,22 @@ from wecanfindintern.agent.models import (
     JobReference,
     ListTrackerArgs,
     ProposeProfileUpdateArgs,
-    RecommendJobsArgs,
     RemoveInterestedArgs,
     SearchJobsArgs,
     UpdateProfileArgs,
     UpdateTrackerStageArgs,
 )
-from wecanfindintern.agent.recommend import (
-    enforce_company_diversity,
-    expand_target_roles,
-    is_expired,
-    recommendation_cache,
-    rerank_with_llm,
-    score_candidate,
-    target_role_matches,
+from wecanfindintern.agent.recommend.tool import tool_recommend_jobs
+from wecanfindintern.application.job_models import JobListFilters
+from wecanfindintern.application.profile_context import profile_resume_text
+from wecanfindintern.application.waterlooworks_tracker import (
+    waterlooworks_tracker_fields,
 )
-from wecanfindintern.agent.recommend.cache import build_cache_key
-from wecanfindintern.agent.recommend.documents import (
-    build_profile_query,
-    infer_waterloo_opportunity_type,
-)
-from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig, EmbeddingGateway
-from wecanfindintern.agent.recommend.repository import (
-    RecommendationFilters,
-    RecommendationRepository,
-)
-from wecanfindintern.agent.recommend.scoring import ScoredCandidate
-from wecanfindintern.api.models import JobDetail, JobListFilters, JobListItem
-from wecanfindintern.db.read_repository import JobReadRepository
-from wecanfindintern.domain.classification import normalize_for_matching
-from wecanfindintern.domain.location import clean_location_display, parse_location
+from wecanfindintern.domain.classification import normalize_tag
 from wecanfindintern.profile.models import ProfileBasics, ProfilePayload, UserProfile
-from wecanfindintern.profile.repository import ProfileRepository
 from wecanfindintern.tracker.models import (
     TrackedApplication,
 )
-from wecanfindintern.tracker.repository import TrackerRepository
-
-RECOMMENDATION_RANKING_VERSION = "recommend.v3"
-
-
-class ToolError(RuntimeError):
-    """A tool-level failure with a stable error type for the UI and audit log."""
-
-    def __init__(self, error_type: str, message: str) -> None:
-        self.error_type = error_type
-        super().__init__(message)
-
-
-@dataclass(frozen=True, slots=True)
-class LlmConfig:
-    provider: str
-    model_name: str
-    api_key: str
-    api_base: str | None = None
-    timeout_seconds: float = 15.0
-
-
-@dataclass(slots=True)
-class AgentDeps:
-    job_repo: JobReadRepository
-    tracker_repo: TrackerRepository
-    profile_repo: ProfileRepository
-    waterlooworks: Any
-    llm_config: LlmConfig | None = None
-    embedding_config: EmbeddingConfig | None = None
-    memory: Any = None
-    recommendation_repo: RecommendationRepository | None = None
-
-
-def _public_job_summary(job: JobListItem, *, description: str | None = None) -> dict[str, Any]:
-    location = job.location.display_name if job.location else None
-    return {
-        "source": "public",
-        "job_id": str(job.id),
-        "title": job.title,
-        "company": job.company_name,
-        "location": location,
-        "work_mode": job.work_mode,
-        "opportunity_type": job.opportunity_type,
-        "recruiting_term": (
-            job.recruiting_term.display_name if job.recruiting_term else None
-        ),
-        "date_posted": job.date_posted.isoformat() if job.date_posted else None,
-        "skill_tags": job.skill_tags[:20],
-        "description": description,
-    }
-
-
-def _ww_job_summary(item: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "source": "waterloo_work",
-        "job_id": item.get("source_job_id"),
-        "title": item.get("title"),
-        "company": item.get("organization"),
-        "division": item.get("division"),
-        "location": clean_location_display(item.get("location_text")),
-        "work_mode": item.get("work_mode"),
-        "opportunity_type": item.get("opportunity_type")
-        or infer_waterloo_opportunity_type(item.get("boards")),
-        "date_posted": item.get("date_posted"),
-        "application_deadline": item.get("application_deadline"),
-        "application_url": item.get("application_url"),
-        "boards": item.get("boards") or [],
-        "description": item.get("description"),
-    }
-
-
-def _ww_matches_search(item: dict[str, Any], parsed: SearchJobsArgs) -> bool:
-    parsed_location = parse_location(item.get("location_text"))
-    company = (item.get("organization") or "").lower()
-    if parsed.company and parsed.company.lower() not in company:
-        return False
-    city = item.get("city") or parsed_location.city or ""
-    if parsed.city and parsed.city.lower() != city.lower():
-        return False
-    region_values = {
-        str(value).lower()
-        for value in (
-            item.get("province"),
-            parsed_location.region_code,
-            parsed_location.region_name,
-        )
-        if value
-    }
-    if parsed.region and parsed.region.lower() not in region_values:
-        return False
-    country_values = {
-        str(value).lower()
-        for value in (
-            item.get("country"),
-            parsed_location.country_code,
-            parsed_location.country_name,
-        )
-        if value
-    }
-    if parsed.country and parsed.country.lower() not in country_values:
-        return False
-    if parsed.work_modes and item.get("work_mode") not in parsed.work_modes:
-        return False
-    if parsed.posted_after and (item.get("date_posted") or "") < parsed.posted_after.isoformat():
-        return False
-    if parsed.recruiting_terms:
-        return False  # WaterlooWorks records do not currently carry recruiting-term metadata.
-    if parsed.opportunity_types:
-        requested = {value.lower() for value in parsed.opportunity_types}
-        inferred = item.get("opportunity_type") or infer_waterloo_opportunity_type(
-            item.get("boards")
-        )
-        if inferred not in requested:
-            return False
-    return True
 
 
 def profile_summary(profile: UserProfile) -> dict[str, Any]:
@@ -204,58 +86,6 @@ def profile_summary(profile: UserProfile) -> dict[str, Any]:
     }
 
 
-async def _resolve_job(
-    ref: JobReference, deps: AgentDeps
-) -> dict[str, Any] | None:
-    if ref.source == "public":
-        try:
-            job = await deps.job_repo.get_job(UUID(ref.job_id))
-        except (ValueError, TypeError):
-            raise ToolError(
-                "invalid_job_id", f"Invalid public job ID: {ref.job_id}"
-            ) from None
-        if job is None:
-            return None
-        return _public_job_summary(job, description=job.description)
-    item = await deps.waterlooworks.get_job(ref.job_id)
-    if item is None:
-        return None
-    return _ww_job_summary(item)
-
-
-async def _tracked_public_map(deps: AgentDeps) -> dict[str, str]:
-    states = await deps.tracker_repo.list_tracked_job_states()
-    return {str(state.job_id): state.stage for state in states}
-
-
-async def _tracked_external_map(deps: AgentDeps) -> dict[str, str]:
-    rows = await deps.tracker_repo.list_tracked_external_states()
-    return {
-        row["external_job_id"]: row["stage"]
-        for row in rows
-        if row.get("source") == "waterloo_work" and row.get("external_job_id")
-    }
-
-
-async def _tracked_application_by_ref(
-    ref: JobReference, deps: AgentDeps
-) -> TrackedApplication | None:
-    if ref.source == "public":
-        states = await deps.tracker_repo.list_tracked_job_states()
-        for state in states:
-            if str(state.job_id) == ref.job_id:
-                return await deps.tracker_repo.get_application(state.application_id)
-        return None
-    rows = await deps.tracker_repo.list_tracked_external_states()
-    for row in rows:
-        if (
-            row.get("source") == "waterloo_work"
-            and row.get("external_job_id") == ref.job_id
-        ):
-            return await deps.tracker_repo.get_application(row["application_id"])
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Read tools
 # ---------------------------------------------------------------------------
@@ -279,6 +109,7 @@ async def tool_get_profile(args: dict[str, Any], deps: AgentDeps, phase: str) ->
 
 async def tool_search_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) -> dict[str, Any]:
     parsed = SearchJobsArgs.model_validate(args)
+    normalized_category = normalize_tag(parsed.category) if parsed.category else None
     results: dict[str, list[dict[str, Any]]] = {}
     pagination: dict[str, dict[str, Any]] = {}
     used: list[str] = []
@@ -290,12 +121,15 @@ async def tool_search_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) ->
             country=parsed.country,
             region=parsed.region,
             skill=parsed.skill,
-            category=parsed.category,
+            category=normalized_category,
             work_modes=parsed.work_modes,
             opportunity_types=parsed.opportunity_types,
             recruiting_terms=parsed.recruiting_terms,
             posted_after=parsed.posted_after,
-            cursor=parsed.cursor,
+            cursor=(
+                parsed.public_cursor
+                or (parsed.cursor if parsed.source == "public" else None)
+            ),
             sort_by_relevance=bool(parsed.query),
             limit=parsed.limit,
         )
@@ -313,13 +147,15 @@ async def tool_search_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) ->
             pagination["waterloo_work"] = {
                 "total": 0,
                 "has_more": False,
-                "next_offset": None,
+                "next_cursor": None,
             }
             used.append("waterloo_work")
         else:
             ww = await deps.waterlooworks.list_jobs(
                 query=parsed.query,
                 company=parsed.company,
+                skill=parsed.skill,
+                category=normalized_category,
                 city=parsed.city,
                 region=parsed.region,
                 country=parsed.country,
@@ -329,19 +165,18 @@ async def tool_search_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) ->
                     parsed.posted_after.isoformat() if parsed.posted_after else None
                 ),
                 limit=parsed.limit,
-                offset=parsed.offset,
-            )
-            ww_items = [item for item in ww["items"] if _ww_matches_search(item, parsed)]
-            results["waterloo_work"] = [
-                _ww_job_summary(item) for item in ww_items[: parsed.limit]
-            ]
-            next_offset = parsed.offset + len(ww["items"])
-            pagination["waterloo_work"] = {
-                "total": ww.get("total"),
-                "has_more": next_offset < int(ww.get("total") or 0),
-                "next_offset": (
-                    next_offset if next_offset < int(ww.get("total") or 0) else None
+                cursor=(
+                    parsed.waterloo_cursor
+                    or (parsed.cursor if parsed.source == "waterloo_work" else None)
                 ),
+            )
+            results["waterloo_work"] = [
+                _ww_job_summary(item) for item in ww["items"]
+            ]
+            pagination["waterloo_work"] = {
+                "total": ww.get("total_count", len(ww["items"])),
+                "has_more": bool(ww.get("has_more")),
+                "next_cursor": ww.get("next_cursor"),
             }
             used.append("waterloo_work")
     total = sum(len(items) for items in results.values())
@@ -417,628 +252,6 @@ async def tool_list_tracker(args: dict[str, Any], deps: AgentDeps, phase: str) -
         )
         or "No tracker records found.",
     }
-
-
-def _profile_skill_set(profile: UserProfile) -> set[str]:
-    skills = {entry.name.strip().lower() for entry in profile.skills if entry.name}
-    for entry in profile.projects:
-        skills.update(s.strip().lower() for s in entry.skills if s)
-    for entry in profile.work_experience:
-        skills.update(s.strip().lower() for s in entry.skills if s)
-    return {s for s in skills if s}
-
-
-def _education_stage(profile: UserProfile) -> str:
-    latest = profile.education[-1] if profile.education else None
-    if latest is None:
-        return ""
-    parts = [latest.degree or "", latest.major or ""]
-    if getattr(latest, "expected_graduation", None):
-        parts.append(f"graduating {latest.expected_graduation}")
-    return ", ".join(part for part in parts if part)
-
-
-def _is_early_career_profile(profile: UserProfile) -> bool:
-    if any(
-        entry.expected_graduation or entry.status == "studying"
-        for entry in profile.education
-    ):
-        return True
-    senior_pattern = re.compile(
-        r"\b(?:senior|sr\.?|staff|principal|lead|manager|director|architect|head)\b",
-        re.IGNORECASE,
-    )
-    has_senior_work = any(
-        senior_pattern.search(entry.title or "") for entry in profile.work_experience
-    )
-    return bool(profile.education) and len(profile.work_experience) <= 3 and not has_senior_work
-
-
-def _cap_candidates_by_source(
-    candidates: list[dict[str, Any]], *, limit: int
-) -> list[dict[str, Any]]:
-    if len(candidates) <= limit:
-        return candidates
-
-    def rank_key(candidate: dict[str, Any]) -> tuple[float, str]:
-        return (
-            float((candidate.get("retrieval") or {}).get("rrf_score", 0)),
-            candidate.get("date_posted") or "",
-        )
-
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for candidate in candidates:
-        groups.setdefault(candidate.get("source") or "unknown", []).append(candidate)
-    for values in groups.values():
-        values.sort(key=rank_key, reverse=True)
-    if len(groups) == 1:
-        return next(iter(groups.values()))[:limit]
-
-    selected: list[dict[str, Any]] = []
-    quota = max(1, limit // len(groups))
-    leftovers: list[dict[str, Any]] = []
-    for values in groups.values():
-        selected.extend(values[:quota])
-        leftovers.extend(values[quota:])
-    leftovers.sort(key=rank_key, reverse=True)
-    selected.extend(leftovers[: max(0, limit - len(selected))])
-    return selected[:limit]
-
-
-def _preference_matches(
-    preferences: dict[str, str], candidate: dict[str, Any]
-) -> list[str]:
-    """Return stated preferences this candidate satisfies (boost signals)."""
-
-    matches: list[str] = []
-    location = (candidate.get("location_text") or "").lower()
-    work_mode = (candidate.get("work_mode") or "").lower()
-
-    target_locations = preferences.get("TARGET_LOCATIONS", "").strip()
-    if target_locations:
-        for token in (part.strip().lower() for part in target_locations.split(",")):
-            if token and token in location:
-                matches.append(f"location {token.title()}")
-                break
-
-    target_roles = preferences.get("TARGET_ROLES", "").strip()
-    roles = [part.strip() for part in target_roles.split(",") if part.strip()]
-    if roles and target_role_matches(candidate.get("title"), roles):
-        matches.append(f"role {roles[0].title()}")
-
-    work_mode_pref = preferences.get("WORK_MODE", "").strip().upper()
-    if work_mode_pref and work_mode_pref != "ANY" and work_mode:
-        if work_mode_pref == "ONSITE" and work_mode in {"onsite", "in_person"}:
-            matches.append("work mode in-person")
-        elif work_mode == work_mode_pref.lower():
-            matches.append(f"work mode {work_mode_pref.lower()}")
-    return matches
-
-
-async def tool_recommend_jobs(
-    args: dict[str, Any], deps: AgentDeps, phase: str
-) -> dict[str, Any]:
-    parsed = RecommendJobsArgs.model_validate(args)
-    started = time.perf_counter()
-
-    async def load_preferences() -> dict[str, str]:
-        if deps.memory is None:
-            return {}
-        try:
-            return await deps.memory.get_preferences()
-        except Exception:  # pragma: no cover - preferences are advisory
-            return {}
-
-    async def load_library_version() -> str:
-        method = getattr(deps.job_repo, "jobs_library_version", None)
-        jobs_version = await method() if method is not None else "compat"
-        if deps.recommendation_repo is None:
-            return jobs_version
-        try:
-            rag_version = await deps.recommendation_repo.corpus_version()
-        except Exception:
-            rag_version = "unavailable"
-        return f"{jobs_version}|rag:{rag_version}"
-
-    profile, preferences, public_tracked, external_tracked, library_version = (
-        await asyncio.gather(
-            deps.profile_repo.get_profile(),
-            load_preferences(),
-            _tracked_public_map(deps),
-            _tracked_external_map(deps),
-            load_library_version(),
-        )
-    )
-    skills = _profile_skill_set(profile)
-    preferences = dict(preferences)
-    if parsed.target_roles:
-        preferences["TARGET_ROLES"] = ", ".join(parsed.target_roles)
-    if parsed.locations:
-        preferences["TARGET_LOCATIONS"] = ", ".join(parsed.locations)
-    if len(parsed.work_modes) == 1:
-        preferences["WORK_MODE"] = parsed.work_modes[0].upper()
-    tracked_fingerprint = hashlib.sha256(
-        "\x1f".join(
-            sorted(
-                [f"public:{key}:{value}" for key, value in public_tracked.items()]
-                + [f"waterloo:{key}:{value}" for key, value in external_tracked.items()]
-            )
-        ).encode("utf-8")
-    ).hexdigest()
-    embedding_config = (
-        deps.embedding_config or EmbeddingConfig.from_env()
-        if parsed.use_semantic_retrieval
-        else None
-    )
-    cache_key = build_cache_key(
-        profile_updated_at=profile.updated_at.isoformat(),
-        tracked_fingerprint=tracked_fingerprint,
-        preferences=preferences,
-        library_version=library_version,
-        limit=parsed.limit,
-        source=parsed.source,
-        request_filters={
-            "ranking_version": RECOMMENDATION_RANKING_VERSION,
-            "target_roles": tuple(parsed.target_roles),
-            "locations": tuple(parsed.locations),
-            "work_modes": tuple(parsed.work_modes),
-            "opportunity_types": tuple(parsed.opportunity_types),
-        },
-        embedding_profile=(embedding_config.version if embedding_config else "lexical"),
-        llm_profile=(
-            f"{deps.llm_config.provider}:{deps.llm_config.model_name}"
-            if deps.llm_config is not None and parsed.use_llm_rerank
-            else "no-rerank"
-        ),
-        use_semantic_retrieval=parsed.use_semantic_retrieval,
-        use_llm_rerank=parsed.use_llm_rerank,
-        exclude_tracked=parsed.exclude_tracked,
-    )
-    cached = recommendation_cache.get(cache_key)
-    if cached is not None:
-        cached["data"]["cache_hit"] = True
-        cached["data"]["timings_ms"] = {
-            "total": round((time.perf_counter() - started) * 1000, 1)
-        }
-        return cached
-
-    recall_started = time.perf_counter()
-    used: list[str] = ["profile"]
-    candidate_limit = max(120, parsed.limit * 12)
-    candidates: list[dict[str, Any]] = []
-    retrieval_mode = "recent_fallback"
-    requested_sources = (
-        ["public", "waterloo_work"] if parsed.source == "all" else [parsed.source]
-    )
-    retrieval_modes = {source: "recent_fallback" for source in requested_sources}
-    retrieval_filters = RecommendationFilters(
-        target_roles=expand_target_roles(parsed.target_roles),
-        locations=tuple(parsed.locations),
-        work_modes=tuple(parsed.work_modes),
-        opportunity_types=tuple(parsed.opportunity_types),
-    )
-    query_text = build_profile_query(profile, preferences)
-    embedding: list[float] | None = None
-    embedding_ready = {source: False for source in requested_sources}
-    if deps.recommendation_repo is not None and parsed.use_semantic_retrieval:
-        try:
-            if embedding_config is not None:
-                readiness = await asyncio.gather(
-                    *(
-                        deps.recommendation_repo.has_embeddings(
-                            embedding_config, source=source
-                        )
-                        for source in requested_sources
-                    )
-                )
-                embedding_ready.update(dict(zip(requested_sources, readiness, strict=True)))
-            if embedding_config is not None and any(embedding_ready.values()):
-                embedding = await asyncio.to_thread(
-                    EmbeddingGateway(embedding_config).embed_query, query_text
-                )
-        except Exception:
-            embedding = None
-
-    if parsed.source in {"all", "public"}:
-        exclude_ids = []
-        if parsed.exclude_tracked:
-            for value in public_tracked:
-                try:
-                    exclude_ids.append(UUID(value))
-                except (TypeError, ValueError):
-                    continue
-        rows: list[dict[str, Any]] = []
-        if deps.recommendation_repo is not None:
-            try:
-                rows = await deps.recommendation_repo.recall_public(
-                    query_text=query_text,
-                    skills=sorted(skills),
-                    exclude_public_ids=exclude_ids,
-                    query_embedding=embedding if embedding_ready.get("public") else None,
-                    embedding_config=(
-                        embedding_config if embedding_ready.get("public") else None
-                    ),
-                    limit=candidate_limit,
-                    filters=retrieval_filters,
-                )
-                if rows:
-                    retrieval_modes["public"] = (
-                        "hybrid_vector_lexical"
-                        if embedding_ready.get("public")
-                        else "hybrid_lexical"
-                    )
-            except Exception:
-                rows = []
-        recall_method = getattr(deps.job_repo, "list_jobs_for_recommendation", None)
-        if not rows and recall_method is not None:
-            fallback_args: dict[str, Any] = {
-                "skills": sorted(skills),
-                "exclude_public_ids": exclude_ids,
-                "limit": candidate_limit,
-            }
-            if isinstance(deps.job_repo, JobReadRepository):
-                fallback_args.update(
-                    target_roles=list(retrieval_filters.target_roles),
-                    locations=list(retrieval_filters.locations),
-                    work_modes=list(retrieval_filters.work_modes),
-                    opportunity_types=list(retrieval_filters.opportunity_types),
-                )
-            rows = await recall_method(
-                **fallback_args,
-            )
-            retrieval_modes["public"] = "skill_fulltext_fallback"
-        if rows:
-            for row in rows:
-                item: JobListItem = row["item"]
-                location = item.location.display_name if item.location else None
-                candidates.append(
-                    {
-                        "source": "public",
-                        "job_id": str(item.id),
-                        "title": item.title,
-                        "company": item.company_name,
-                        "location": location,
-                        "location_text": location,
-                        "work_mode": item.work_mode,
-                        "opportunity_type": item.opportunity_type,
-                        "recruiting_term": (
-                            item.recruiting_term.display_name
-                            if item.recruiting_term
-                            else None
-                        ),
-                        "date_posted": (
-                            item.date_posted.isoformat() if item.date_posted else None
-                        ),
-                        "application_deadline": None,
-                        "application_url": row.get("url"),
-                        "skill_tags": item.skill_tags + item.display_tags,
-                        "requirement_tags": row.get("requirement_tags") or [],
-                        "description": row.get("description"),
-                        "retrieval": row.get("retrieval") or {},
-                        "retrieval_sources": row.get("retrieval_sources")
-                        or ["skill_tags", "full_text"],
-                    }
-                )
-        else:  # Compatibility for lightweight repository implementations.
-            page = await deps.job_repo.list_jobs(JobListFilters(limit=100))
-            details = await asyncio.gather(
-                *(deps.job_repo.get_job(item.id) for item in page.items),
-                return_exceptions=True,
-            )
-            for item, detail in zip(page.items, details, strict=True):
-                if parsed.exclude_tracked and str(item.id) in public_tracked:
-                    continue
-                valid_detail = detail if isinstance(detail, JobDetail) else None
-                sources = getattr(valid_detail, "sources", None) or []
-                location = item.location.display_name if item.location else None
-                candidates.append(
-                    {
-                        "source": "public",
-                        "job_id": str(item.id),
-                        "title": item.title,
-                        "company": item.company_name,
-                        "location": location,
-                        "location_text": location,
-                        "work_mode": item.work_mode,
-                        "date_posted": (
-                            item.date_posted.isoformat() if item.date_posted else None
-                        ),
-                        "application_deadline": None,
-                        "application_url": (
-                            (sources[0].direct_url or sources[0].url) if sources else None
-                        ),
-                        "skill_tags": item.skill_tags + item.display_tags,
-                        "requirement_tags": (
-                            getattr(valid_detail, "requirement_tags", None) or []
-                        ),
-                        "description": (
-                            valid_detail.description if valid_detail is not None else None
-                        ),
-                        "retrieval_sources": ["recent_fallback"],
-                    }
-                )
-        used.append("public_jobs")
-
-    if parsed.source in {"all", "waterloo_work"}:
-        waterloo_rows: list[dict[str, Any]] = []
-        if deps.recommendation_repo is not None:
-            try:
-                waterloo_rows = await deps.recommendation_repo.recall_waterloo(
-                    query_text=query_text,
-                    skills=sorted(skills),
-                    exclude_external_ids=(
-                        list(external_tracked) if parsed.exclude_tracked else []
-                    ),
-                    query_embedding=(
-                        embedding if embedding_ready.get("waterloo_work") else None
-                    ),
-                    embedding_config=(
-                        embedding_config
-                        if embedding_ready.get("waterloo_work")
-                        else None
-                    ),
-                    limit=min(candidate_limit, 200),
-                    filters=retrieval_filters,
-                )
-                if waterloo_rows:
-                    retrieval_modes["waterloo_work"] = (
-                        "hybrid_vector_lexical"
-                        if embedding_ready.get("waterloo_work")
-                        else "hybrid_lexical"
-                    )
-            except Exception:
-                waterloo_rows = []
-        if not waterloo_rows:
-            ww = await deps.waterlooworks.list_jobs(
-                work_modes=parsed.work_modes,
-                opportunity_types=parsed.opportunity_types,
-                limit=min(max(candidate_limit * 5, 1000), 5000),
-                include_description=True,
-            )
-            waterloo_rows = ww["items"]
-            retrieval_modes["waterloo_work"] = "waterloo_recent_fallback"
-        for item in waterloo_rows:
-            job_id = item.get("source_job_id")
-            if parsed.exclude_tracked and job_id in external_tracked:
-                continue
-            location = clean_location_display(item.get("location_text"))
-            candidates.append(
-                {
-                    "source": "waterloo_work",
-                    "job_id": job_id,
-                    "title": item.get("title"),
-                    "company": item.get("organization"),
-                    "location": location,
-                    "location_text": location,
-                    "work_mode": item.get("work_mode"),
-                    "opportunity_type": item.get("opportunity_type")
-                    or infer_waterloo_opportunity_type(item.get("boards")),
-                    "date_posted": item.get("date_posted"),
-                    "application_deadline": item.get("application_deadline"),
-                    "application_url": item.get("application_url"),
-                    "skill_tags": item.get("skill_tags")
-                    or [item.get("division") or ""],
-                    "requirement_tags": [],
-                    "description": item.get("description"),
-                    "retrieval": item.get("retrieval") or {},
-                    "retrieval_sources": item.get("retrieval_sources")
-                    or ["waterloo_recent"],
-                }
-            )
-        used.append("waterloo_work")
-    candidates = _cap_candidates_by_source(candidates, limit=candidate_limit)
-    unique_modes = set(retrieval_modes.values())
-    retrieval_mode = (
-        next(iter(unique_modes)) if len(unique_modes) == 1 else "mixed"
-    )
-    recall_ms = (time.perf_counter() - recall_started) * 1000
-
-    rank_started = time.perf_counter()
-    ranked: list[dict[str, Any]] = []
-    early_career = _is_early_career_profile(profile)
-    for candidate in candidates:
-        if not candidate.get("job_id") or is_expired(candidate):
-            continue
-        location_text = normalize_for_matching(candidate.get("location") or "")
-        if parsed.target_roles and not target_role_matches(
-            candidate.get("title"), parsed.target_roles
-        ):
-            continue
-        if parsed.locations and not any(
-            normalize_for_matching(location) in location_text
-            for location in parsed.locations
-        ):
-            continue
-        if parsed.work_modes and candidate.get("work_mode") not in parsed.work_modes:
-            continue
-        if parsed.opportunity_types and candidate.get("opportunity_type") not in set(
-            parsed.opportunity_types
-        ):
-            continue
-        scored: ScoredCandidate = score_candidate(
-            skills,
-            candidate,
-            preferences=preferences,
-            early_career=early_career,
-            desired_opportunity_types=set(parsed.opportunity_types),
-        )
-        pref_matches = _preference_matches(preferences, candidate)
-        ranked.append(
-            {
-                **candidate,
-                "score": scored.score,
-                "matched_skills": scored.matched_skills[:12],
-                "signals": scored.signals,
-                "preference_matches": pref_matches,
-                "description_available": bool(candidate.get("description")),
-            }
-        )
-    ranked.sort(
-        key=lambda candidate: (
-            candidate["score"],
-            candidate.get("date_posted") or "",
-        ),
-        reverse=True,
-    )
-
-    llm_rerank_ms = 0.0
-    llm_rerank_status = (
-        "disabled"
-        if not parsed.use_llm_rerank
-        else "unconfigured"
-        if deps.llm_config is None
-        else "skipped"
-    )
-    llm_rerank_error_type: str | None = None
-    if parsed.use_llm_rerank and deps.llm_config is not None and len(ranked) > 1:
-        llm_started = time.perf_counter()
-        outcome = await asyncio.to_thread(
-            rerank_with_llm,
-            llm_config=deps.llm_config,
-            candidates=ranked,
-            profile_summary={
-                "skills": sorted(skills)[:80],
-                "education_stage": _education_stage(profile),
-                "target_roles": preferences.get("TARGET_ROLES", ""),
-            },
-            preferences=preferences,
-            language=preferences.get("ANSWER_LANGUAGE", "the user's language"),
-        )
-        llm_rerank_ms = (time.perf_counter() - llm_started) * 1000
-        llm_rerank_status = outcome.status
-        llm_rerank_error_type = outcome.error_type
-        if outcome.adjustments:
-            for index, adjustment in outcome.adjustments.items():
-                ranked[index]["llm_adjustment"] = adjustment
-                ranked[index]["llm_reason"] = outcome.reasons.get(index)
-            ranked = sorted(
-                enumerate(ranked),
-                key=lambda pair: (
-                    pair[1]["score"] + pair[1].get("llm_adjustment", 0),
-                    -pair[0],
-                ),
-                reverse=True,
-            )
-            ranked = [candidate for _, candidate in ranked]
-
-    selected = enforce_company_diversity(ranked, limit=parsed.limit)
-    recommendations: list[dict[str, Any]] = []
-    for candidate in selected:
-        matched = candidate["matched_skills"]
-        reasons = []
-        if matched:
-            reasons.append("Matches profile skills: " + ", ".join(matched))
-        else:
-            reasons.append(
-                "Semantic or role relevance found, but direct skill evidence is limited."
-            )
-        for match in candidate.get("preference_matches") or []:
-            reasons.append(f"Matches your stated preference: {match}")
-        if candidate.get("llm_reason"):
-            reasons.append(candidate["llm_reason"])
-        if not candidate["description_available"]:
-            reasons.append("Job description is incomplete; confidence is reduced.")
-        score = candidate["score"] + candidate.get("llm_adjustment", 0)
-        if score >= 60 and len(matched) >= 3:
-            confidence = "high"
-        elif score >= 30 or matched:
-            confidence = "medium"
-        else:
-            confidence = "low"
-        public_candidate = {
-            key: value
-            for key, value in candidate.items()
-            if key != "description"
-        }
-        recommendations.append(
-            {
-                **public_candidate,
-                "match_score": max(0, min(100, score)),
-                "confidence": confidence,
-                "matched_signals": [
-                    {"signal": name, "value": value}
-                    for name, value in (
-                        candidate.get("signals", {}).get("components", {})
-                    ).items()
-                    if value > 0
-                ],
-                "gaps": [
-                    {"signal": "requirement", "value": value}
-                    for value in candidate.get("signals", {}).get(
-                        "unmatched_requirement_tags", []
-                    )
-                ]
-                + [
-                    {"signal": "penalty", "value": name, "weight": value}
-                    for name, value in candidate.get("signals", {}).get(
-                        "penalties", {}
-                    ).items()
-                ],
-                "unknowns": [
-                    {"signal": value}
-                    for value, unknown in (
-                        ("job_description", not candidate["description_available"]),
-                        (
-                            "application_deadline",
-                            not candidate.get("application_deadline"),
-                        ),
-                    )
-                    if unknown
-                ],
-                "reasons": reasons,
-            }
-        )
-    rank_ms = (time.perf_counter() - rank_started) * 1000
-    result = {
-        "ok": True,
-        "data": {
-            "recommendations": recommendations,
-            "profile_used": {
-                "skills": sorted(skills)[:50],
-                "completion_percent": profile.completion_percent,
-                "early_career": early_career,
-            },
-            "retrieval_mode": retrieval_mode,
-            "retrieval_modes": retrieval_modes,
-            "llm_rerank": {
-                "status": llm_rerank_status,
-                "applied": llm_rerank_status == "applied",
-                "error_type": llm_rerank_error_type,
-            },
-            "corpus_version": library_version,
-            "ranking_version": RECOMMENDATION_RANKING_VERSION,
-            "cache_hit": False,
-            "candidate_counts": {
-                "recalled": len(candidates),
-                "eligible": len(ranked),
-                "returned": len(recommendations),
-            },
-            "timings_ms": {
-                "recall": round(recall_ms, 1),
-                "rank_and_rerank": round(rank_ms, 1),
-                "llm_rerank": round(llm_rerank_ms, 1),
-                "total": round((time.perf_counter() - started) * 1000, 1),
-            },
-        },
-        "used": used,
-        "summary": (
-            f"Recommended {len(recommendations)} job(s) based on "
-            f"{len(skills)} profile skills."
-        ),
-        "for_llm": "\n".join(
-            f"- [{r['source']}:{r['job_id']}] {r['title']} at {r['company'] or 'unknown'} | "
-            f"{r.get('location') or 'unknown location'} | "
-            f"deadline: {r.get('application_deadline') or 'not specified'} | "
-            f"link: {r.get('application_url') or 'not available'} | matched: "
-            f"{', '.join(r['matched_skills']) or 'none'} | "
-            f"preferences: {', '.join(r.get('preference_matches') or []) or 'none'} | "
-            f"{', '.join(r['reasons'])}"
-            for r in recommendations
-        )
-        or "No recommendations available.",
-    }
-    recommendation_cache.put(cache_key, result)
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1136,14 +349,7 @@ async def tool_add_interested(
                 created = await deps.tracker_repo.bookmark_job(UUID(ref.job_id))
             else:
                 created = await deps.tracker_repo.bookmark_waterlooworks_job(
-                    source_job_id=ref.job_id,
-                    company_name=job.get("company") or "Company not specified",
-                    title=job.get("title") or "Untitled role",
-                    location_text=job.get("location"),
-                    work_mode=job.get("work_mode"),
-                    job_url=None,
-                    job_description=job.get("description"),
-                    application_deadline=job.get("application_deadline"),
+                    **waterlooworks_tracker_fields(job)
                 )
             results.append(
                 {
@@ -1607,10 +813,7 @@ async def tool_generate_interview_questions(
 ) -> dict[str, Any]:
     """Generate mock interview questions for one job or a raw description."""
 
-    from wecanfindintern.interview.service import (
-        build_resume_text,
-        generate_interview_questions,
-    )
+    from wecanfindintern.interview.service import generate_interview_questions
 
     parsed = GenerateInterviewQuestionsArgs.model_validate(args)
     if deps.llm_config is None:
@@ -1637,7 +840,7 @@ async def tool_generate_interview_questions(
                 f"{resolved_label} has no stored job description to derive questions from.",
             )
     profile = await deps.profile_repo.get_profile()
-    resume_text = build_resume_text(profile)
+    resume_text = profile_resume_text(profile)
     if not resume_text:
         raise ToolError(
             "profile_missing",
@@ -1672,108 +875,6 @@ async def tool_generate_interview_questions(
         )
         or "No questions generated.",
     }
-
-
-TOOL_CATALOG: list[dict[str, Any]] = [
-    {
-        "name": "get_profile",
-        "description": (
-            "Read the user's confirmed Profile (basics, education, work, projects, "
-            "skills, certifications, languages, awards)."
-        ),
-        "parameters": {"type": "object", "properties": {}},
-        "mutates": False,
-    },
-    {
-        "name": "search_jobs",
-        "description": (
-            "Search jobs across the public library and WaterlooWorks. Returns title, "
-            "company, location, source and job id."
-        ),
-        "parameters": SearchJobsArgs.model_json_schema(),
-        "mutates": False,
-    },
-    {
-        "name": "get_job_details",
-        "description": (
-            "Get full details for one job. Use job_id from search results; source is "
-            "'public' for UUIDs or 'waterloo_work' for WaterlooWorks Job IDs."
-        ),
-        "parameters": GetJobDetailsArgs.model_json_schema(),
-        "mutates": False,
-    },
-    {
-        "name": "list_tracker",
-        "description": "List application Tracker records, optionally filtered by stage or query.",
-        "parameters": ListTrackerArgs.model_json_schema(),
-        "mutates": False,
-    },
-    {
-        "name": "recommend_jobs",
-        "description": (
-            "Recommend jobs with hybrid RAG recall over Profile, job descriptions and "
-            "preferences, followed by deterministic evidence scoring and an optional "
-            "bounded LLM review. Never writes user data."
-        ),
-        "parameters": RecommendJobsArgs.model_json_schema(),
-        "mutates": False,
-    },
-    {
-        "name": "propose_profile_update",
-        "description": (
-            "Draft structured Profile changes from a user request. Read-only; returns a "
-            "field-level draft with evidence and confidence."
-        ),
-        "parameters": ProposeProfileUpdateArgs.model_json_schema(),
-        "mutates": False,
-    },
-    {
-        "name": "generate_interview_questions",
-        "description": (
-            "Generate mock interview questions for one job. Resolve the job with "
-            "search_jobs/get_job_details first and pass job_id plus source, or pass a "
-            "raw job_description. Read-only."
-        ),
-        "parameters": GenerateInterviewQuestionsArgs.model_json_schema(),
-        "mutates": False,
-    },
-    {
-        "name": "add_interested",
-        "description": (
-            "Plan to add one or more jobs to the Tracker's Interested stage. Requires "
-            "user confirmation before it runs."
-        ),
-        "parameters": AddInterestedArgs.model_json_schema(),
-        "mutates": True,
-    },
-    {
-        "name": "update_tracker_stage",
-        "description": (
-            "Plan to change one or more Tracker records to a new stage (interested, "
-            "applied, interview, offer, rejected). Requires user confirmation."
-        ),
-        "parameters": UpdateTrackerStageArgs.model_json_schema(),
-        "mutates": True,
-    },
-    {
-        "name": "remove_interested",
-        "description": (
-            "Plan to remove one or more jobs from Interested. Records past Interested "
-            "are protected and will not be removed. Requires user confirmation."
-        ),
-        "parameters": RemoveInterestedArgs.model_json_schema(),
-        "mutates": True,
-    },
-    {
-        "name": "update_profile",
-        "description": (
-            "Plan to save a full profile.v1 payload to the user's Profile. Requires "
-            "user confirmation; a field-level diff is shown first."
-        ),
-        "parameters": UpdateProfileArgs.model_json_schema(),
-        "mutates": True,
-    },
-]
 
 
 TOOL_HANDLERS: dict[str, Any] = {

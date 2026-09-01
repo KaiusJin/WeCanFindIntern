@@ -43,6 +43,22 @@ class AgentRepository:
             )
             return [AgentSession.model_validate(row) for row in await result.fetchall()]
 
+    async def list_sessions_with_meta(
+        self, *, limit: int = 30
+    ) -> list[dict[str, Any]]:
+        """Session list read model, owned with all other session queries."""
+
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                """SELECT public_id AS id, title, created_at, updated_at,
+                    last_message_at
+                FROM agent_sessions
+                ORDER BY COALESCE(last_message_at, updated_at) DESC, id DESC
+                LIMIT %s;""",
+                (limit,),
+            )
+            return [dict(row) for row in await result.fetchall()]
+
     async def get_session(self, public_id: UUID) -> AgentSession | None:
         async with self.pool.connection() as connection:
             result = await connection.execute(
@@ -101,13 +117,17 @@ class AgentRepository:
     ) -> list[AgentMessage]:
         async with self.pool.connection() as connection:
             result = await connection.execute(
-                """SELECT m.public_id AS id, s.public_id AS session_id, m.role, m.content,
-                    m.created_at
-                FROM agent_messages m
-                JOIN agent_sessions s ON s.id = m.session_id
-                WHERE s.public_id = %s
-                ORDER BY m.created_at ASC, m.id ASC
-                LIMIT %s;""",
+                """SELECT id, session_id, role, content, created_at
+                FROM (
+                    SELECT m.public_id AS id, s.public_id AS session_id,
+                        m.role, m.content, m.created_at, m.id AS internal_id
+                    FROM agent_messages m
+                    JOIN agent_sessions s ON s.id = m.session_id
+                    WHERE s.public_id = %s
+                    ORDER BY m.created_at DESC, m.id DESC
+                    LIMIT %s
+                ) AS recent_messages
+                ORDER BY created_at ASC, internal_id ASC;""",
                 (session_id, limit),
             )
             return [AgentMessage.model_validate(row) for row in await result.fetchall()]
@@ -159,15 +179,21 @@ class AgentRepository:
     ) -> list[AgentToolCall]:
         async with self.pool.connection() as connection:
             result = await connection.execute(
-                """SELECT t.public_id AS id, s.public_id AS session_id,
-                    m.public_id AS message_id, t.tool_name,
-                    t.arguments, t.status, t.result, t.error, t.created_at, t.updated_at
-                FROM agent_tool_calls t
-                JOIN agent_sessions s ON s.id = t.session_id
-                LEFT JOIN agent_messages m ON m.id = t.message_id
-                WHERE s.public_id = %s
-                ORDER BY t.created_at ASC, t.id ASC
-                LIMIT %s;""",
+                """SELECT id, session_id, message_id, tool_name, arguments,
+                    status, result, error, created_at, updated_at
+                FROM (
+                    SELECT t.public_id AS id, s.public_id AS session_id,
+                        m.public_id AS message_id, t.tool_name,
+                        t.arguments, t.status, t.result, t.error,
+                        t.created_at, t.updated_at, t.id AS internal_id
+                    FROM agent_tool_calls t
+                    JOIN agent_sessions s ON s.id = t.session_id
+                    LEFT JOIN agent_messages m ON m.id = t.message_id
+                    WHERE s.public_id = %s
+                    ORDER BY t.created_at DESC, t.id DESC
+                    LIMIT %s
+                ) AS recent_tool_calls
+                ORDER BY created_at ASC, internal_id ASC;""",
                 (session_id, limit),
             )
             return [AgentToolCall.model_validate(row) for row in await result.fetchall()]

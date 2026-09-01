@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from psycopg import sql
@@ -17,7 +19,37 @@ from wecanfindintern.agent.recommend.documents import (
     build_waterloo_document,
     vector_literal,
 )
-from wecanfindintern.agent.recommend.embeddings import EmbeddingGateway
+from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig, EmbeddingGateway
+from wecanfindintern.waterlooworks.config import waterlooworks_database_path
+from wecanfindintern.waterlooworks.records import decode_waterlooworks_job
+
+
+def load_waterloo_jobs_from_sqlite(
+    limit: int | None = None, *, path: Path | None = None
+) -> list[dict[str, Any]]:
+    """Read WaterlooWorks jobs from the local collection sqlite (read-only)."""
+
+    resolved = (path or waterlooworks_database_path()).expanduser()
+    if not resolved.exists():
+        return []
+    query = """
+        SELECT j.*,
+               (SELECT json_group_array(board) FROM (
+                    SELECT board FROM waterlooworks_job_boards b
+                    WHERE b.source_job_id=j.source_job_id
+                    ORDER BY board
+                )) AS boards
+        FROM waterlooworks_jobs j
+        ORDER BY j.last_seen_at DESC,j.source_job_id DESC
+    """
+    parameters: tuple[int, ...] = ()
+    if limit is not None:
+        query += " LIMIT ?"
+        parameters = (limit,)
+    with sqlite3.connect(f"file:{resolved}?mode=ro", uri=True) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(query, parameters).fetchall()
+    return [decode_waterlooworks_job(row) for row in rows]
 
 
 @dataclass(slots=True)
@@ -28,6 +60,84 @@ class IndexReport:
     chunks_written: int = 0
     chunks_embedded: int = 0
     embedding_errors: int = 0
+    indexing_errors: int = 0
+
+
+async def refresh_after_ingestion(
+    pool: AsyncConnectionPool,
+    *,
+    page_size: int = 200,
+    force_full: bool = False,
+) -> dict[str, int | str]:
+    """Refresh the recommendation index for both sources after ingestion dedupe.
+
+    Modes:
+    - No embedding configuration: skip entirely (the API's maintenance loop still
+      keeps the lexical document index fresh at runtime).
+    - First run with an embedding profile (no vectors yet): full index of every
+      existing public and WaterlooWorks job, then embed all missing chunks.
+    - Otherwise: incremental — drain the trigger-fed queue for public jobs,
+      hash-diff the WaterlooWorks documents, and embed missing chunks.
+    """
+
+    skipped = {
+        "mode": "skipped_no_embedding_config",
+        "documents_scanned": 0,
+        "documents_updated": 0,
+        "chunks_embedded": 0,
+        "embedding_errors": 0,
+        "indexing_errors": 0,
+    }
+    embedding_config = EmbeddingConfig.from_env()
+    if embedding_config is None:
+        return skipped
+    indexer = RecommendationIndexer(pool, embedder=EmbeddingGateway(embedding_config))
+    async with pool.connection() as connection:
+        row = await (
+            await connection.execute(
+                """SELECT count(*) AS n FROM recommendation_chunk_embeddings
+                WHERE provider=%s AND model=%s AND dimensions=%s;""",
+                (
+                    embedding_config.provider,
+                    embedding_config.model,
+                    embedding_config.dimensions,
+                ),
+            )
+        ).fetchone()
+    full = force_full or row["n"] == 0
+    scanned = updated = embedding_errors = indexing_errors = 0
+    if full:
+        public_report = await indexer.index_public_jobs()
+        scanned += public_report.scanned
+        updated += public_report.updated
+        embedding_errors += public_report.embedding_errors
+        indexing_errors += public_report.indexing_errors
+    else:
+        while True:
+            report = await indexer.index_pending(limit=page_size)
+            scanned += report.scanned
+            updated += report.updated
+            embedding_errors += report.embedding_errors
+            indexing_errors += report.indexing_errors
+            if report.scanned == 0 or report.scanned < page_size:
+                break
+    waterloo_items = await asyncio.to_thread(load_waterloo_jobs_from_sqlite)
+    waterloo_report = await indexer.index_waterloo_jobs(waterloo_items)
+    scanned += waterloo_report.scanned
+    updated += waterloo_report.updated
+    embedding_errors += waterloo_report.embedding_errors
+    indexing_errors += waterloo_report.indexing_errors
+    embedding_report = await indexer.embed_missing_primary_chunks()
+    embedding_errors += embedding_report.embedding_errors
+    indexing_errors += embedding_report.indexing_errors
+    return {
+        "mode": "full" if full else "incremental",
+        "documents_scanned": scanned,
+        "documents_updated": updated,
+        "chunks_embedded": embedding_report.chunks_embedded,
+        "embedding_errors": embedding_errors,
+        "indexing_errors": indexing_errors,
+    }
 
 
 class RecommendationIndexer:
@@ -43,6 +153,31 @@ class RecommendationIndexer:
         self.embedder = embedder
         self.page_size = page_size
         self.embedding_batch_size = embedding_batch_size
+
+    async def enqueue_stale_public_documents(self) -> int:
+        """Queue active jobs whose derived document is absent or on an old version."""
+
+        async with self.pool.connection() as connection:
+            cursor = await connection.execute(
+                """
+                INSERT INTO recommendation_index_queue(
+                    public_job_id, queued_at, attempts, last_error
+                )
+                SELECT j.public_id, now(), 0, NULL
+                FROM jobs j
+                LEFT JOIN recommendation_documents d
+                  ON d.source='public' AND d.public_job_id=j.public_id
+                WHERE j.status=1
+                  AND (d.id IS NULL OR d.index_version<>%s)
+                ON CONFLICT(public_job_id) DO UPDATE SET
+                    queued_at=EXCLUDED.queued_at,
+                    attempts=0,
+                    last_error=NULL
+                RETURNING public_job_id;
+                """,
+                (DOCUMENT_VERSION,),
+            )
+            return len(await cursor.fetchall())
 
     async def index_public_jobs(self, *, limit: int | None = None) -> IndexReport:
         report = IndexReport()
@@ -83,7 +218,15 @@ class RecommendationIndexer:
                 )
         return report
 
-    async def index_pending(self, *, limit: int = 100) -> IndexReport:
+    async def index_pending(
+        self, *, limit: int = 100, max_attempts: int = 5
+    ) -> IndexReport:
+        """Process retryable queue entries without letting poison rows block the drain.
+
+        Rows reaching ``max_attempts`` remain in the queue with their last error for
+        inspection, but are excluded until a later job update resets their attempts.
+        """
+
         report = IndexReport()
         sql = """
             SELECT j.id AS internal_id,j.public_id,j.title,j.company_name,
@@ -93,11 +236,14 @@ class RecommendationIndexer:
             FROM recommendation_index_queue q
             JOIN jobs j ON j.public_id=q.public_job_id
             WHERE j.status=1
+              AND q.attempts < %s
             ORDER BY q.queued_at,q.public_job_id
             LIMIT %s;
         """
         async with self.pool.connection() as connection:
-            rows = await (await connection.execute(sql, (limit,))).fetchall()
+            rows = await (
+                await connection.execute(sql, (max_attempts, limit))
+            ).fetchall()
         for row in rows:
             report.scanned += 1
             try:
@@ -105,22 +251,28 @@ class RecommendationIndexer:
                 report.updated += int(changed)
                 report.skipped += int(not changed)
                 report.chunks_written += len(chunks)
-                if self.embedder is not None and chunks:
-                    report.chunks_embedded += await self._embed_chunks(chunks[:1])
-                async with self.pool.connection() as connection:
-                    await connection.execute(
-                        "DELETE FROM recommendation_index_queue WHERE public_job_id=%s;",
-                        (row["public_id"],),
-                    )
             except Exception as error:
-                async with self.pool.connection() as connection:
-                    await connection.execute(
-                        """UPDATE recommendation_index_queue
-                        SET attempts=attempts+1,last_error=%s,queued_at=now()
-                        WHERE public_job_id=%s;""",
-                        (str(error)[:1000], row["public_id"]),
-                    )
-                report.embedding_errors += 1
+                await self._record_queue_failure(row["public_id"], error)
+                report.indexing_errors += 1
+                continue
+
+            pending_embeddings = chunks[:1]
+            if self.embedder is not None and not pending_embeddings:
+                pending_embeddings = await self._missing_primary_embedding(
+                    source="public", source_job_id=str(row["public_id"]), limit=1
+                )
+            if self.embedder is not None and pending_embeddings:
+                try:
+                    report.chunks_embedded += await self._embed_chunks(pending_embeddings)
+                except Exception as error:
+                    await self._record_queue_failure(row["public_id"], error)
+                    report.embedding_errors += 1
+                    continue
+            async with self.pool.connection() as connection:
+                await connection.execute(
+                    "DELETE FROM recommendation_index_queue WHERE public_job_id=%s;",
+                    (row["public_id"],),
+                )
         if report.updated:
             async with self.pool.connection() as connection:
                 await connection.execute(
@@ -141,9 +293,16 @@ class RecommendationIndexer:
             report.updated += int(changed)
             report.skipped += int(not changed)
             report.chunks_written += len(chunks)
-            if self.embedder is not None and chunks:
+            pending_embeddings = chunks[:1]
+            if self.embedder is not None and not pending_embeddings:
+                pending_embeddings = await self._missing_primary_embedding(
+                    source="waterloo_work",
+                    source_job_id=str(item["source_job_id"]),
+                    limit=1,
+                )
+            if self.embedder is not None and pending_embeddings:
                 try:
-                    report.chunks_embedded += await self._embed_chunks(chunks[:1])
+                    report.chunks_embedded += await self._embed_chunks(pending_embeddings)
                 except Exception:
                     report.embedding_errors += 1
         if report.updated:
@@ -155,7 +314,49 @@ class RecommendationIndexer:
                 )
         return report
 
-    async def embed_missing_chunks(self, *, limit: int | None = None) -> IndexReport:
+    async def _record_queue_failure(self, public_job_id: Any, error: Exception) -> None:
+        async with self.pool.connection() as connection:
+            await connection.execute(
+                """UPDATE recommendation_index_queue
+                SET attempts=attempts+1,last_error=%s,queued_at=now()
+                WHERE public_job_id=%s;""",
+                (str(error)[:1000], public_job_id),
+            )
+
+    async def _missing_primary_embedding(
+        self, *, source: str, source_job_id: str, limit: int
+    ) -> list[tuple[int, str]]:
+        if self.embedder is None:
+            return []
+        async with self.pool.connection() as connection:
+            rows = await (
+                await connection.execute(
+                    """SELECT c.id,c.chunk_text
+                    FROM recommendation_documents d
+                    JOIN recommendation_chunks c ON c.document_id=d.id
+                    WHERE d.source=%s AND d.source_job_id=%s AND c.chunk_index=0
+                      AND NOT EXISTS (
+                        SELECT 1 FROM recommendation_chunk_embeddings e
+                        WHERE e.chunk_id=c.id AND e.provider=%s AND e.model=%s
+                          AND e.dimensions=%s
+                      )
+                    ORDER BY c.id LIMIT %s;""",
+                    (
+                        source,
+                        source_job_id,
+                        self.embedder.config.provider,
+                        self.embedder.config.model,
+                        self.embedder.config.dimensions,
+                        limit,
+                    ),
+                )
+            ).fetchall()
+        return [(row["id"], row["chunk_text"]) for row in rows]
+
+    async def embed_missing_primary_chunks(
+        self, *, limit: int | None = None
+    ) -> IndexReport:
+        """Embed the designated primary chunk for documents missing that vector."""
         report = IndexReport()
         if self.embedder is None:
             return report
@@ -253,17 +454,16 @@ class RecommendationIndexer:
                 await connection.execute(
                     """INSERT INTO recommendation_documents (
                         source,source_job_id,public_job_id,content_hash,title,role_family,
-                        normalized_skills,required_skills,preferred_skills,document_text,
+                        normalized_skills,requirement_tags,document_text,
                         metadata,index_version,indexed_at
-                    ) VALUES ('public',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
+                    ) VALUES ('public',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
                     ON CONFLICT (source,source_job_id) DO UPDATE SET
                         public_job_id=EXCLUDED.public_job_id,
                         content_hash=EXCLUDED.content_hash,
                         title=EXCLUDED.title,
                         role_family=EXCLUDED.role_family,
                         normalized_skills=EXCLUDED.normalized_skills,
-                        required_skills=EXCLUDED.required_skills,
-                        preferred_skills=EXCLUDED.preferred_skills,
+                        requirement_tags=EXCLUDED.requirement_tags,
                         document_text=EXCLUDED.document_text,
                         metadata=EXCLUDED.metadata,
                         index_version=EXCLUDED.index_version,
@@ -276,8 +476,7 @@ class RecommendationIndexer:
                         document.title,
                         document.role_family,
                         document.normalized_skills,
-                        document.required_skills,
-                        document.preferred_skills,
+                        document.requirement_tags,
                         document.document_text,
                         Jsonb(document.metadata),
                         DOCUMENT_VERSION,
@@ -378,15 +577,14 @@ class RecommendationIndexer:
                 await connection.execute(
                     """INSERT INTO recommendation_documents (
                         source,source_job_id,public_job_id,content_hash,title,role_family,
-                        normalized_skills,required_skills,preferred_skills,document_text,
+                        normalized_skills,requirement_tags,document_text,
                         metadata,index_version,indexed_at
-                    ) VALUES ('waterloo_work',%s,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
+                    ) VALUES ('waterloo_work',%s,NULL,%s,%s,%s,%s,%s,%s,%s,%s,now())
                     ON CONFLICT (source,source_job_id) DO UPDATE SET
                         content_hash=EXCLUDED.content_hash,title=EXCLUDED.title,
                         role_family=EXCLUDED.role_family,
                         normalized_skills=EXCLUDED.normalized_skills,
-                        required_skills=EXCLUDED.required_skills,
-                        preferred_skills=EXCLUDED.preferred_skills,
+                        requirement_tags=EXCLUDED.requirement_tags,
                         document_text=EXCLUDED.document_text,metadata=EXCLUDED.metadata,
                         index_version=EXCLUDED.index_version,indexed_at=now()
                     RETURNING id;""",
@@ -396,8 +594,7 @@ class RecommendationIndexer:
                         document.title,
                         document.role_family,
                         document.normalized_skills,
-                        document.required_skills,
-                        document.preferred_skills,
+                        document.requirement_tags,
                         document.document_text,
                         Jsonb(document.metadata),
                         DOCUMENT_VERSION,

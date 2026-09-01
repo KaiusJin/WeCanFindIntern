@@ -92,13 +92,13 @@ def test_search_jobs_supports_ranking_filters_and_pagination():
         opportunity_types=["internship"],
         recruiting_terms=["Fall 2026"],
         posted_after="2026-08-01",
-        cursor="cursor",
-        offset=25,
+        public_cursor="public-cursor",
+        waterloo_cursor="waterloo-cursor",
         limit=50,
     )
     assert search.posted_after.isoformat() == "2026-08-01"
-    assert search.cursor == "cursor"
-    assert search.offset == 25
+    assert search.public_cursor == "public-cursor"
+    assert search.waterloo_cursor == "waterloo-cursor"
     assert search.limit == 50
 
 

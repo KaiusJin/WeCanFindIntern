@@ -12,17 +12,27 @@
 
 Prompt templates live in `llm/prompts/` and are separated from business services. Supplied resume/JD/company text is treated as reference data, not as executable instructions, in the system prompts.
 
-## ATS review
+## Resume ATS Score and ATS Match
 
-ATS scoring no longer uses the LLM gateway. `ats/parsing_readiness.py` computes
+ATS scoring does not use the LLM gateway. `ats/parsing_readiness.py` computes
 PDF/text parsing diagnostics, while `ats/match_scoring.py` computes a separate
 resume-to-job score from source-backed requirements and published weights. The
-provider fields remain accepted for request compatibility but cannot influence
-either score.
+two diagnostics do not accept provider settings and cannot be influenced by an
+LLM.
 
-`POST /api/v1/ats/extract-pdf` returns text plus page-aware parsing readiness.
-`POST /api/v1/ats/review` consumes resume text and a job description and returns
-text-only readiness plus deterministic job-match evidence. See
+Resume ATS Score adds an optional qualitative layer through
+`POST /api/v1/ats/score/commentary`. It uses the selected provider to explain
+the completed deterministic diagnostic with a summary, strengths, and priority
+improvements. The model is not allowed to recalculate or replace the score, and
+commentary failure does not hide or invalidate the score.
+
+`POST /api/v1/resumes/extract-pdf` is the shared PDF extraction boundary for
+Resume ATS Score, ATS Match, Cover Letter, and Interview. It returns text plus
+page-aware parsing readiness.
+
+`POST /api/v1/ats/score` returns the standalone text-only parsing score, while
+`POST /api/v1/ats/match` consumes resume text and a job description and returns
+deterministic match evidence. See
 [ATS-Style Resume Diagnostics](ats-review.md) for formulas and limitations.
 
 ## Cover-letter generation
@@ -49,7 +59,7 @@ Recorded answers are transcribed on-device by `interview/stt.py` using faster-wh
 
 Practice runs are persisted in `interview_sessions` / `interview_answers` (migration `0021`). `POST /sessions` generates the question set and stores it; `POST /analyze` upserts one analyzed answer per `(session_id, question_index)` when both are supplied; `GET /sessions`, `GET /sessions/{id}`, `DELETE /sessions/{id}`, and `GET /trend` back the UI history panel, where trend aggregation (average, per-session scores, improvement since the first session) is computed in `repository.summarize_trend`.
 
-Question playback supports two TTS backends selected through `INTERVIEW_TTS_BACKEND`: `gtts` (default, online Google TTS, MP3) and `local` (macOS `say`, offline WAV). The route returns the backend-specific media type.
+Question playback supports two TTS backends selected through `INTERVIEW_TTS_BACKEND`: `gtts` (default, online Google TTS, MP3) and `local` (macOS `say` or Windows PowerShell/System.Speech, offline WAV). The route returns the backend-specific media type.
 
 ## Provider behavior
 

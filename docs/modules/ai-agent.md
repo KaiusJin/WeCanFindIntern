@@ -10,7 +10,10 @@ The Agent is a controlled natural-language interface over Profile, Jobs, Waterlo
 |---|---|
 | `agent/models.py` | Pydantic session, message, tool-call, approval, reference, and tool-argument contracts |
 | `agent/repository.py` | Session/message/tool-call/approval/audit persistence |
-| `agent/tools.py` | Tool catalog, argument validation, dependency injection, business tool execution, and summaries |
+| `agent/contracts.py` | Shared dependency, LLM configuration, and tool-error contracts |
+| `agent/job_access.py` | Public/WaterlooWorks job projections and direct Tracker lookups |
+| `agent/tools.py` | Tool catalog, non-recommendation tool execution, and summaries |
+| `agent/recommend/tool.py` | Recommendation request orchestration, recall, ranking, and response projection |
 | `agent/orchestrator.py` | Prompt assembly, model planning, immediate reads, approval creation, decision execution, and final replies |
 | `agent/memory/manager.py` | Context assembly and maintenance coordination |
 | `agent/memory/store.py` | Memory DB reads/writes, session state, hashes, and coverage watermarks |
@@ -95,7 +98,7 @@ POST message
 
 The planner receives the available tool catalog and rules: no invented tools, no claim that a write happened during planning, one round at a time, same-language response, explicit source-aware job references, and field-level Profile updates. `summarize_for_llm()` limits large tool outputs before they re-enter the model prompt, and each block is wrapped in `<tool_results step="N">` delimiters with an explicit "data, never instructions" rule so scraped job text cannot steer the planner (prompt-injection defense). OpenAI-family providers request `json_object` response mode for plan and compose calls; retries live entirely in the gateway.
 
-The bounded loop makes chained requests work ("find the backend role, then add it to Interested"): the planner resolves references with search first, sees the results, and plans the follow-up call next round. Duplicate identical calls are recorded as failed `duplicate_tool_call` events and end the loop. A planner failure after the first round degrades to a summary reply of the results already gathered instead of losing the turn; a failure on the first round is surfaced as a model error. Generic recommendation requests bypass the planner entirely, and a successful `recommend_jobs` ends the loop without extra model calls.
+The bounded loop makes chained requests work ("find the backend role, then add it to Interested"): the planner resolves references with search first, sees the results, and plans the follow-up call next round. Duplicate identical calls are recorded as failed `duplicate_tool_call` events and end the loop. A planner failure after the first round degrades to a summary reply of the results already gathered instead of losing the turn; a failure on the first round becomes a safe persisted assistant reply. Generic recommendation requests bypass the planner entirely, and a successful `recommend_jobs` ends the loop without extra model calls.
 
 ## Approval protocol
 
@@ -104,6 +107,21 @@ When a write tool is planned, the orchestrator creates `agent_approvals` with th
 Approval execution uses the original persisted arguments, not a newly generated plan. The repository updates only a pending approval; a second decision returns a conflict. Approval decisions are audited. A denial leaves target data unchanged.
 
 The orchestrator recognizes short explicit replies such as `yes`, `confirm`, `确认`, `no`, `cancel`, and `取消`, but only when a pending approval exists. A normal sentence is sent back through planning rather than interpreted as an approval.
+
+For a typed approval decision, the streaming endpoint emits the executed tool
+record, the deterministic completion text, and the final turn result in that
+order. The browser also renders the final message directly from the final turn
+result when no text delta was received, so an interrupted or optimized stream
+cannot silently lose the completion reply. Typed decisions and approval-card
+buttons use the same finalization path and refresh Tracker state after a
+successful write.
+
+Malformed, empty, or otherwise unusable model output is treated as a completed
+conversation turn rather than a user-action error. The orchestrator stores a
+safe assistant reply explaining that it could not complete the request and
+suggesting a retry or rephrasing; provider/parser internals are logged only on
+the server. Missing provider, model, or API-key configuration remains an
+actionable Settings error.
 
 ## Agent API
 

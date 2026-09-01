@@ -10,9 +10,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from wecanfindintern.agent.contracts import AgentDeps, LlmConfig, ToolError
 from wecanfindintern.agent.memory.manager import AgentMemoryManager
 from wecanfindintern.agent.memory.preferences import PREFERENCE_KEYS
-from wecanfindintern.agent.memory.store import AgentMemoryStore
 from wecanfindintern.agent.models import (
     AgentApproval,
     AgentApprovalDecisionResult,
@@ -28,16 +28,15 @@ from wecanfindintern.agent.orchestrator import AgentOrchestrator
 from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig
 from wecanfindintern.agent.recommend.repository import RecommendationRepository
 from wecanfindintern.agent.repository import AgentRepository
-from wecanfindintern.agent.tools import AgentDeps, LlmConfig, ToolError
-from wecanfindintern.api.routes.profile import get_profile_repo
-from wecanfindintern.api.routes.tracker import get_tracker_repo
-from wecanfindintern.db.read_repository import JobReadRepository
+from wecanfindintern.api.dependencies import (
+    get_job_repository,
+    get_profile_repository,
+    get_tracker_repository,
+)
+from wecanfindintern.llm.providers import SUPPORTED_LLM_PROVIDERS
 
 agent_router = APIRouter(prefix="/api/v1/agent", tags=["AI Agent"])
 logger = logging.getLogger(__name__)
-
-SUPPORTED_PROVIDERS = {"Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"}
-
 
 def _public_agent_error(error: ToolError) -> tuple[int, str]:
     """Keep provider, parser, and planner internals out of API responses."""
@@ -61,18 +60,30 @@ def get_agent_repo(request: Request) -> AgentRepository:
 AgentRepoDep = Annotated[AgentRepository, Depends(get_agent_repo)]
 
 
-def _job_repo(request: Request) -> JobReadRepository:
-    return JobReadRepository(request.app.state.database.pool)
-
-
 def _memory_manager(request: Request) -> AgentMemoryManager:
-    return AgentMemoryManager(
-        store=AgentMemoryStore(request.app.state.database.pool)
+    return request.app.state.agent_memory
+
+
+def _build_agent_deps(
+    request: Request,
+    *,
+    llm_config: LlmConfig | None,
+    embedding_config: EmbeddingConfig | None = None,
+) -> AgentDeps:
+    return AgentDeps(
+        job_repo=get_job_repository(request),
+        tracker_repo=get_tracker_repository(request),
+        profile_repo=get_profile_repository(request),
+        waterlooworks=request.app.state.waterlooworks,
+        llm_config=llm_config,
+        embedding_config=embedding_config,
+        memory=_memory_manager(request),
+        recommendation_repo=RecommendationRepository(request.app.state.database.pool),
     )
 
 
 def _deps(request: Request, payload: AgentMessageRequest) -> AgentDeps:
-    if not payload.provider or payload.provider not in SUPPORTED_PROVIDERS:
+    if not payload.provider or payload.provider not in SUPPORTED_LLM_PROVIDERS:
         raise HTTPException(status_code=422, detail="Please select a supported AI provider.")
     if not payload.model_name:
         raise HTTPException(status_code=422, detail="Please select an AI model.")
@@ -90,11 +101,8 @@ def _deps(request: Request, payload: AgentMessageRequest) -> AgentDeps:
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    return AgentDeps(
-        job_repo=_job_repo(request),
-        tracker_repo=get_tracker_repo(request),
-        profile_repo=get_profile_repo(request),
-        waterlooworks=request.app.state.waterlooworks,
+    return _build_agent_deps(
+        request,
         llm_config=LlmConfig(
             provider=payload.provider,
             model_name=payload.model_name,
@@ -102,22 +110,15 @@ def _deps(request: Request, payload: AgentMessageRequest) -> AgentDeps:
             api_base=payload.api_base,
         ),
         embedding_config=embedding_config,
-        memory=_memory_manager(request),
-        recommendation_repo=RecommendationRepository(request.app.state.database.pool),
     )
 
 
 def _execution_deps(request: Request) -> AgentDeps:
     """Dependencies for approval execution (no LLM round-trip needed)."""
 
-    return AgentDeps(
-        job_repo=_job_repo(request),
-        tracker_repo=get_tracker_repo(request),
-        profile_repo=get_profile_repo(request),
-        waterlooworks=request.app.state.waterlooworks,
+    return _build_agent_deps(
+        request,
         llm_config=None,
-        memory=_memory_manager(request),
-        recommendation_repo=RecommendationRepository(request.app.state.database.pool),
     )
 
 
@@ -131,9 +132,9 @@ async def create_agent_session(
 
 @agent_router.get("/sessions")
 async def list_agent_sessions(
-    request: Request,
+    repo: AgentRepoDep,
 ) -> list[dict[str, Any]]:
-    return await _memory_manager(request).store().list_sessions_with_meta()
+    return await repo.list_sessions_with_meta()
 
 
 @agent_router.patch("/sessions/{session_id}", response_model=AgentSession)
@@ -279,7 +280,9 @@ async def send_agent_message(
     orchestrator = AgentOrchestrator(repo, _deps(request, payload))
     try:
         return await orchestrator.process_message(
-            session_id, payload.content, context=payload.context
+            session_id,
+            payload.content,
+            context=(payload.context.model_dump(exclude_none=True) if payload.context else None),
         )
     except ToolError as error:
         status_code, detail = _public_agent_error(error)
@@ -304,7 +307,13 @@ async def send_agent_message_stream(
     async def event_stream():
         try:
             async for event in orchestrator.process_message_stream(
-                session_id, payload.content, context=payload.context
+                session_id,
+                payload.content,
+                context=(
+                    payload.context.model_dump(exclude_none=True)
+                    if payload.context
+                    else None
+                ),
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except ToolError as error:

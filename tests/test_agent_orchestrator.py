@@ -401,6 +401,41 @@ def test_keyword_yes_auto_approves(monkeypatch):
     assert "added" in result.message.content.lower()
 
 
+def test_keyword_yes_streams_tool_reply_and_done(monkeypatch):
+    repo, session = make_repo_with_session()
+    domain = FakeDomain()
+    deps = make_deps(domain)
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "plan_turn",
+        lambda **kwargs: {
+            "reply": "planned",
+            "tool_calls": [
+                {
+                    "name": "add_interested",
+                    "arguments": {"jobs": [{"job_id": JOB_ID, "source": "public"}]},
+                }
+            ],
+        },
+    )
+    orchestrator = AgentOrchestrator(repo, deps)
+    asyncio.run(orchestrator.process_message(session.id, "add this job"))
+
+    async def collect_events():
+        return [
+            event
+            async for event in orchestrator.process_message_stream(session.id, "yes")
+        ]
+
+    events = asyncio.run(collect_events())
+
+    assert [event["type"] for event in events] == ["tool", "text_delta", "done"]
+    assert events[0]["tool_call"]["status"] == "succeeded"
+    assert "added" in events[1]["delta"].lower()
+    assert events[2]["result"]["message"]["content"] == events[1]["delta"]
+
+
 class FakeMemory:
     def __init__(self):
         self.context_calls = 0
@@ -624,7 +659,7 @@ def test_continuation_round_invalid_shape_preserves_tool_results(monkeypatch):
     )
 
 
-def test_first_round_llm_failure_still_raises(monkeypatch):
+def test_first_round_llm_failure_becomes_assistant_reply(monkeypatch):
     from wecanfindintern.llm.gateway import LLMError
 
     repo, session = make_repo_with_session()
@@ -635,9 +670,12 @@ def test_first_round_llm_failure_still_raises(monkeypatch):
 
     monkeypatch.setattr(orchestrator_module, "plan_turn", fake_plan)
     orchestrator = AgentOrchestrator(repo, deps)
-    with pytest.raises(ToolError) as exc:
-        asyncio.run(orchestrator.process_message(session.id, "hello"))
-    assert exc.value.error_type == "llm_failed"
+    result = asyncio.run(orchestrator.process_message(session.id, "hello"))
+
+    assert "couldn't complete" in result.message.content
+    assert "try again or rephrase" in result.message.content
+    assert result.message.role == "assistant"
+    assert repo.messages[-1] == result.message
 
 
 def test_plan_turn_sends_json_mode_feedback_and_injection_guard(monkeypatch):

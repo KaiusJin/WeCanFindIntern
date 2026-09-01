@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from wecanfindintern.domain.classification import OpportunityType
+from wecanfindintern.llm.providers import ProviderName
 from wecanfindintern.tracker.models import ApplicationStage
 
 
@@ -57,9 +59,24 @@ class AgentSessionResponse(BaseModel):
     session: AgentSession
 
 
+class AgentJobContext(BaseModel):
+    id: str = Field(min_length=1, max_length=255)
+    source: Literal["public", "waterloo_work"] = "public"
+    title: str | None = Field(default=None, max_length=500)
+    company: str | None = Field(default=None, max_length=500)
+    location: str | None = Field(default=None, max_length=500)
+    work_mode: str | None = Field(default=None, max_length=40)
+    application_deadline: str | None = Field(default=None, max_length=120)
+    jd: str | None = Field(default=None, max_length=30_000)
+
+
+class AgentContext(BaseModel):
+    job: AgentJobContext
+
+
 class AgentMessageRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=4000)
-    provider: str | None = None
+    provider: ProviderName | None = None
     model_name: str | None = None
     api_key: str | None = None
     api_base: str | None = None
@@ -68,7 +85,7 @@ class AgentMessageRequest(BaseModel):
     embedding_dimensions: int | None = Field(default=None, ge=1, le=4096)
     embedding_api_key: str | None = None
     embedding_api_base: str | None = None
-    context: dict[str, Any] | None = None
+    context: AgentContext | None = None
 
 
 class AgentDecisionRequest(BaseModel):
@@ -118,12 +135,13 @@ class SearchJobsArgs(BaseModel):
     work_modes: list[Literal["remote", "hybrid", "onsite"]] = Field(
         default_factory=list, max_length=3
     )
-    opportunity_types: list[str] = Field(default_factory=list, max_length=10)
+    opportunity_types: list[OpportunityType] = Field(default_factory=list, max_length=10)
     recruiting_terms: list[str] = Field(default_factory=list, max_length=10)
     posted_after: date | None = None
     source: Literal["all", "public", "waterloo_work"] = "all"
     cursor: str | None = Field(default=None, max_length=256)
-    offset: int = Field(default=0, ge=0, le=10000)
+    public_cursor: str | None = Field(default=None, max_length=256)
+    waterloo_cursor: str | None = Field(default=None, max_length=256)
     limit: int = Field(default=10, ge=1, le=50)
 
 
@@ -168,7 +186,7 @@ class RecommendJobsArgs(BaseModel):
     work_modes: list[Literal["remote", "hybrid", "onsite"]] = Field(
         default_factory=list, max_length=3
     )
-    opportunity_types: list[str] = Field(default_factory=list, max_length=10)
+    opportunity_types: list[OpportunityType] = Field(default_factory=list, max_length=10)
     use_semantic_retrieval: bool = True
     use_llm_rerank: bool = False
     exclude_tracked: bool = True

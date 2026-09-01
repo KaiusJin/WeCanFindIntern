@@ -13,14 +13,18 @@ from typing import TYPE_CHECKING, Any
 
 from wecanfindintern.llm.gateway import complete_json, json_response_format
 
-if TYPE_CHECKING:  # avoid a runtime import cycle with agent.tools
-    from wecanfindintern.agent.tools import LlmConfig
+if TYPE_CHECKING:
+    from wecanfindintern.agent.contracts import LlmConfig
 
 logger = logging.getLogger(__name__)
 
 MAX_RERANK_CANDIDATES = 15
 MAX_ABS_ADJUSTMENT = 5
 EXCERPT_CHARS = 320
+# A 15-candidate prompt routinely takes ~20s on flash-tier models, well past the
+# default chat timeout; rerank is optional, so give it its own ceiling instead of
+# failing on every call. max_retries stays 0 to keep the latency bound hard.
+RERANK_TIMEOUT_SECONDS = 60.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,7 +96,9 @@ def rerank_with_llm(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             response_format=json_response_format(llm_config.provider),
-            timeout_seconds=llm_config.timeout_seconds,
+            timeout_seconds=max(
+                RERANK_TIMEOUT_SECONDS, llm_config.timeout_seconds
+            ),
             max_retries=0,
         )
         data = result.data

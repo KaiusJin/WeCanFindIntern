@@ -6,50 +6,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
-import sqlite3
 from dataclasses import asdict
-from pathlib import Path
-from typing import Any
 
 from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig, EmbeddingGateway
-from wecanfindintern.agent.recommend.indexer import RecommendationIndexer
+from wecanfindintern.agent.recommend.indexer import (
+    RecommendationIndexer,
+    load_waterloo_jobs_from_sqlite,
+)
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
-
-
-def _load_waterloo_jobs(limit: int | None) -> list[dict[str, Any]]:
-    path = Path(
-        os.getenv(
-            "WATERLOOWORKS_DB_PATH",
-            str(Path.home() / ".wecanfindintern" / "waterlooworks.sqlite3"),
-        )
-    ).expanduser()
-    if not path.exists():
-        return []
-    query = """
-        SELECT j.*,
-               (SELECT json_group_array(board)
-                FROM waterlooworks_job_boards b
-                WHERE b.source_job_id=j.source_job_id) AS boards
-        FROM waterlooworks_jobs j
-        ORDER BY j.last_seen_at DESC,j.source_job_id DESC
-    """
-    parameters: tuple[int, ...] = ()
-    if limit is not None:
-        query += " LIMIT ?"
-        parameters = (limit,)
-    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(query, parameters).fetchall()
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        item = dict(row)
-        item["boards"] = json.loads(item.get("boards") or "[]")
-        item.pop("raw_payload", None)
-        item.pop("payload_hash", None)
-        items.append(item)
-    return items
 
 
 async def run(*, limit: int | None, lexical_only: bool) -> None:
@@ -67,7 +32,7 @@ async def run(*, limit: int | None, lexical_only: bool) -> None:
         # HTTP request; the second pass can send bounded batches instead.
         document_indexer = RecommendationIndexer(database.pool)
         public_report = await document_indexer.index_public_jobs(limit=limit)
-        waterloo_items = await asyncio.to_thread(_load_waterloo_jobs, limit)
+        waterloo_items = await asyncio.to_thread(load_waterloo_jobs_from_sqlite, limit)
         waterloo_report = await document_indexer.index_waterloo_jobs(waterloo_items)
         embedding_report = None
         if config is not None:
@@ -75,7 +40,9 @@ async def run(*, limit: int | None, lexical_only: bool) -> None:
                 database.pool,
                 embedder=EmbeddingGateway(config),
             )
-            embedding_report = await embedding_indexer.embed_missing_chunks(limit=limit)
+            embedding_report = await embedding_indexer.embed_missing_primary_chunks(
+                limit=limit
+            )
         result = {
             field: getattr(public_report, field) + getattr(waterloo_report, field)
             for field in asdict(public_report)

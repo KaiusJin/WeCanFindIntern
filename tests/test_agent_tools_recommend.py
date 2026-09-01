@@ -396,8 +396,8 @@ def test_waterloo_source_excludes_tracked_and_filters_expired():
     assert returned == {"WW-2"}
 
 
-def test_waterloo_internship_board_survives_explicit_opportunity_filter():
-    internship = {
+def test_waterloo_coop_board_survives_explicit_opportunity_filter():
+    co_op = {
         "source_job_id": "WW-INTERN",
         "title": "Backend Developer",
         "organization": "Acme",
@@ -405,13 +405,13 @@ def test_waterloo_internship_board_survives_explicit_opportunity_filter():
     }
     deps = make_deps(
         job_repo=CompatJobRepo([]),
-        ww=FakeWaterlooWorks([internship]),
+        ww=FakeWaterlooWorks([co_op]),
     )
     result = run_recommend(
         deps,
         source="waterloo_work",
-        opportunity_types=["internship"],
+        opportunity_types=["co_op"],
     )
     recommendation = result["data"]["recommendations"][0]
     assert recommendation["job_id"] == "WW-INTERN"
-    assert recommendation["opportunity_type"] == "internship"
+    assert recommendation["opportunity_type"] == "co_op"

@@ -235,11 +235,18 @@ def score_candidate(
 
     opportunity_type = (candidate.get("opportunity_type") or "").strip().lower()
     title = candidate.get("title") or ""
-    is_internship = opportunity_type == "internship" or bool(
+    is_early_career_opportunity = opportunity_type in {
+        "internship",
+        "co_op",
+        "new_grad",
+        "apprenticeship",
+    } or bool(
         re.search(r"\b(?:intern(?:ship)?|co[ -]?op)\b", title, re.IGNORECASE)
     )
     desired = {value.strip().lower() for value in desired_opportunity_types or set()}
-    if (desired and opportunity_type in desired) or (early_career and is_internship):
+    if (desired and opportunity_type in desired) or (
+        early_career and is_early_career_opportunity
+    ):
         components["opportunity_fit"] = WEIGHT_OPPORTUNITY_FIT
     if early_career and EARLY_CAREER_TITLE_PATTERN.search(title):
         components["early_career_role"] = WEIGHT_EARLY_CAREER_ROLE
@@ -264,7 +271,10 @@ def score_candidate(
             score += WEIGHT_FRESH_30D
 
     deadline_urgent = False
-    deadline = _parse_date(candidate.get("application_deadline"))
+    deadline = _parse_date(
+        candidate.get("application_deadline_date")
+        or candidate.get("application_deadline")
+    )
     if deadline is not None and 0 <= (deadline - today).days <= DEADLINE_URGENT_DAYS:
         deadline_urgent = True
         score += WEIGHT_DEADLINE_SOON
@@ -297,7 +307,10 @@ def score_candidate(
 
 def is_expired(candidate: dict[str, Any], *, today: date | None = None) -> bool:
     today = today or datetime.now(UTC).date()
-    deadline = _parse_date(candidate.get("application_deadline"))
+    deadline = _parse_date(
+        candidate.get("application_deadline_date")
+        or candidate.get("application_deadline")
+    )
     return deadline is not None and deadline < today
 
 
