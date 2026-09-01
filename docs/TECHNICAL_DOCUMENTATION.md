@@ -11,9 +11,9 @@ failure handling lives in the [Reliability and Recovery Runbook](RELIABILITY_AND
 WeCanFindIntern is a local-first, single-user career workspace. The delivered
 system includes:
 
-- public job collection from Indeed, LinkedIn, Glassdoor, ZipRecruiter, and
-  Google Jobs through the vendored JobSpy package, followed by normalization,
-  classification, cross-source deduplication, enrichment, and public querying;
+- public job collection from Indeed and LinkedIn through the vendored JobSpy
+  package, followed by normalization, classification, cross-source
+  deduplication, enrichment, and public querying;
 - collection from five WaterlooWorks boards through a dedicated local Chrome
   session, including submitted-application status synchronization;
 - `profile.v1`, safe resume import, deterministic ATS diagnostics, cover-letter

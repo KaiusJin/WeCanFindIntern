@@ -3,6 +3,7 @@ import { loadSettings } from "./settings.js";
 import { setTabActivators, switchTab } from "./navigation.js";
 import { jobContextState } from "./job-context.js?v=20260831-jobboard-parity-v3";
 import { setupInfiniteScroll } from "./pagination.js?v=20260831-jobboard-parity-v3";
+import { startDesktopCollectionMonitor } from "./desktop-collection.js?v=20260901-job-sync-v1";
 import {
   state,
   loadJobs,
@@ -120,6 +121,9 @@ document.addEventListener("click", (event) => {
 updateSliderFill();
 loadFacets();
 loadJobs();
+startDesktopCollectionMonitor({
+  refreshJobs: () => Promise.all([loadFacets(), loadJobs()]),
+});
 setupInfiniteScroll({
   isLoading: () => state.loading,
   canLoadMore: () => state.hasMore && state.cursor,

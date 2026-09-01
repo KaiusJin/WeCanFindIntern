@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from wecanfindintern.ingestion.collection_catalog import expand_collection_catalog
+
+
+def test_default_campaign_only_enables_indeed_and_linkedin() -> None:
+    config_path = Path(__file__).parents[1] / "config" / "collection_plans.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+
+    assert config["sites"] == ["indeed", "linkedin"]
+    assert "source_overrides" not in config
 
 
 def test_expands_sites_from_config() -> None:
@@ -12,9 +23,7 @@ def test_expands_sites_from_config() -> None:
         "sites": ["indeed", "google"],
         "locations": [{"country_code": "CA"}],
         "keyword_groups": [{"domain": "x", "keywords": ["intern"]}],
-        "source_overrides": {
-            "google": {"google_search_term": "{search_term} near {location}"}
-        },
+        "source_overrides": {"google": {"google_search_term": "{search_term} near {location}"}},
     }
     plans = expand_collection_catalog(raw)
     assert len(plans) == 1

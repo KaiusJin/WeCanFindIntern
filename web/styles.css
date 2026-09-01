@@ -869,6 +869,28 @@ main {
   white-space: nowrap;
 }
 
+.collection-status-text {
+  color: var(--muted);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.collection-status-text[data-state="running"] {
+  color: #8a6500;
+}
+
+.collection-status-text[data-state="partial"] {
+  color: #9a5a00;
+}
+
+.collection-status-text[data-state="failed"] {
+  color: #b42318;
+}
+
+.collection-status-text[hidden] + .desktop-only-meta {
+  display: none;
+}
+
 .meta-dot {
   color: #b5c7ba;
   font-weight: 700;

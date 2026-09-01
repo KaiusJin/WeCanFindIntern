@@ -167,11 +167,13 @@
                 <h2 id="results-title">Latest jobs</h2>
               </div>
               <div class="results-meta">
-              <span id="last-updated-text" class="last-updated-text" title="Last automated job sync time">Updated recently</span>
-              <span class="meta-dot">·</span>
-              <span id="result-status">Loading…</span>
-              <button id="refresh" class="icon-button" type="button" title="Refresh">↻</button>
-            </div>
+                <span id="collection-status-text" class="collection-status-text" role="status" hidden></span>
+                <span id="collection-status-separator" class="meta-dot desktop-only-meta" aria-hidden="true">·</span>
+                <span id="last-updated-text" class="last-updated-text" title="Last automated job sync time">Updated recently</span>
+                <span class="meta-dot">·</span>
+                <span id="result-status">Loading…</span>
+                <button id="refresh" class="icon-button" type="button" title="Refresh">↻</button>
+              </div>
             </div>
             <div id="job-list" class="job-list"></div>
             <div id="empty-state" class="empty-state" hidden>

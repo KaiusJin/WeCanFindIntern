@@ -24,6 +24,7 @@ class CollectionStatus:
     last_started_at: datetime | None = None
     last_finished_at: datetime | None = None
     last_error: str | None = None
+    last_result: dict[str, Any] | None = None
     run_count: int = 0
 
     def payload(self) -> dict[str, Any]:
@@ -35,6 +36,7 @@ class CollectionStatus:
                 self.last_finished_at.isoformat() if self.last_finished_at else None
             ),
             "last_error": self.last_error,
+            "last_result": self.last_result,
             "run_count": self.run_count,
         }
 
@@ -102,20 +104,31 @@ class BackgroundCollectionService:
             self._persist_status()
             cancelled = False
             try:
-                await run(
+                result = await run(
                     self.config_path,
                     self.batch_size,
                     concurrency=self.concurrency,
                     max_retries=self.max_retries,
                 )
+                self.status.last_result = result.payload()
                 self.status.run_count += 1
             except asyncio.CancelledError:
                 cancelled = True
                 self.status.last_error = "Collection was interrupted during app shutdown."
+                self.status.last_result = {
+                    "status": "interrupted",
+                    "completed_at": None,
+                    "error_summary": self.status.last_error,
+                }
                 self.status.last_finished_at = None
                 raise
             except Exception as error:
                 self.status.last_error = f"{type(error).__name__}: {error}"
+                self.status.last_result = {
+                    "status": "failed",
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    "error_summary": self.status.last_error,
+                }
                 logger.exception("Scheduled collection failed")
             finally:
                 self.status.running = False
@@ -141,10 +154,20 @@ class BackgroundCollectionService:
                 last_started_at=self._parse_datetime(payload.get("last_started_at")),
                 last_finished_at=self._parse_datetime(payload.get("last_finished_at")),
                 last_error=payload.get("last_error"),
+                last_result=(
+                    payload.get("last_result")
+                    if isinstance(payload.get("last_result"), dict)
+                    else None
+                ),
                 run_count=max(0, int(payload.get("run_count", 0))),
             )
             if payload.get("running"):
                 status.last_error = "Previous collection was interrupted; it will retry."
+                status.last_result = {
+                    "status": "interrupted",
+                    "completed_at": None,
+                    "error_summary": status.last_error,
+                }
                 status.last_finished_at = None
             return status
         except FileNotFoundError:

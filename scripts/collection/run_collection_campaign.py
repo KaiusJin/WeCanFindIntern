@@ -8,10 +8,12 @@ import asyncio
 import json
 import os
 import random
+import re
 import signal
 import sys
 import time
 from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,6 +35,59 @@ if sys.platform == "win32":
     import msvcrt
 else:
     import fcntl
+
+
+_RETRYABLE_HTTP_STATUSES = {408, 425, 429}
+_PERMANENT_ERROR_MARKERS = ("location not parsed",)
+
+
+@dataclass(frozen=True, slots=True)
+class CampaignResult:
+    """Structured result shared by CLI summaries and the desktop status API."""
+
+    completed_at: datetime
+    duration_seconds: float
+    status: str
+    unique_jobs_collected: int
+    database_stats: dict[str, int]
+    salary_stats: dict[str, int]
+    recruiting_term_stats: dict[str, int]
+    query_stats: dict[str, int]
+    failures: tuple[str, ...]
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "completed_at": self.completed_at.isoformat(),
+            "duration_seconds": round(self.duration_seconds, 2),
+            "status": self.status,
+            "unique_jobs_collected": self.unique_jobs_collected,
+            "database_stats": dict(self.database_stats),
+            "salary_stats": dict(self.salary_stats),
+            "recruiting_term_stats": dict(self.recruiting_term_stats),
+            "query_stats": dict(self.query_stats),
+            "failure_count": len(self.failures),
+            "failures": list(self.failures),
+        }
+
+
+def is_retryable_collection_error(error: Exception) -> bool:
+    """Retry transient failures, but stop immediately for deterministic provider errors."""
+
+    message = str(error).casefold()
+    if any(marker in message for marker in _PERMANENT_ERROR_MARKERS):
+        return False
+    status_codes = {
+        int(value)
+        for value in re.findall(
+            r"(?:status(?:\s+code)?|http(?:/\d(?:\.\d)?)?)[^0-9]{0,12}(\d{3})",
+            message,
+        )
+    }
+    if status_codes:
+        return all(
+            status in _RETRYABLE_HTTP_STATUSES or 500 <= status < 600 for status in status_codes
+        )
+    return True
 
 
 def acquire_process_lock(lock_file) -> None:
@@ -66,7 +121,8 @@ async def collect_all(
 ) -> tuple[list[NormalizedJob], list[str], dict[str, int]]:
     collected: dict[str, NormalizedJob] = {}
     failures: list[str] = []
-    stats = {"retried": 0, "succeeded": 0, "failed": 0}
+    stats = {"retried": 0, "succeeded": 0, "failed": 0, "skipped": 0}
+    disabled_sources: set[str] = set()
     lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(max(1, concurrency))
 
@@ -82,6 +138,18 @@ async def collect_all(
 
     async def _collect_single_query(definition: dict[str, Any], source: str, task_idx: int) -> None:
         async with semaphore:
+            async with lock:
+                source_disabled = source in disabled_sources
+                if source_disabled:
+                    stats["skipped"] += 1
+            if source_disabled:
+                log(
+                    f"[{task_idx}/{total_tasks}] Skipped {definition['name']} / {source}: "
+                    "provider circuit is open",
+                    level="WARN",
+                )
+                return
+
             offset = 0
             seen_for_query: set[str] = set()
             maximum = definition.get("max_results_per_source", 50)
@@ -106,17 +174,31 @@ async def collect_all(
                 )
 
                 # Automatic retry with exponential backoff and jitter
-                attempt = 0
+                retry_count = 0
                 result = None
-                while attempt <= max_retries:
+                while True:
                     try:
                         _, result = await asyncio.to_thread(scrape_checked, query)
                         break
                     except Exception as error:
-                        attempt += 1
-                        async with lock:
-                            stats["retried"] += 1
-                        if attempt > max_retries:
+                        retryable = is_retryable_collection_error(error)
+                        if not retryable:
+                            query_has_failed = True
+                            async with lock:
+                                disabled_sources.add(source)
+                            log(
+                                f"[{task_idx}/{total_tasks}] FAILED permanently; "
+                                f"opened circuit for {source}: "
+                                f"{definition['name']} / {source} "
+                                f"({type(error).__name__}: {error})",
+                                level="ERROR",
+                            )
+                            async with lock:
+                                failures.append(
+                                    f"{definition['name']}:{source}:{type(error).__name__}: {error}"
+                                )
+                            break
+                        if retry_count >= max_retries:
                             query_has_failed = True
                             log(
                                 f"[{task_idx}/{total_tasks}] FAILED after {max_retries} retries: "
@@ -129,11 +211,15 @@ async def collect_all(
                                     f"{definition['name']}:{source}:{type(error).__name__}: {error}"
                                 )
                             break
+                        retry_count += 1
+                        async with lock:
+                            stats["retried"] += 1
                         backoff = min(
-                            15.0, (2 ** (attempt - 1)) * 1.5 + random.uniform(0.5, 2.0)
+                            15.0,
+                            (2 ** (retry_count - 1)) * 1.5 + random.uniform(0.5, 2.0),
                         )
                         log(
-                            f"[{task_idx}/{total_tasks}] Retry {attempt}/{max_retries} "
+                            f"[{task_idx}/{total_tasks}] Retry {retry_count}/{max_retries} "
                             f"in {backoff:.1f}s for {definition['name']} / {source} "
                             f"({type(error).__name__}: {error})",
                             level="WARN",
@@ -171,10 +257,9 @@ async def collect_all(
                     f"{len(seen_for_query)} source jobs (unique total: {len(collected)})"
                 )
 
-    await asyncio.gather(*[
-        _collect_single_query(defn, src, idx)
-        for idx, (defn, src) in enumerate(tasks, start=1)
-    ])
+    await asyncio.gather(
+        *[_collect_single_query(defn, src, idx) for idx, (defn, src) in enumerate(tasks, start=1)]
+    )
     return list(collected.values()), failures, stats
 
 
@@ -200,11 +285,9 @@ async def run(
     batch_size: int,
     concurrency: int = 4,
     max_retries: int = 3,
-) -> None:
+) -> CampaignResult:
     start_time = time.time()
-    definitions = expand_collection_catalog(
-        json.loads(config_path.read_text(encoding="utf-8"))
-    )
+    definitions = expand_collection_catalog(json.loads(config_path.read_text(encoding="utf-8")))
 
     # Stage 1: every network collection completes before any database dedupe begins.
     normalized_jobs, failures, query_stats = await collect_all(
@@ -261,35 +344,38 @@ async def run(
             partial=bool(failures),
         )
         duration = time.time() - start_time
-        summary_payload = {
-            "completed_at": datetime.now(UTC).isoformat(),
-            "duration_seconds": round(duration, 2),
-            "status": "partial" if failures else "success",
-            "unique_jobs_collected": len(normalized_jobs),
-            "database_stats": {
+        result_status = (
+            "failed" if failures and not normalized_jobs else "partial" if failures else "success"
+        )
+        result = CampaignResult(
+            completed_at=datetime.now(UTC),
+            duration_seconds=duration,
+            status=result_status,
+            unique_jobs_collected=len(normalized_jobs),
+            database_stats={
                 "created": counts["created"],
                 "merged": counts["merged"],
                 "updated": counts["updated"],
                 "unchanged": counts["unchanged"],
             },
-            "salary_stats": {
+            salary_stats={
                 "structured": salary.structured,
                 "regex": salary.regex,
                 "deepseek": salary.llm,
             },
-            "recruiting_term_stats": {
+            recruiting_term_stats={
                 "regex": term.regex,
                 "deepseek": term.llm,
                 "not_found": term.not_found,
                 "cached": term.skipped_cached,
                 "failed": term.failed,
             },
-            "query_stats": query_stats,
-            "failures": failures,
-        }
+            query_stats=query_stats,
+            failures=tuple(failures),
+        )
         summary_path = Path(os.getenv("WCFI_LOG_DIR", "logs")) / "campaign_summary_latest.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
-        summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+        summary_path.write_text(json.dumps(result.payload(), indent=2), encoding="utf-8")
         log(f"Collection campaign finished in {duration:.1f}s. Summary written to {summary_path}")
 
     except Exception as error:
@@ -308,6 +394,7 @@ async def run(
         log(f"Source failures encountered: {len(failures)}", level="WARN")
         for failure in failures:
             log(f"- {failure}", level="WARN")
+    return result
 
 
 def main() -> None:
@@ -319,11 +406,15 @@ def main() -> None:
     )
     parser.add_argument("--batch-size", type=int, default=250)
     parser.add_argument(
-        "--concurrency", type=int, default=4,
+        "--concurrency",
+        type=int,
+        default=4,
         help="Max concurrent scraper threads/queries",
     )
     parser.add_argument(
-        "--max-retries", type=int, default=3,
+        "--max-retries",
+        type=int,
+        default=3,
         help="Max retries per scraper query on error",
     )
     parser.add_argument(

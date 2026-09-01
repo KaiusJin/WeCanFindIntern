@@ -42,10 +42,10 @@ claims before it is presented for review.
 
 ### Job data becomes comparable
 
-Indeed, LinkedIn, Glassdoor, ZipRecruiter, and Google Jobs records pass through
-one stable data model. Source identity remains intact while locations, work
-modes, opportunity types, schedules, skills, requirements, salary, and
-recruiting terms become consistent enough to search and compare.
+The default collection campaign imports Indeed and LinkedIn records through one
+stable data model. Source identity remains intact while locations, work modes,
+opportunity types, schedules, skills, requirements, salary, and recruiting terms
+become consistent enough to search and compare.
 
 ### WaterlooWorks remains private and isolated
 

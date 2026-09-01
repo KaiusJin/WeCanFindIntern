@@ -1,7 +1,7 @@
 {
   "name": "wecanfindintern-desktop",
   "productName": "WeCanFindIntern",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first job search and application workspace",
   "author": "WeCanFindIntern",
   "license": "AGPL-3.0-or-later",

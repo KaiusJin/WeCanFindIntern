@@ -70,10 +70,8 @@ flowchart TD
     I --> J[Run statistics and success/partial status]
 ```
 
-The catalog covers CA and US, the configured software/data/AI internship and
-co-op keyword groups, and Indeed, LinkedIn, Glassdoor, ZipRecruiter, and Google
-Jobs. Google receives a rendered `google_search_term` such as
-`software engineer intern near Toronto`.
+The default catalog covers CA and US, the configured software/data/AI internship
+and co-op keyword groups, and the enabled Indeed and LinkedIn sources.
 
 Each enabled catalog definition is executed once per source. A query is paged until the configured maximum result count is reached, JobSpy returns no jobs, no new fingerprints are found, or the query reaches terminal retry failure.
 
@@ -81,7 +79,13 @@ Within one query, `seen_for_query` prevents repeated pages from re-adding a sour
 
 ## Retry, isolation, and scope filtering
 
-The campaign uses an asyncio semaphore, default concurrency 4, and runs blocking JobSpy calls in worker threads. Each failure is retried up to the configured maximum with exponential backoff and random jitter. The delay is capped at 15 seconds. One source/query failure is recorded and does not cancel unrelated queries.
+The campaign uses an asyncio semaphore, default concurrency 4, and runs blocking
+JobSpy calls in worker threads. Transient failures are retried up to the
+configured maximum with exponential backoff and random jitter, capped at 15
+seconds. Deterministic provider failures such as unsupported locations or
+non-retryable HTTP 4xx responses open a per-run source circuit so remaining
+queries for that source are skipped. One source failure does not cancel unrelated
+sources.
 
 When the request has `country_indeed=Canada` or `USA`/`United States`, the returned location is parsed and records outside the requested country are discarded before persistence. If no country scope is supplied, the adapter does not apply this filter.
 
