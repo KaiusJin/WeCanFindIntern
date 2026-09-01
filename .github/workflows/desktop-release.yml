@@ -82,7 +82,26 @@ jobs:
       - name: Build native Python sidecar
         run: python scripts/desktop/build_backend.py --clean
 
-      - name: Build desktop installers
+      - name: Build macOS desktop installers
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npm run make; then
+              exit 0
+            fi
+            if (( attempt == 3 )); then
+              exit 1
+            fi
+            echo "macOS packaging attempt $attempt failed; cleaning up before retry."
+            hdiutil detach "/Volumes/WeCanFindIntern" -force 2>/dev/null || true
+            sleep $((attempt * 5))
+          done
+
+      - name: Build Windows desktop installer
+        if: runner.os == 'Windows'
         working-directory: desktop
         run: npm run make
 
