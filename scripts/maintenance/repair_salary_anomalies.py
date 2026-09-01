@@ -7,9 +7,9 @@ import asyncio
 
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
-from wecanfindintern.domain.jobs import annualize_salary
+from wecanfindintern.domain.normalization import annualize_salary
 from wecanfindintern.domain.salary import extract_salary_from_description
-from wecanfindintern.domain.salary_llm import extract_salary_with_deepseek
+from wecanfindintern.ingestion.salary_llm import extract_salary_with_deepseek
 
 ANOMALY_PREDICATE = """
     (salary_interval = 'hourly' AND (

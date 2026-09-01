@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 
-from wecanfindintern.api.models import JobListFilters
+from wecanfindintern.application.job_models import JobListFilters
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.db.read_repository import JobReadRepository
@@ -36,6 +36,11 @@ async def verify() -> None:
         exposed_removed_fields = REMOVED_FIELDS.intersection(detail.model_dump())
         if exposed_removed_fields:
             raise RuntimeError(f"removed fields are still exposed: {exposed_removed_fields}")
+        detail_payload = detail.model_dump()
+        if "source_skills" not in detail_payload or "skills" in detail_payload:
+            raise RuntimeError(
+                "detail skill contract must expose source_skills, not ambiguous skills"
+            )
 
         print(
             {

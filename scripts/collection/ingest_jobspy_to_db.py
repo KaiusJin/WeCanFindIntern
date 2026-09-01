@@ -11,18 +11,9 @@ from datetime import UTC, datetime
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.db.repositories.jobs import JobIngestionRepository
-from wecanfindintern.db.repositories.recruiting_term import RecruitingTermRepository
-from wecanfindintern.db.repositories.salary import SalaryRepository
-from wecanfindintern.domain.jobs import canonical_job_from_jobspy
 from wecanfindintern.ingestion.jobspy_adapter import scrape_and_normalize
 from wecanfindintern.ingestion.jobspy_cli import add_query_arguments, query_from_args
-from wecanfindintern.ingestion.recruiting_term_enrichment import enrich_recruiting_terms
-from wecanfindintern.ingestion.salary_enrichment import enrich_missing_salaries
-
-
-def chunks(items: list, size: int):
-    for offset in range(0, len(items), size):
-        yield items[offset : offset + size]
+from wecanfindintern.ingestion.pipeline import run_ingestion_pipeline
 
 
 async def persist(query, normalized_jobs, scraped_at: datetime, batch_size: int) -> None:
@@ -34,59 +25,48 @@ async def persist(query, normalized_jobs, scraped_at: datetime, batch_size: int)
         query=query.model_dump(mode="json", exclude={"proxies", "ca_cert"}),
     )
     counts: Counter[str] = Counter()
+    report = None
     try:
-        canonical_jobs = []
-        for job in normalized_jobs:
-            canonical = await asyncio.to_thread(
-                canonical_job_from_jobspy,
-                job,
-                scraped_at=scraped_at,
-                allow_salary_extraction=False,
-            )
-            canonical_jobs.append(canonical)
-        for batch in chunks(canonical_jobs, batch_size):
-            counts.update(
-                await repository.ingest_batch(
-                    run_id=run.internal_id,
-                    jobs=batch,
-                    scraped_at=scraped_at,
-                )
-            )
-        salary_stats = await enrich_missing_salaries(
-            SalaryRepository(database.pool), normalized_jobs
-        )
-        term_stats = await enrich_recruiting_terms(
-            RecruitingTermRepository(database.pool),
-            [job.source_fingerprint for job in normalized_jobs],
+        report = await run_ingestion_pipeline(
+            pool=database.pool,
+            run_id=run.internal_id,
+            jobs=normalized_jobs,
+            scraped_at=scraped_at,
+            batch_size=batch_size,
+            outcomes=counts,
         )
         await repository.finish_run(run.internal_id)
     except Exception as error:
+        processed = sum(counts.values())
         await repository.finish_run(
             run.internal_id,
-            failed_count=len(normalized_jobs) - sum(counts.values()),
+            failed_count=len(normalized_jobs) - processed,
             error_summary=str(error)[:2000],
-            partial=bool(counts),
+            partial=processed > 0,
         )
         raise
     finally:
         await database.close()
 
+    assert report is not None
     print(f"采集批次: {run.public_id}")
     print(
         "写入结果: "
-        f"created={counts['created']}, merged={counts['merged']}, "
-        f"unchanged={counts['unchanged']}"
+        f"created={report.outcomes['created']}, merged={report.outcomes['merged']}, "
+        f"updated={report.outcomes['updated']}, "
+        f"unchanged={report.outcomes['unchanged']}"
     )
     print(
         "薪资处理: "
-        f"source={salary_stats.structured}, regex={salary_stats.regex}, "
-        f"deepseek={salary_stats.llm}"
+        f"source={report.salary.structured}, regex={report.salary.regex}, "
+        f"deepseek={report.salary.llm}"
     )
     print(
         "招聘季节处理: "
-        f"regex={term_stats.regex}, deepseek={term_stats.llm}, "
-        f"not_found={term_stats.not_found}, cached={term_stats.skipped_cached}, "
-        f"failed={term_stats.failed}"
+        f"regex={report.recruiting_term.regex}, deepseek={report.recruiting_term.llm}, "
+        f"not_found={report.recruiting_term.not_found}, "
+        f"cached={report.recruiting_term.skipped_cached}, "
+        f"failed={report.recruiting_term.failed}"
     )
 
 

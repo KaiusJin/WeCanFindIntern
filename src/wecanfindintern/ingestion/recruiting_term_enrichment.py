@@ -13,7 +13,7 @@ from wecanfindintern.domain.recruiting_term import (
     recruiting_term_input_hash,
     recruiting_term_signal_context,
 )
-from wecanfindintern.domain.recruiting_term_llm import (
+from wecanfindintern.ingestion.recruiting_term_llm import (
     extract_recruiting_term_with_deepseek,
     extract_recruiting_terms_batch,
 )

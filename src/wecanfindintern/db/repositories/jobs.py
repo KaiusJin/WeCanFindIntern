@@ -21,6 +21,7 @@ from wecanfindintern.deduplication import (
     DedupeAction,
     choose_duplicate,
 )
+from wecanfindintern.domain.classification import classify_job
 from wecanfindintern.domain.jobs import (
     CanonicalJobInput,
     normalize_canonical_job_description,
@@ -30,6 +31,7 @@ from wecanfindintern.domain.jobs import (
 class IngestionOutcome(StrEnum):
     CREATED = "created"
     MERGED = "merged"
+    UPDATED = "updated"
     UNCHANGED = "unchanged"
 
 
@@ -100,6 +102,7 @@ class JobIngestionRepository:
                 SET fetched_count = fetched_count + %s,
                     created_count = created_count + %s,
                     merged_count = merged_count + %s,
+                    updated_count = updated_count + %s,
                     unchanged_count = unchanged_count + %s
                 WHERE id = %s
                 """,
@@ -107,6 +110,7 @@ class JobIngestionRepository:
                     sum(counts.values()),
                     counts[IngestionOutcome.CREATED.value],
                     counts[IngestionOutcome.MERGED.value],
+                    counts[IngestionOutcome.UPDATED.value],
                     counts[IngestionOutcome.UNCHANGED.value],
                     run_id,
                 ),
@@ -180,7 +184,7 @@ class JobIngestionRepository:
         ).fetchone()
         if existing:
             persisted_incoming = normalize_canonical_job_description(incoming)
-            await self._refresh_existing_source(
+            changed = await self._refresh_existing_source(
                 connection,
                 incoming=persisted_incoming,
                 source_id=existing["id"],
@@ -190,7 +194,7 @@ class JobIngestionRepository:
                 run_id=run_id,
                 scraped_at=scraped_at,
             )
-            return IngestionOutcome.UNCHANGED
+            return IngestionOutcome.UPDATED if changed else IngestionOutcome.UNCHANGED
 
         candidates = await self._find_candidates(connection, incoming)
         decision = choose_duplicate(incoming, candidates)
@@ -452,7 +456,7 @@ class JobIngestionRepository:
         previous_payload_hash: bytes,
         run_id: int,
         scraped_at: datetime,
-    ) -> None:
+    ) -> bool:
         changed = payload_hash != previous_payload_hash
         await connection.execute(
             """
@@ -480,6 +484,8 @@ class JobIngestionRepository:
                 source_id,
             ),
         )
+        if changed:
+            await self._replace_source_owned_fields(connection, job_id, incoming)
         await self._refresh_canonical_job(connection, job_id, incoming, scraped_at)
         if changed:
             await self._insert_snapshot(
@@ -491,6 +497,70 @@ class JobIngestionRepository:
                 payload=incoming.source.payload,
                 scraped_at=scraped_at,
             )
+        return changed
+
+    async def _replace_source_owned_fields(
+        self,
+        connection: AsyncConnection,
+        job_id: int,
+        incoming: CanonicalJobInput,
+    ) -> None:
+        """Apply corrections from the same provider identity before reclassification."""
+
+        salary = incoming.salary
+        await connection.execute(
+            """UPDATE jobs SET
+                title=%s,title_normalized=%s,
+                company_name=%s,company_normalized=%s,company_industry=%s,
+                company_website_url=%s,company_logo_url=%s,
+                location_text=%s,city=%s,region_code=%s,region_name=%s,
+                region_type=%s,country_code=%s,country_name=%s,
+                location_normalized=%s,date_posted=%s,published_sort_at=%s,
+                job_function=%s,contact_emails=%s::text[],vacancy_count=%s,
+                description=%s,description_hash=%s,
+                work_mode=%s,employment_types=%s::text[],
+                primary_employment_type=%s,source_skills=%s::text[],
+                salary_interval=%s,salary_min=%s,salary_max=%s,
+                salary_currency=%s,salary_source=%s,
+                salary_annual_min=%s,salary_annual_max=%s
+            WHERE id=%s;""",
+            (
+                incoming.title,
+                incoming.title_normalized,
+                incoming.company.name,
+                incoming.company.normalized_name,
+                incoming.company.industry,
+                incoming.company.website_url,
+                incoming.company.logo_url,
+                incoming.location.raw,
+                incoming.location.city,
+                incoming.location.region_code,
+                incoming.location.region_name,
+                incoming.location.region_type,
+                incoming.location.country_code,
+                incoming.location.country_name,
+                incoming.location.normalized,
+                incoming.date_posted,
+                incoming.published_sort_at,
+                incoming.job_function,
+                incoming.contact_emails,
+                incoming.vacancy_count,
+                incoming.description,
+                hex_bytes(incoming.dedupe.description_hash),
+                incoming.work_mode.value,
+                incoming.employment_types,
+                incoming.primary_employment_type,
+                incoming.source_skills,
+                salary.interval if salary else None,
+                salary.minimum if salary else None,
+                salary.maximum if salary else None,
+                salary.currency if salary else None,
+                salary.source if salary else None,
+                salary.annualized_minimum if salary else None,
+                salary.annualized_maximum if salary else None,
+                job_id,
+            ),
+        )
 
     async def _refresh_canonical_job(
         self,
@@ -499,15 +569,57 @@ class JobIngestionRepository:
         incoming: CanonicalJobInput,
         scraped_at: datetime,
     ) -> None:
+        current = await (
+            await connection.execute(
+                """
+                SELECT title, description, employment_types,
+                       primary_employment_type, source_skills, work_mode,
+                       length(coalesce(description, '')) AS description_length
+                FROM jobs
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (job_id,),
+            )
+        ).fetchone()
+        incoming_description_length = len(incoming.description or "")
+        current_description_length = int(current["description_length"] or 0)
+        # A stable tie-break keeps the canonical JD independent of source arrival order.
+        replace_description = (
+            incoming_description_length,
+            incoming.description or "",
+        ) > (
+            current_description_length,
+            current["description"] or "",
+        )
+        canonical_description = (
+            incoming.description if replace_description else current["description"]
+        )
+        employment_types = sorted(
+            set(current["employment_types"] or []) | set(incoming.employment_types)
+        )
+        source_skills = sorted(
+            set(current["source_skills"] or []) | set(incoming.source_skills)
+        )
+        work_mode = current["work_mode"]
+        if not work_mode or work_mode == "unknown":
+            work_mode = incoming.work_mode.value
+        classification = classify_job(
+            title=current["title"],
+            description=canonical_description,
+            employment_types=employment_types,
+            source_skills=source_skills,
+            work_mode=work_mode,
+        )
         await connection.execute(
             """
             UPDATE jobs
             SET description = CASE
-                    WHEN length(coalesce(%s, '')) > length(coalesce(description, '')) THEN %s
+                    WHEN %s THEN %s
                     ELSE description
                 END,
                 description_hash = CASE
-                    WHEN length(coalesce(%s, '')) > length(coalesce(description, '')) THEN %s
+                    WHEN %s THEN %s
                     ELSE description_hash
                 END,
                 city = coalesce(city, %s),
@@ -520,54 +632,17 @@ class JobIngestionRepository:
                     WHEN location_normalized = '' THEN %s ELSE location_normalized
                 END,
                 work_mode = CASE WHEN work_mode = 'unknown' THEN %s ELSE work_mode END,
-                employment_types = ARRAY(
-                    SELECT DISTINCT value
-                    FROM unnest(employment_types || %s::text[]) AS value
-                    ORDER BY value
-                ),
+                employment_types = %s::text[],
                 primary_employment_type = coalesce(primary_employment_type, %s),
-                opportunity_type = CASE
-                    WHEN %s <> 'unknown' THEN %s ELSE opportunity_type
-                END,
-                schedule_types = ARRAY(
-                    SELECT DISTINCT value
-                    FROM unnest(schedule_types || %s::text[]) AS value
-                    ORDER BY value
-                ),
-                primary_schedule_type = CASE
-                    WHEN %s <> 'unknown' THEN %s ELSE primary_schedule_type
-                END,
-                job_category = CASE
-                    WHEN job_category = 'other' AND %s <> 'other' THEN %s
-                    ELSE job_category
-                END,
-                job_subcategories = ARRAY(
-                    SELECT value
-                    FROM unnest(job_subcategories || %s::text[])
-                        WITH ORDINALITY AS item(value, position)
-                    GROUP BY value
-                    ORDER BY min(position)
-                ),
-                skill_tags = ARRAY(
-                    SELECT value
-                    FROM unnest(skill_tags || %s::text[])
-                        WITH ORDINALITY AS item(value, position)
-                    GROUP BY value
-                    ORDER BY min(position)
-                ),
-                requirement_tags = ARRAY(
-                    SELECT DISTINCT value
-                    FROM unnest(requirement_tags || %s::text[]) AS value
-                    ORDER BY value
-                ),
-                display_tags = ARRAY(
-                    SELECT value
-                    FROM unnest(display_tags || %s::text[])
-                        WITH ORDINALITY AS item(value, position)
-                    GROUP BY value
-                    ORDER BY min(position)
-                ),
-                classification_version = greatest(classification_version, %s),
+                opportunity_type = %s,
+                schedule_types = %s::text[],
+                primary_schedule_type = %s,
+                job_category = %s,
+                job_subcategories = %s::text[],
+                skill_tags = %s::text[],
+                requirement_tags = %s::text[],
+                display_tags = %s::text[],
+                classification_version = %s,
                 salary_interval = coalesce(salary_interval, %s),
                 salary_min = coalesce(salary_min, %s),
                 salary_max = coalesce(salary_max, %s),
@@ -575,11 +650,7 @@ class JobIngestionRepository:
                 salary_source = coalesce(salary_source, %s),
                 salary_annual_min = coalesce(salary_annual_min, %s),
                 salary_annual_max = coalesce(salary_annual_max, %s),
-                source_skills = ARRAY(
-                    SELECT DISTINCT value
-                    FROM unnest(source_skills || %s::text[]) AS value
-                    ORDER BY value
-                ),
+                source_skills = %s::text[],
                 last_seen_at = GREATEST(last_seen_at, %s),
                 last_verified_at = GREATEST(last_verified_at, %s),
                 status = 1,
@@ -588,9 +659,9 @@ class JobIngestionRepository:
             WHERE id = %s
             """,
             (
+                replace_description,
                 incoming.description,
-                incoming.description,
-                incoming.description,
+                replace_description,
                 hex_bytes(incoming.dedupe.description_hash),
                 incoming.location.city,
                 incoming.location.region_code,
@@ -600,20 +671,17 @@ class JobIngestionRepository:
                 incoming.location.country_name,
                 incoming.location.normalized,
                 incoming.work_mode.value,
-                incoming.employment_types,
+                employment_types,
                 incoming.primary_employment_type,
-                incoming.opportunity_type.value,
-                incoming.opportunity_type.value,
-                [item.value for item in incoming.schedule_types],
-                incoming.primary_schedule_type.value,
-                incoming.primary_schedule_type.value,
-                incoming.job_category.value,
-                incoming.job_category.value,
-                incoming.job_subcategories,
-                incoming.skill_tags,
-                incoming.requirement_tags,
-                incoming.display_tags,
-                incoming.classification_version,
+                classification.opportunity_type.value,
+                [item.value for item in classification.schedule_types],
+                classification.primary_schedule_type.value,
+                classification.job_category.value,
+                classification.job_subcategories,
+                classification.skill_tags,
+                classification.requirement_tags,
+                classification.display_tags,
+                classification.classification_version,
                 incoming.salary.interval if incoming.salary else None,
                 incoming.salary.minimum if incoming.salary else None,
                 incoming.salary.maximum if incoming.salary else None,
@@ -621,7 +689,7 @@ class JobIngestionRepository:
                 incoming.salary.source if incoming.salary else None,
                 incoming.salary.annualized_minimum if incoming.salary else None,
                 incoming.salary.annualized_maximum if incoming.salary else None,
-                incoming.source_skills,
+                source_skills,
                 scraped_at,
                 scraped_at,
                 job_id,

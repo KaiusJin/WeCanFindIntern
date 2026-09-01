@@ -12,7 +12,7 @@ JobSpy DataFrame
     → versioned REST response
 ```
 
-Public job contracts are `job.v3`, `job-page.v3`, and `job-facets.v2`, stored in `schemas/`. `jobs` stores current canonical values; `raw_job_snapshots` stores auditable source payloads. Raw provider payloads are not returned by the API.
+Public job contracts are `job-detail.v4`, `job-page.v3`, and `job-facets.v2`, stored in `schemas/`. Detail v4 names source-provided skills explicitly as `source_skills`; normalized filter/display values remain in `skill_tags`. `jobs` stores current canonical values; `raw_job_snapshots` stores auditable source payloads. Raw provider payloads are not returned by the API.
 
 ## Start the API
 
@@ -26,7 +26,12 @@ PYTHONPATH=src .venv/bin/uvicorn wecanfindintern.api.app:app --reload
 
 Supported filters:
 
-`query`, `country`, `region`, `city`, `company`, `work_mode`, `employment_type`, `opportunity_type`, `schedule_type`, `category`, `subcategory`, `skill`, `season`, `recruiting_year`, `recruiting_term`, `has_recruiting_term`, `source`, `posted_after`, `salary_min`, `annual_salary_min`, `annual_salary_max`, `hourly_salary_min`, `hourly_salary_max`, `has_salary`, `currency`, `cursor`, and `limit`.
+`query`, `location`, `country`, `region`, `city`, `company`, `work_mode`,
+`employment_type`, `opportunity_type`, `schedule_type`, `category`,
+`subcategory`, `skill`, `season`, `recruiting_year`, `recruiting_term`,
+`has_recruiting_term`, `source`, `posted_after`, `salary_min`,
+`annual_salary_min`, `annual_salary_max`, `hourly_salary_min`,
+`hourly_salary_max`, `has_salary`, `currency`, `cursor`, and `limit`.
 
 `limit` accepts 1–100 and defaults to 30. Filters are validated by `JobListFilters`; invalid dates, salary expressions, cursor values, or values rejected by the model produce HTTP 422.
 

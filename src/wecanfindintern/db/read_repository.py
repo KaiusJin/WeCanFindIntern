@@ -9,19 +9,20 @@ from uuid import UUID
 
 from psycopg_pool import AsyncConnectionPool
 
-from wecanfindintern.api.models import (
+from wecanfindintern.application.job_models import (
     FacetCount,
     JobDetail,
     JobFacetsResponse,
     JobListFilters,
-    JobListItem,
     JobPage,
     JobSourceResponse,
-    LocationResponse,
-    RecruitingTermResponse,
-    SalaryResponse,
     decode_cursor,
     encode_cursor,
+)
+from wecanfindintern.db.job_projection import (
+    JOB_SELECT,
+    job_list_item,
+    location_display_name,
 )
 from wecanfindintern.domain.classification import normalize_tag
 from wecanfindintern.domain.jobs import normalize_company
@@ -30,42 +31,11 @@ FACETS_CACHE_TTL_SECONDS = 120
 _facets_cache_at = 0.0
 _facets_cache_payload: JobFacetsResponse | None = None
 
-JOB_SELECT = """
-    j.id AS internal_id,
-    j.public_id,
-    j.title,
-    j.company_name,
-    j.location_text,
-    j.city,
-    j.region_code,
-    j.region_name,
-    j.region_type,
-    j.country_code,
-    j.country_name,
-    j.work_mode,
-    j.employment_types,
-    j.opportunity_type,
-    j.schedule_types,
-    j.primary_schedule_type,
-    j.job_category,
-    j.job_subcategories,
-    j.date_posted,
-    j.published_sort_at,
-    j.salary_interval,
-    j.salary_min,
-    j.salary_max,
-    j.salary_currency,
-    j.salary_source,
-    j.salary_annual_min,
-    j.salary_annual_max,
-    j.recruiting_season,
-    j.recruiting_year,
-    j.skill_tags,
-    j.display_tags,
-    j.source_count,
-    j.first_seen_at,
-    j.last_seen_at
-"""
+
+def _combined_filter_values(values: list[str], value: str | None) -> list[str]:
+    """Merge plural UI filters with the singular Agent/API compatibility field."""
+
+    return list(dict.fromkeys([*values, *([value] if value else [])]))
 
 
 class JobReadRepository:
@@ -79,53 +49,68 @@ class JobReadRepository:
         if filters.query:
             filter_predicates.append("j.search_document @@ websearch_to_tsquery('simple', %s)")
             filter_parameters.append(filters.query)
-        countries = filters.countries or ([filters.country] if filters.country else [])
+        if filters.location:
+            filter_predicates.append(
+                "concat_ws(' ',j.location_text,j.city,j.region_code,j.region_name,"
+                "j.country_code,j.country_name) ILIKE %s"
+            )
+            filter_parameters.append(f"%{filters.location}%")
+        countries = _combined_filter_values(filters.countries, filters.country)
         if countries:
             filter_predicates.append("j.country_code = ANY(%s)")
             filter_parameters.append(countries)
-        regions = filters.regions or ([filters.region] if filters.region else [])
+        regions = _combined_filter_values(filters.regions, filters.region)
         if regions:
-            if any("," in value for value in regions):
+            composite_regions = [value for value in regions if "," in value]
+            region_codes = [value for value in regions if "," not in value]
+            if composite_regions and region_codes:
+                filter_predicates.append(
+                    "(concat(j.region_code, ',', j.country_code) = ANY(%s) "
+                    "OR j.region_code = ANY(%s))"
+                )
+                filter_parameters.extend([composite_regions, region_codes])
+            elif composite_regions:
                 filter_predicates.append(
                     "concat(j.region_code, ',', j.country_code) = ANY(%s)"
                 )
+                filter_parameters.append(composite_regions)
             else:
                 filter_predicates.append("j.region_code = ANY(%s)")
-            filter_parameters.append(regions)
-        cities = filters.cities or ([filters.city] if filters.city else [])
+                filter_parameters.append(region_codes)
+        cities = _combined_filter_values(filters.cities, filters.city)
         if cities:
             filter_predicates.append("lower(j.city) = ANY(%s)")
             filter_parameters.append([value.lower() for value in cities])
         if filters.company:
             filter_predicates.append("j.company_normalized = %s")
             filter_parameters.append(normalize_company(filters.company))
-        work_modes = filters.work_modes or ([filters.work_mode] if filters.work_mode else [])
+        work_modes = _combined_filter_values(filters.work_modes, filters.work_mode)
         if work_modes:
             filter_predicates.append("j.work_mode = ANY(%s)")
             filter_parameters.append(work_modes)
         if filters.employment_type:
             filter_predicates.append("j.primary_employment_type = %s")
             filter_parameters.append(filters.employment_type)
-        opportunity_types = filters.opportunity_types or (
-            [filters.opportunity_type] if filters.opportunity_type else []
+        opportunity_types = _combined_filter_values(
+            filters.opportunity_types, filters.opportunity_type
         )
         if opportunity_types:
             filter_predicates.append("j.opportunity_type = ANY(%s)")
             filter_parameters.append(opportunity_types)
-        schedule_types = filters.schedule_types or (
-            [filters.schedule_type] if filters.schedule_type else []
+        schedule_types = _combined_filter_values(
+            filters.schedule_types, filters.schedule_type
         )
         if schedule_types:
             filter_predicates.append("j.schedule_types && %s::text[]")
             filter_parameters.append(schedule_types)
-        categories = filters.categories or ([filters.category] if filters.category else [])
+        categories = _combined_filter_values(filters.categories, filters.category)
         if categories:
             filter_predicates.append("j.job_category = ANY(%s)")
             filter_parameters.append(categories)
         if filters.subcategory:
             filter_predicates.append("%s = ANY(j.job_subcategories)")
             filter_parameters.append(filters.subcategory)
-        skills = filters.skills or ([filters.skill] if filters.skill else [])
+        skills = _combined_filter_values(filters.skills, filters.skill)
         if skills:
             filter_predicates.append("j.skill_tags && %s::text[]")
             filter_parameters.append([normalize_tag(value) for value in skills])
@@ -148,7 +133,9 @@ class JobReadRepository:
             filter_predicates.append("j.date_posted >= %s")
             filter_parameters.append(filters.posted_after)
         if filters.salary_min is not None:
-            filter_predicates.append("j.salary_max >= %s")
+            filter_predicates.append(
+                "coalesce(j.salary_max,j.salary_min,j.salary_annual_max,j.salary_annual_min) >= %s"
+            )
             filter_parameters.append(filters.salary_min)
         if filters.hourly_salary_min is not None:
             filter_predicates.append("coalesce(j.salary_annual_max, j.salary_annual_min) >= %s")
@@ -163,9 +150,15 @@ class JobReadRepository:
             filter_predicates.append("coalesce(j.salary_annual_min, j.salary_annual_max) <= %s")
             filter_parameters.append(filters.annual_salary_max)
         if filters.has_salary is True:
-            filter_predicates.append("coalesce(j.salary_max, j.salary_annual_max) IS NOT NULL")
+            filter_predicates.append(
+                "coalesce(j.salary_min,j.salary_max,j.salary_annual_min,"
+                "j.salary_annual_max) IS NOT NULL"
+            )
         elif filters.has_salary is False:
-            filter_predicates.append("j.salary_max IS NULL AND j.salary_annual_max IS NULL")
+            filter_predicates.append(
+                "j.salary_min IS NULL AND j.salary_max IS NULL "
+                "AND j.salary_annual_min IS NULL AND j.salary_annual_max IS NULL"
+            )
         if filters.currency:
             filter_predicates.append("j.salary_currency = %s")
             filter_parameters.append(filters.currency)
@@ -329,7 +322,7 @@ class JobReadRepository:
                    j.requirement_tags,
                    LEFT(j.description, 4000) AS description_excerpt,
                    (
-                       SELECT js.direct_url
+                       SELECT coalesce(js.direct_url, js.source_url)
                        FROM job_sources js
                        WHERE js.job_id = j.id
                        ORDER BY js.first_seen_at, js.id
@@ -387,7 +380,9 @@ class JobReadRepository:
                 )
             ).fetchall()
 
-        base = job_list_item(row).model_dump()
+        # JobDetail owns a newer schema contract than the list projection.
+        # Exclude the list discriminator so the detail model applies v4.
+        base = job_list_item(row).model_dump(exclude={"schema_version"})
         return JobDetail(
             **base,
             description=row["description"],
@@ -395,7 +390,7 @@ class JobReadRepository:
             company_industry=row["company_industry"],
             company_website_url=row["company_website_url"],
             company_logo_url=row["company_logo_url"],
-            skills=row["source_skills"] or [],
+            source_skills=row["source_skills"] or [],
             requirement_tags=row["requirement_tags"] or [],
             classification_version=row["classification_version"],
             contact_emails=row["contact_emails"] or [],
@@ -580,88 +575,3 @@ def _recommendation_tsquery(skills: list[str], max_phrases: int = 20) -> str:
         if tokens:
             phrases.append(" & ".join(tokens))
     return " | ".join(phrases)
-
-
-def job_list_item(row: dict[str, Any]) -> JobListItem:
-    salary = None
-    if any(
-        row[key] is not None
-        for key in (
-            "salary_interval",
-            "salary_min",
-            "salary_max",
-            "salary_annual_min",
-            "salary_annual_max",
-        )
-    ):
-        salary = SalaryResponse(
-            interval=row["salary_interval"],
-            minimum=row["salary_min"],
-            maximum=row["salary_max"],
-            currency=row["salary_currency"],
-            source=row["salary_source"],
-            annualized_minimum=row["salary_annual_min"],
-            annualized_maximum=row["salary_annual_max"],
-        )
-    recruiting_term = None
-    if row["recruiting_season"] is not None and row["recruiting_year"] is not None:
-        recruiting_term = RecruitingTermResponse(
-            season=row["recruiting_season"],
-            year=row["recruiting_year"],
-            display_name=f"{row['recruiting_season'].title()} {row['recruiting_year']}",
-        )
-    return JobListItem(
-        id=row["public_id"],
-        title=row["title"],
-        company_name=row["company_name"],
-        location=LocationResponse(
-            text=row["location_text"],
-            display_name=location_display_name(row),
-            city=row["city"],
-            region=row["region_code"],
-            region_code=row["region_code"],
-            region_name=row["region_name"],
-            region_type=row["region_type"],
-            country=row["country_code"],
-            country_code=row["country_code"],
-            country_name=row["country_name"],
-        ),
-        work_mode=row["work_mode"],
-        employment_types=row["employment_types"] or [],
-        opportunity_type=row["opportunity_type"],
-        schedule_types=row["schedule_types"] or [],
-        primary_schedule_type=row["primary_schedule_type"],
-        job_category=row["job_category"],
-        job_subcategories=row["job_subcategories"] or [],
-        date_posted=row["date_posted"],
-        published_at=row["published_sort_at"],
-        salary=salary,
-        recruiting_term=recruiting_term,
-        skill_tags=row["skill_tags"] or [],
-        display_tags=row["display_tags"] or [],
-        source_count=row["source_count"],
-        first_seen_at=row["first_seen_at"],
-        last_seen_at=row["last_seen_at"],
-    )
-
-
-def location_display_name(row: dict[str, Any]) -> str | None:
-    """Prefer the cleaned hierarchy over raw scraped text.
-
-    Composes ``City, Region Name, Country Name`` (e.g. "Toronto, Ontario,
-    Canada") so one place has one display spelling across sources. The raw
-    location_text is only a fallback for rows where parsing produced nothing.
-    """
-
-    parts = [
-        str(part)
-        for part in (
-            row["city"],
-            row["region_name"] or row["region_code"],
-            row["country_name"] or row["country_code"],
-        )
-        if part
-    ]
-    if parts:
-        return ", ".join(parts)
-    return row["location_text"]

@@ -1,23 +1,12 @@
 {
   "$defs": {
-    "JobListItem": {
+    "JobSourceResponse": {
       "properties": {
-        "schema_version": {
-          "const": "job.v3",
-          "default": "job.v3",
-          "title": "Schema Version",
+        "source": {
+          "title": "Source",
           "type": "string"
         },
-        "id": {
-          "format": "uuid",
-          "title": "Id",
-          "type": "string"
-        },
-        "title": {
-          "title": "Title",
-          "type": "string"
-        },
-        "company_name": {
+        "source_job_id": {
           "anyOf": [
             {
               "type": "string"
@@ -26,102 +15,22 @@
               "type": "null"
             }
           ],
-          "title": "Company Name"
+          "title": "Source Job Id"
         },
-        "location": {
-          "$ref": "#/$defs/LocationResponse"
-        },
-        "work_mode": {
-          "title": "Work Mode",
+        "url": {
+          "title": "Url",
           "type": "string"
         },
-        "employment_types": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Employment Types",
-          "type": "array"
-        },
-        "opportunity_type": {
-          "title": "Opportunity Type",
-          "type": "string"
-        },
-        "schedule_types": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Schedule Types",
-          "type": "array"
-        },
-        "primary_schedule_type": {
-          "title": "Primary Schedule Type",
-          "type": "string"
-        },
-        "job_category": {
-          "title": "Job Category",
-          "type": "string"
-        },
-        "job_subcategories": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Job Subcategories",
-          "type": "array"
-        },
-        "date_posted": {
+        "direct_url": {
           "anyOf": [
             {
-              "format": "date",
               "type": "string"
             },
             {
               "type": "null"
             }
           ],
-          "title": "Date Posted"
-        },
-        "published_at": {
-          "format": "date-time",
-          "title": "Published At",
-          "type": "string"
-        },
-        "salary": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SalaryResponse"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "recruiting_term": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RecruitingTermResponse"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "skill_tags": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Skill Tags",
-          "type": "array"
-        },
-        "display_tags": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Display Tags",
-          "type": "array"
-        },
-        "source_count": {
-          "title": "Source Count",
-          "type": "integer"
+          "title": "Direct Url"
         },
         "first_seen_at": {
           "format": "date-time",
@@ -135,28 +44,14 @@
         }
       },
       "required": [
-        "id",
-        "title",
-        "company_name",
-        "location",
-        "work_mode",
-        "employment_types",
-        "opportunity_type",
-        "schedule_types",
-        "primary_schedule_type",
-        "job_category",
-        "job_subcategories",
-        "date_posted",
-        "published_at",
-        "salary",
-        "recruiting_term",
-        "skill_tags",
-        "display_tags",
-        "source_count",
+        "source",
+        "source_job_id",
+        "url",
+        "direct_url",
         "first_seen_at",
         "last_seen_at"
       ],
-      "title": "JobListItem",
+      "title": "JobSourceResponse",
       "type": "object"
     },
     "LocationResponse": {
@@ -431,19 +326,217 @@
   },
   "properties": {
     "schema_version": {
-      "const": "job-page.v3",
-      "default": "job-page.v3",
+      "const": "job-detail.v4",
+      "default": "job-detail.v4",
       "title": "Schema Version",
       "type": "string"
     },
-    "items": {
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "company_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Company Name"
+    },
+    "location": {
+      "$ref": "#/$defs/LocationResponse"
+    },
+    "work_mode": {
+      "title": "Work Mode",
+      "type": "string"
+    },
+    "employment_types": {
       "items": {
-        "$ref": "#/$defs/JobListItem"
+        "type": "string"
       },
-      "title": "Items",
+      "title": "Employment Types",
       "type": "array"
     },
-    "total_count": {
+    "opportunity_type": {
+      "title": "Opportunity Type",
+      "type": "string"
+    },
+    "schedule_types": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Schedule Types",
+      "type": "array"
+    },
+    "primary_schedule_type": {
+      "title": "Primary Schedule Type",
+      "type": "string"
+    },
+    "job_category": {
+      "title": "Job Category",
+      "type": "string"
+    },
+    "job_subcategories": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Job Subcategories",
+      "type": "array"
+    },
+    "date_posted": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Date Posted"
+    },
+    "published_at": {
+      "format": "date-time",
+      "title": "Published At",
+      "type": "string"
+    },
+    "salary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SalaryResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "recruiting_term": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecruitingTermResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "skill_tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Skill Tags",
+      "type": "array"
+    },
+    "display_tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Display Tags",
+      "type": "array"
+    },
+    "source_count": {
+      "title": "Source Count",
+      "type": "integer"
+    },
+    "first_seen_at": {
+      "format": "date-time",
+      "title": "First Seen At",
+      "type": "string"
+    },
+    "last_seen_at": {
+      "format": "date-time",
+      "title": "Last Seen At",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Description"
+    },
+    "job_function": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Job Function"
+    },
+    "company_industry": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Company Industry"
+    },
+    "company_website_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Company Website Url"
+    },
+    "company_logo_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Company Logo Url"
+    },
+    "source_skills": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Skills",
+      "type": "array"
+    },
+    "requirement_tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Requirement Tags",
+      "type": "array"
+    },
+    "classification_version": {
+      "title": "Classification Version",
+      "type": "integer"
+    },
+    "contact_emails": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Contact Emails",
+      "type": "array"
+    },
+    "vacancy_count": {
       "anyOf": [
         {
           "type": "integer"
@@ -452,43 +545,49 @@
           "type": "null"
         }
       ],
-      "default": null,
-      "title": "Total Count"
+      "title": "Vacancy Count"
     },
-    "last_updated_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Last Updated At"
-    },
-    "next_cursor": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Next Cursor"
-    },
-    "has_more": {
-      "title": "Has More",
-      "type": "boolean"
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/JobSourceResponse"
+      },
+      "title": "Sources",
+      "type": "array"
     }
   },
   "required": [
-    "items",
-    "next_cursor",
-    "has_more"
+    "id",
+    "title",
+    "company_name",
+    "location",
+    "work_mode",
+    "employment_types",
+    "opportunity_type",
+    "schedule_types",
+    "primary_schedule_type",
+    "job_category",
+    "job_subcategories",
+    "date_posted",
+    "published_at",
+    "salary",
+    "recruiting_term",
+    "skill_tags",
+    "display_tags",
+    "source_count",
+    "first_seen_at",
+    "last_seen_at",
+    "description",
+    "job_function",
+    "company_industry",
+    "company_website_url",
+    "company_logo_url",
+    "source_skills",
+    "requirement_tags",
+    "classification_version",
+    "contact_emails",
+    "vacancy_count",
+    "sources"
   ],
-  "title": "JobPage",
+  "title": "JobDetail",
   "type": "object"
 }

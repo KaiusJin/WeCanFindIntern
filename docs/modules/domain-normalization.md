@@ -6,7 +6,9 @@ The domain layer converts source records into deterministic business values used
 
 ## Canonical contract
 
-`src/wecanfindintern/domain/jobs.py` defines the principal contract:
+`src/wecanfindintern/domain/jobs.py` defines the principal canonical contract,
+while `src/wecanfindintern/domain/normalized_job.py` defines the provider-neutral
+ingestion boundary:
 
 - `CompanyProfile`: display name, normalized name, industry, URLs, logo, addresses, employee/revenue labels, and description;
 - `IngestionSource`: source identity, source/direct URLs, canonical URLs, fingerprint, and source payload;
@@ -14,7 +16,10 @@ The domain layer converts source records into deterministic business values used
 - `SalaryRange`: original interval/value/currency/source plus annualized values;
 - `CanonicalJobInput`: title, company, location, work mode, employment types, opportunity/schedule/category fields, tags, dates, description, salary, source data, dedupe keys, and first-seen time.
 
-`canonical_job_from_jobspy()` is the construction boundary. It uses UTC for timestamps, uses the posted date at midnight UTC for stable ordering when present, and uses the scrape time when the provider omitted a date.
+`canonical_job_from_normalized()` is the shared construction boundary used by
+JobSpy and WaterlooWorks adapters. It uses UTC for timestamps, uses the posted
+date at midnight UTC for stable ordering when present, and uses the scrape time
+when the provider omitted a date.
 
 ## Text normalization
 
@@ -49,7 +54,7 @@ If parsing is incomplete, `raw` remains available and the untrusted portion is n
 
 ## Classification
 
-`domain/classification.py` contains the deterministic classifier and `CLASSIFICATION_VERSION=3`. It emits:
+`domain/classification.py` contains the deterministic classifier and `CLASSIFICATION_VERSION=4`. It emits:
 
 - `OpportunityType`: internship, co-op, new-grad, apprenticeship, regular, contract, temporary, seasonal, unknown;
 - `ScheduleType`: full-time, part-time, flexible, unknown;
@@ -64,7 +69,7 @@ Opportunity type and schedule are independent dimensions. A `software developer 
 
 `domain/salary.py` handles structured and description-derived compensation. It recognizes currency symbols/codes, ranges, single values, and hourly/daily/weekly/monthly/yearly intervals. Decimal values are retained as Decimal until serialization.
 
-Structured provider salary wins when it contains an interval and at least one amount. Otherwise the canonical builder checks a cached enrichment result, then deterministic regex extraction, then the hybrid DeepSeek fallback when allowed. The campaign intentionally disables extraction during the initial ingest and performs it after all deduplication is complete.
+Validated provider-structured salary is persisted with the canonical job during the initial ingest, even when the posting has no JD. Values reported as description-derived by a provider are not treated as structured data. Salary extraction from JD text runs only after deduplication: deterministic regex first, then the bounded DeepSeek fallback for remaining candidates.
 
 Annualization uses hourly × 2,080, daily × 260, weekly × 52, monthly × 12, and yearly/annual × 1. The salary interval integrity migration enforces interval-specific amount ranges and annual minimum/maximum ordering. Unknown or invalid compensation is kept absent instead of being converted to a misleading zero.
 
@@ -72,7 +77,7 @@ Annualization uses hourly × 2,080, daily × 260, weekly × 52, monthly × 12, a
 
 `domain/recruiting_term.py` extracts a normalized season and year from titles and descriptions. The supported seasons are Winter, Spring, Summer, and Fall. It preserves the normalized `recruiting_term` string together with separate `recruiting_season` and `recruiting_year` fields for filtering.
 
-Regex extraction is attempted first. `recruiting_term_llm.py` provides a constrained DeepSeek JSON fallback when the text is ambiguous. `ingestion/recruiting_term_enrichment.py` persists a content hash and generated result, so an unchanged title/JD pair is not sent to the model repeatedly.
+Regex extraction is attempted first. `ingestion/recruiting_term_llm.py` provides a constrained DeepSeek JSON fallback when the text is ambiguous. `ingestion/recruiting_term_enrichment.py` persists a content hash and generated result, so an unchanged title/JD pair is not sent to the model repeatedly.
 
 ## Deduplication inputs
 

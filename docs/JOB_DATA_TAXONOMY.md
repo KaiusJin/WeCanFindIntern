@@ -19,7 +19,7 @@ JobSpy raw row
   → CanonicalJobInput
   → JobClassification and enrichment
   → PostgreSQL jobs
-  → job.v3 / job-page.v3
+  → job.v3 list item / job-detail.v4 / job-page.v3
 ```
 
 ## Core display fields
@@ -37,6 +37,7 @@ JobSpy raw row
 | `job_category` | One primary category |
 | `job_subcategories` | Confirmed role directions |
 | `skill_tags` | Normalized technologies/tools |
+| `source_skills` | Skills supplied verbatim by source adapters (detail response only) |
 | `requirement_tags` | Normalized constraints/requirements |
 | `display_tags` | Short presentation summary |
 | `salary` | Original interval plus annualized values |

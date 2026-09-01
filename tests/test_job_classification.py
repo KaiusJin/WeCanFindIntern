@@ -8,7 +8,8 @@ from wecanfindintern.domain.classification import (
     ScheduleType,
     classify_job,
 )
-from wecanfindintern.domain.jobs import annualize_salary, parse_location
+from wecanfindintern.domain.location import parse_location
+from wecanfindintern.domain.normalization import annualize_salary
 from wecanfindintern.domain.salary import extract_salary_from_description
 
 
@@ -79,6 +80,76 @@ def test_skill_matching_does_not_confuse_java_and_javascript() -> None:
 
     assert "java" in result.skill_tags
     assert "javascript" not in result.skill_tags
+
+
+def test_expanded_skill_rules_cover_modern_data_and_frontend_stack() -> None:
+    result = classify_job(
+        title="Data Platform Engineer",
+        description=(
+            "Build pipelines with Kafka, Airflow and Snowflake. Maintain a React "
+            "dashboard deployed with Kubernetes and GitHub Actions."
+        ),
+    )
+
+    assert {
+        "kafka",
+        "airflow",
+        "snowflake",
+        "react",
+        "kubernetes",
+        "github_actions",
+    } <= set(result.skill_tags)
+
+
+def test_expanded_skill_rules_cover_ai_agent_stack() -> None:
+    result = classify_job(
+        title="AI Agent Engineer",
+        description=(
+            "Build agentic workflows with LangChain and LangGraph, using RAG, "
+            "embeddings, vector databases, tool calling and prompt engineering."
+        ),
+    )
+
+    assert {
+        "ai_agents",
+        "langchain",
+        "langgraph",
+        "rag",
+        "embeddings",
+        "vector_database",
+        "tool_calling",
+        "prompt_engineering",
+    } <= set(result.skill_tags)
+
+
+def test_expanded_skill_rules_cover_office_software_and_operating_systems() -> None:
+    result = classify_job(
+        title="IT Support Specialist",
+        description=(
+            "Support Windows and macOS workstations, Microsoft 365, Outlook, "
+            "SharePoint, Google Workspace and Ubuntu environments."
+        ),
+    )
+
+    assert {
+        "windows",
+        "macos",
+        "microsoft_365",
+        "outlook",
+        "sharepoint",
+        "google_workspace",
+        "ubuntu",
+    } <= set(result.skill_tags)
+
+
+def test_dotnet_does_not_imply_csharp_without_language_evidence() -> None:
+    result = classify_job(
+        title=".NET Platform Engineer",
+        description="Maintain ASP.NET services that also host F# workloads.",
+    )
+
+    assert "dotnet" in result.skill_tags
+    assert "csharp" not in result.skill_tags
 
 
 def test_salary_annualization() -> None:

@@ -1,59 +1,5 @@
 {
   "$defs": {
-    "JobSourceResponse": {
-      "properties": {
-        "source": {
-          "title": "Source",
-          "type": "string"
-        },
-        "source_job_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Source Job Id"
-        },
-        "url": {
-          "title": "Url",
-          "type": "string"
-        },
-        "direct_url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Direct Url"
-        },
-        "first_seen_at": {
-          "format": "date-time",
-          "title": "First Seen At",
-          "type": "string"
-        },
-        "last_seen_at": {
-          "format": "date-time",
-          "title": "Last Seen At",
-          "type": "string"
-        }
-      },
-      "required": [
-        "source",
-        "source_job_id",
-        "url",
-        "direct_url",
-        "first_seen_at",
-        "last_seen_at"
-      ],
-      "title": "JobSourceResponse",
-      "type": "object"
-    },
     "LocationResponse": {
       "properties": {
         "text": {
@@ -98,6 +44,8 @@
               "type": "null"
             }
           ],
+          "deprecated": true,
+          "description": "Deprecated compatibility alias of region_code.",
           "title": "Region"
         },
         "region_code": {
@@ -142,6 +90,8 @@
               "type": "null"
             }
           ],
+          "deprecated": true,
+          "description": "Deprecated compatibility alias of country_code.",
           "title": "Country"
         },
         "country_code": {
@@ -451,104 +401,6 @@
       "format": "date-time",
       "title": "Last Seen At",
       "type": "string"
-    },
-    "description": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Description"
-    },
-    "job_function": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Job Function"
-    },
-    "company_industry": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Company Industry"
-    },
-    "company_website_url": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Company Website Url"
-    },
-    "company_logo_url": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Company Logo Url"
-    },
-    "skills": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Skills",
-      "type": "array"
-    },
-    "requirement_tags": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Requirement Tags",
-      "type": "array"
-    },
-    "classification_version": {
-      "title": "Classification Version",
-      "type": "integer"
-    },
-    "contact_emails": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Contact Emails",
-      "type": "array"
-    },
-    "vacancy_count": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Vacancy Count"
-    },
-    "sources": {
-      "items": {
-        "$ref": "#/$defs/JobSourceResponse"
-      },
-      "title": "Sources",
-      "type": "array"
     }
   },
   "required": [
@@ -571,19 +423,8 @@
     "display_tags",
     "source_count",
     "first_seen_at",
-    "last_seen_at",
-    "description",
-    "job_function",
-    "company_industry",
-    "company_website_url",
-    "company_logo_url",
-    "skills",
-    "requirement_tags",
-    "classification_version",
-    "contact_emails",
-    "vacancy_count",
-    "sources"
+    "last_seen_at"
   ],
-  "title": "JobDetail",
+  "title": "JobListItem",
   "type": "object"
 }

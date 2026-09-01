@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from wecanfindintern.api.dependencies import get_job_repository
 from wecanfindintern.api.models import (
     JobDetail,
     JobFacetsResponse,
@@ -17,10 +18,10 @@ from wecanfindintern.db.read_repository import JobReadRepository
 
 jobs_router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"])
 
-
-def _repository(request: Request) -> JobReadRepository:
-    return JobReadRepository(request.app.state.database.pool)
-
+# Backwards-compatible dependency name used by route-level tests and downstream
+# embedders.  Keeping one stable override point also makes the desktop sidecar
+# able to inject a managed repository without replacing the global app object.
+_repository = get_job_repository
 
 RepositoryDependency = Annotated[JobReadRepository, Depends(_repository)]
 MultiValueQuery = Annotated[list[str] | None, Query()]
@@ -30,6 +31,7 @@ MultiValueQuery = Annotated[list[str] | None, Query()]
 async def list_jobs(
     repo: RepositoryDependency,
     query: str | None = Query(default=None, max_length=200),
+    location: str | None = Query(default=None, max_length=200),
     country: MultiValueQuery = None,
     region: MultiValueQuery = None,
     city: MultiValueQuery = None,
@@ -60,6 +62,7 @@ async def list_jobs(
     try:
         filters = JobListFilters(
             query=query,
+            location=location,
             countries=country or [],
             regions=region or [],
             cities=city or [],

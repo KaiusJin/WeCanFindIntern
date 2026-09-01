@@ -1,5 +1,5 @@
 from wecanfindintern.domain.recruiting_term import extract_recruiting_term_regex
-from wecanfindintern.domain.recruiting_term_llm import (
+from wecanfindintern.ingestion.recruiting_term_llm import (
     _has_conflicting_month_seasons,
     _normalize,
 )

@@ -6,7 +6,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from wecanfindintern.api.models import JobDetail, JobFacetsResponse, JobPage
+from wecanfindintern.application.job_models import (
+    JobDetail,
+    JobFacetsResponse,
+    JobListItem,
+    JobPage,
+)
 
 
 def write_schema(model, path: Path) -> None:
@@ -18,10 +23,11 @@ def write_schema(model, path: Path) -> None:
 
 
 def main() -> None:
-    write_schema(JobDetail, Path("schemas/job.v3.json"))
+    write_schema(JobListItem, Path("schemas/job.v3.json"))
+    write_schema(JobDetail, Path("schemas/job-detail.v4.json"))
     write_schema(JobPage, Path("schemas/job-page.v3.json"))
     write_schema(JobFacetsResponse, Path("schemas/job-facets.v2.json"))
-    print("已导出 job.v3、job-page.v3 和 job-facets.v2 JSON Schema")
+    print("已导出 job.v3、job-detail.v4、job-page.v3 和 job-facets.v2 JSON Schema")
 
 
 if __name__ == "__main__":

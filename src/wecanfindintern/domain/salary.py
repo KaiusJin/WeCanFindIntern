@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from wecanfindintern.domain.normalization import annualize_salary, to_decimal
+
 
 @dataclass(frozen=True, slots=True)
 class ParsedSalary:
@@ -14,6 +16,46 @@ class ParsedSalary:
     maximum: Decimal | None
     currency: str
     source: str = "description"
+
+
+def format_salary_text(
+    minimum: object,
+    maximum: object,
+    *,
+    currency: str | None = None,
+    interval: str | None = None,
+) -> str | None:
+    """Render structured salary values using one Tracker display contract."""
+
+    minimum_value = to_decimal(minimum)
+    maximum_value = to_decimal(maximum)
+    if minimum_value is None and maximum_value is None:
+        return None
+    annual_minimum = annualize_salary(minimum_value, interval)
+    annual_maximum = annualize_salary(maximum_value, interval)
+    hourly_minimum = (
+        minimum_value
+        if interval == "hourly"
+        else annual_minimum / Decimal("2080") if annual_minimum is not None else None
+    )
+    hourly_maximum = (
+        maximum_value
+        if interval == "hourly"
+        else annual_maximum / Decimal("2080") if annual_maximum is not None else None
+    )
+    if hourly_minimum is None and hourly_maximum is None:
+        return None
+    symbol = {"CAD": "$", "USD": "$", "GBP": "£", "EUR": "€"}.get(
+        currency or "", "$"
+    )
+    if hourly_minimum is not None and hourly_maximum is not None:
+        amount = f"{symbol}{hourly_minimum:.2f}–{symbol}{hourly_maximum:.2f}"
+    elif hourly_minimum is not None:
+        amount = f"from {symbol}{hourly_minimum:.2f}"
+    else:
+        amount = f"up to {symbol}{hourly_maximum:.2f}"
+    parts = [currency, amount, "/hour"]
+    return " ".join(part for part in parts if part)
 
 
 _NUMBER = r"(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"

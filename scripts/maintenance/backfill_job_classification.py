@@ -10,13 +10,11 @@ from decimal import Decimal
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.domain.classification import CLASSIFICATION_VERSION, classify_job
-from wecanfindintern.domain.jobs import (
-    annualize_salary,
-    infer_work_mode_from_text,
-    parse_location,
-)
+from wecanfindintern.domain.jobs import infer_work_mode_from_text
+from wecanfindintern.domain.location import parse_location
+from wecanfindintern.domain.normalization import annualize_salary
 from wecanfindintern.domain.salary import extract_salary_from_description
-from wecanfindintern.domain.salary_llm import extract_salary_hybrid
+from wecanfindintern.ingestion.salary_llm import extract_salary_hybrid
 
 
 async def backfill(*, batch_size: int, force: bool, refresh_salary: bool = False) -> int:

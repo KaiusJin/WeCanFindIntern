@@ -31,9 +31,8 @@ from wecanfindintern.domain.normalization import (
     normalize_title,
     to_decimal,
 )
-from wecanfindintern.domain.salary import extract_salary_from_description
-from wecanfindintern.domain.salary_llm import extract_salary_hybrid
-from wecanfindintern.ingestion.jobspy_adapter import NormalizedJob, canonicalize_url
+from wecanfindintern.domain.normalized_job import NormalizedJob, Salary, canonicalize_url
+from wecanfindintern.domain.salary import validated_salary
 
 
 class WorkMode(StrEnum):
@@ -123,14 +122,18 @@ class CanonicalJobInput(BaseModel):
     first_seen_at: datetime
 
 
-def canonical_job_from_jobspy(
+def canonical_job_from_normalized(
     job: NormalizedJob,
     *,
     scraped_at: datetime | None = None,
     cached_salary: SalaryRange | None = None,
-    allow_salary_extraction: bool = True,
 ) -> CanonicalJobInput:
-    """Convert the JobSpy boundary model into the long-lived business contract."""
+    """Convert a source-neutral posting into the long-lived business contract.
+
+    Provider-structured salary is part of the source contract and is safe to
+    persist immediately. Description-derived salary remains a post-deduplication
+    enrichment concern.
+    """
 
     seen_at = ensure_utc(scraped_at or datetime.now(UTC))
     title_key = normalize_title(job.title)
@@ -148,55 +151,11 @@ def canonical_job_from_jobspy(
     block_company = company_key or f"unknown:{title_key}"
     block_key = hash_text(f"{block_company}|{location_key}")
 
-    salary = None
-    has_structured_salary = bool(
-        job.salary
-        and job.salary.interval
-        and (job.salary.minimum is not None or job.salary.maximum is not None)
+    salary = (
+        cached_salary.model_copy(deep=True)
+        if cached_salary is not None
+        else structured_salary_range(job.salary, country_code=location.country_code)
     )
-    if not allow_salary_extraction:
-        pass
-    elif has_structured_salary and job.salary:
-        minimum = to_decimal(job.salary.minimum)
-        maximum = to_decimal(job.salary.maximum)
-        salary = SalaryRange(
-            interval=job.salary.interval,
-            minimum=minimum,
-            maximum=maximum,
-            currency=(
-                job.salary.currency.upper()
-                if job.salary.currency
-                else default_salary_currency(location.country_code)
-            ),
-            source=job.salary.source or "provider",
-            annualized_minimum=annualize_salary(minimum, job.salary.interval),
-            annualized_maximum=annualize_salary(maximum, job.salary.interval),
-        )
-    elif cached_salary is not None:
-        salary = cached_salary.model_copy(deep=True)
-    else:
-        regex_salary = extract_salary_from_description(
-            job.description,
-            country_code=location.country_code,
-        )
-        extracted = regex_salary
-        if extracted is None:
-            extracted = extract_salary_hybrid(
-                job.description,
-                country_code=location.country_code,
-                title=job.title,
-                regex_result=regex_salary,
-            )
-        if extracted:
-            salary = SalaryRange(
-                interval=extracted.interval,
-                minimum=extracted.minimum,
-                maximum=extracted.maximum,
-                currency=extracted.currency,
-                source=extracted.source,
-                annualized_minimum=annualize_salary(extracted.minimum, extracted.interval),
-                annualized_maximum=annualize_salary(extracted.maximum, extracted.interval),
-            )
 
     classification = classify_job(
         title=job.title,
@@ -261,6 +220,51 @@ def canonical_job_from_jobspy(
             payload=job.raw,
         ),
         first_seen_at=seen_at,
+    )
+
+
+# Compatibility alias for existing external callers. New adapters should use the
+# source-neutral name above.
+canonical_job_from_jobspy = canonical_job_from_normalized
+
+
+def structured_salary_range(
+    source_salary: Salary | None,
+    *,
+    country_code: str | None,
+) -> SalaryRange | None:
+    """Validate one provider-owned salary without treating JD guesses as structured data."""
+
+    if (
+        source_salary is None
+        or not source_salary.interval
+        or (source_salary.minimum is None and source_salary.maximum is None)
+    ):
+        return None
+    if (source_salary.source or "").casefold() in {
+        "description",
+        "job_description",
+    }:
+        return None
+    validated = validated_salary(
+        interval=source_salary.interval,
+        minimum=to_decimal(source_salary.minimum),
+        maximum=to_decimal(source_salary.maximum),
+        currency=(
+            source_salary.currency or default_salary_currency(country_code)
+        ).upper(),
+        source=source_salary.source or "provider",
+    )
+    if validated is None:
+        return None
+    return SalaryRange(
+        interval=validated.interval,
+        minimum=validated.minimum,
+        maximum=validated.maximum,
+        currency=validated.currency,
+        source=validated.source,
+        annualized_minimum=annualize_salary(validated.minimum, validated.interval),
+        annualized_maximum=annualize_salary(validated.maximum, validated.interval),
     )
 
 

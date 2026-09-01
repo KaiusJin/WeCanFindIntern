@@ -16,7 +16,9 @@ Each migration is designed to be rerunnable through `IF EXISTS`, `IF NOT EXISTS`
 
 ### `ingestion_runs`
 
-Represents one single-query ingest or full campaign. It stores source/query metadata, timestamps, status, and counters for created, merged, unchanged, failed, and enriched records.
+Represents one single-query ingest or full campaign. It stores source/query
+metadata, timestamps, status, and counters for created, merged, updated,
+unchanged, failed, and enriched records.
 
 ### `jobs`
 
@@ -47,7 +49,11 @@ Foreign keys cascade child records with their owning entity. Public UUIDs are us
 
 ### `GET /api/v1/jobs`
 
-Filters include `query`, `country`, `region`, `city`, `company`, `work_mode`, `employment_type`, `opportunity_type`, `schedule_type`, `category`, `subcategory`, `skill`, `season`, `recruiting_year`, `recruiting_term`, `has_recruiting_term`, `source`, `posted_after`, annual/hourly salary bounds, `has_salary`, and `currency`. `limit` is 1–100; the default is 30.
+Filters include `query`, `location`, `country`, `region`, `city`, `company`,
+`work_mode`, `employment_type`, `opportunity_type`, `schedule_type`, `category`,
+`subcategory`, `skill`, `season`, `recruiting_year`, `recruiting_term`,
+`has_recruiting_term`, `source`, `posted_after`, annual/hourly salary bounds,
+`has_salary`, and `currency`. `limit` is 1–100; the default is 30.
 
 All filter values are passed into `JobListFilters`, where values are validated and normalized before SQL is built. Invalid dates, salary expressions, cursor values, and incompatible filter values are returned as 422 by the route.
 
@@ -76,7 +82,8 @@ Facets are generated from active jobs and return counts for opportunities, sched
 ## Query and index design
 
 - Active-feed partial indexes cover common location, company, work mode, employment, category, schedule, salary, recruiting-term, and date filters.
-- Trigram/search indexes are limited to hot searchable fields such as title, company, and location rather than full long descriptions.
+- The generated full-text search document covers title, company, location, and
+  normalized skill tags while excluding long descriptions.
 - Raw snapshot BRIN/time indexes support audit and retention operations.
 - Details aggregate source links separately; lists avoid expensive source JSON aggregation.
 - Connection pooling and statement timeouts prevent one slow query from consuming unbounded resources.
@@ -89,4 +96,4 @@ For an unchanged source payload, the repository updates visibility timestamps an
 
 ## Contract files and verification
 
-The public contracts are versioned as `job.v3`, `job-page.v3`, and `job-facets.v2` in `schemas/`. `scripts/dev/export_schemas.py` regenerates schema artifacts from Pydantic models. `scripts/dev/verify_data_api_contract.py` checks the data response contract; `scripts/dev/verify_frontend_api_contract.py` checks that front-end API references resolve to registered FastAPI routes.
+The public contracts are versioned as `job.v3`, `job-detail.v4`, `job-page.v3`, and `job-facets.v2` in `schemas/`. Detail responses expose verbatim adapter values as `source_skills` and normalized values as `skill_tags`. `scripts/dev/export_schemas.py` regenerates schema artifacts from Pydantic models. `scripts/dev/verify_data_api_contract.py` checks the data response contract; `scripts/dev/verify_frontend_api_contract.py` checks that front-end API references resolve to registered FastAPI routes.
