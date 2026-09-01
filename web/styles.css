@@ -118,6 +118,7 @@ button {
 .ww-connection-card, .ww-side-panel, .ww-run-card, .ww-jobs-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 24px; }
 .ww-card-heading, .ww-side-heading { align-items: flex-start; display: flex; justify-content: space-between; gap: 16px; }
 .ww-card-heading h2 { font-size: 22px; margin: 3px 0 0; }
+.ww-update-times { display: grid; gap: 4px; justify-items: end; text-align: right; }
 .ww-actions { align-items: center; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; padding-top: 20px; }
 .ww-actions .text-button { margin-left: auto; }
 .ww-actions button:disabled { cursor: not-allowed; opacity: .5; }
@@ -132,7 +133,7 @@ button {
 .ww-board-state.completed { color: #207144; }
 .ww-board-state.failed { color: #c0392b; }
 .ww-run-card { grid-column: 1; }
-.ww-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 20px; }
+.ww-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 20px; }
 .ww-stat-grid > div { border-left: 1px solid var(--line); display: grid; gap: 2px; padding: 2px 14px; }
 .ww-stat-grid > div:first-child { border-left: 0; padding-left: 0; }
 .ww-stat-grid span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
@@ -1528,7 +1529,7 @@ main {
 }
 
 /* =========================================================
-   CAREER AI SECTIONS (ATS Review, Interview Coach, Cover Letter)
+   CAREER AI SECTIONS (Resume ATS Score, Job Match, Interview, Cover Letter)
    ========================================================= */
 
 .career-workspace {
@@ -1703,6 +1704,21 @@ main {
   font-size: 11px;
   line-height: 1.5;
   margin: 0 4px;
+}
+
+.ats-ai-feedback {
+  display: grid;
+  gap: 16px;
+}
+
+.ats-ai-feedback-group {
+  display: grid;
+  gap: 6px;
+}
+
+.ats-ai-feedback-group > strong {
+  color: var(--ink);
+  font-size: 13px;
 }
 
 .field-group {

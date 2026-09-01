@@ -316,8 +316,6 @@ $("#toggle-key-visibility")?.addEventListener("click", () => {
   }
 });
 
-loadSettings();
-
 export {
   aiSettings,
   currentActiveProvider,

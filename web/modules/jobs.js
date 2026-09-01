@@ -5,13 +5,23 @@ import {
   formatRelativeTime,
   formatSalary,
   label,
-  renderMarkdown,
+  renderJobCard,
+  renderJobDetail,
   skillLabel,
   showErrorDialog,
   workModeLabel,
 } from "./helpers.js";
+import {
+  bookmarkState,
+  loadPublicBookmarks,
+  toggleBookmarkJob,
+  updateBookmarkButtons,
+} from "./bookmarks.js";
+import {
+  publicJobContext,
+  setActiveJobContext,
+} from "./job-context.js?v=20260831-jobboard-parity-v3";
 import { syncDialogScrollLock } from "./settings.js";
-import { toggleBookmarkJob, trackerState } from "./tracker.js";
 
 const state = {
   cursor: null,
@@ -19,7 +29,6 @@ const state = {
   loading: false,
   facets: null,
   totalCount: 0,
-  activeJobContext: null,
 };
 let jobsAbortController = null;
 
@@ -121,7 +130,7 @@ function readFilters() {
   const query = $("#query").value.trim();
   const location = $("#location").value.trim();
   if (query) params.set("query", query);
-  if (location) params.set("city", location);
+  if (location) params.set("location", location);
   for (const [elementId, param] of Object.entries(filterParamMap)) {
     selectedFilterValues(elementId).forEach((value) => params.append(param, value));
   }
@@ -147,33 +156,13 @@ function updateLastUpdatedBadge(lastUpdatedIso) {
 }
 
 function renderJob(job) {
-  const tags = [...new Set([...(job.skill_tags || []).slice(0, 4), job.job_category].filter(Boolean))];
   const recruitingTerm = job.recruiting_term?.display_name;
-  const isSaved = trackerState.trackedJobIds?.has(job.id);
-  const bookmarkIcon = isSaved
-    ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`
-    : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
-
-  return `<article class="job-card" data-id="${job.id}" tabindex="0">
-    <div class="job-card-main">
-      <div class="company-mark">${escapeHtml((job.company_name || "?").slice(0, 1).toUpperCase())}</div>
-      <div class="job-copy">
-        <h3>${escapeHtml(job.title)}</h3>
-        <p class="company-name">${escapeHtml(job.company_name || "Company not specified")}</p>
-        <p class="job-location">${escapeHtml(job.location?.display_name || "Location not specified")} <span>·</span> ${escapeHtml(workModeLabel(job.work_mode))}</p>
-      </div>
-      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
-        <button type="button" class="job-bookmark-btn ${isSaved ? 'saved' : ''}" data-job-id="${job.id}" title="${isSaved ? 'Tracked in Pipeline' : 'Bookmark / Track Job'}">
-          ${bookmarkIcon}
-        </button>
-        <div class="job-date">${formatDate(job.date_posted || job.published_at)}</div>
-      </div>
-    </div>
-    <div class="job-card-footer">
-      <div class="job-tags"><span class="tag accent">${escapeHtml(label(job.opportunity_type))}</span>${recruitingTerm ? `<span class="tag term-tag">${escapeHtml(recruitingTerm)}</span>` : ""}${tags.map((tag) => `<span class="tag">${escapeHtml(job.skill_tags?.includes(tag) ? skillLabel(tag) : label(tag))}</span>`).join("")}</div>
-      <span class="salary">${escapeHtml(formatSalary(job.salary))}</span>
-    </div>
-  </article>`;
+  const isSaved = bookmarkState.publicJobs.has(job.id);
+  return renderJobCard(job, {
+    isSaved,
+    primaryTag: label(job.opportunity_type),
+    secondaryTags: recruitingTerm ? [{ label: recruitingTerm, className: "term-tag" }] : [],
+  });
 }
 
 function applyRegionFilter(countryCode, regionCode) {
@@ -188,7 +177,8 @@ async function loadJobs({ append = false } = {}) {
   const loadingIndicator = $("#loading-indicator");
   const endOfResults = $("#end-of-results");
 
-  if (state.loading || (append && (!state.hasMore || !state.cursor))) return;
+  if (append && (state.loading || !state.hasMore || !state.cursor)) return;
+  if (!append) jobsAbortController?.abort();
   state.loading = true;
 
   if (!append) {
@@ -207,18 +197,27 @@ async function loadJobs({ append = false } = {}) {
   if (append && state.cursor) params.set("cursor", state.cursor);
 
   const controller = new AbortController();
-  jobsAbortController?.abort();
   jobsAbortController = controller;
 
   try {
+    const bookmarksPromise = append
+      ? Promise.resolve()
+      : loadPublicBookmarks().catch((error) => {
+        console.warn("Tracker bookmarks unavailable:", error);
+      });
     const response = await fetch(`/api/v1/jobs?${params}`, { signal: controller.signal });
     if (!response.ok) throw new Error(`Search failed (${response.status})`);
     const page = await response.json();
+    await bookmarksPromise;
     const existingIds = new Set(
       [...list.querySelectorAll(".job-card")].map((card) => card.dataset.id),
     );
     const newItems = page.items.filter((job) => !existingIds.has(job.id));
     list.insertAdjacentHTML("beforeend", newItems.map(renderJob).join(""));
+    // Normalize freshly inserted bookmark buttons through the same renderer
+    // used after bookmark mutations. This prevents the initial SVG from
+    // looking different until the user clicks the button.
+    updateBookmarkButtons();
     state.cursor = page.next_cursor;
     state.hasMore = page.has_more;
     if (page.last_updated_at) {
@@ -281,35 +280,20 @@ async function openJob(jobId) {
     const response = await fetch(`/api/v1/jobs/${jobId}`);
     if (!response.ok) throw new Error("Could not load job details");
     const job = await response.json();
-    const fullJd = `${job.title || "Role"} at ${job.company_name || "Company"}\n\nLocation: ${job.location?.display_name || "Unspecified"}\nWork Mode: ${workModeLabel(job.work_mode)}\nRecruiting Term: ${job.recruiting_term?.display_name || "Unspecified"}\n\nDescription:\n${job.description || ""}`;
+    setActiveJobContext(publicJobContext(job));
 
-    // Store current job context for quick AI actions
-    state.activeJobContext = {
-      id: job.id,
-      source: "public",
-      title: job.title,
+    detail.innerHTML = renderJobDetail(job, {
+      eyebrow: `${label(job.opportunity_type)} · ${workModeLabel(job.work_mode)}`,
       company: job.company_name,
-      jd: fullJd,
-    };
-
-    const skillsText = ((job.skills?.length ? job.skills : job.skill_tags) || []).slice(0, 15).map(skillLabel).filter(Boolean).join(", ") || "Skills not specified";
-
-    detail.innerHTML = `<p class="eyebrow">${escapeHtml(label(job.opportunity_type))} · ${escapeHtml(workModeLabel(job.work_mode))}</p>
-      <h2>${escapeHtml(job.title)}</h2><p class="detail-company">${escapeHtml(job.company_name || "Company not specified")}</p>
-      <p class="detail-location">${escapeHtml(job.location?.display_name || "Location not specified")} · ${formatDate(job.date_posted)}</p>
-      <div class="detail-grid">
-        <div><span>Salary</span><strong>${escapeHtml(formatSalary(job.salary))}</strong></div>
-        <div><span>Recruiting term</span><strong>${escapeHtml(job.recruiting_term?.display_name || "Term not specified")}</strong></div>
-        <div class="detail-grid-full"><span>Skills</span><strong>${escapeHtml(skillsText)}</strong></div>
-      </div>
-      <div class="detail-description">${job.description ? renderMarkdown(job.description) : "<p>No detailed description is available for this job.</p>"}</div>
-      <div class="job-ai-actions">
-        <button class="btn-ai-action" type="button" data-ai-target="tab-ats">ATS Review ↗</button>
-        <button class="btn-ai-action" type="button" data-ai-target="tab-interview">Mock Interview ↗</button>
-        <button class="btn-ai-action" type="button" data-ai-target="tab-cover-letter">Cover Letter ↗</button>
-        <button class="btn-ai-action" type="button" data-ai-target="tab-agent">Ask AI Agent ↗</button>
-      </div>
-      <div class="detail-actions" style="margin-top: 16px;">${job.sources?.map((source) => `<a class="primary-button" href="${escapeHtml(source.direct_url || source.url)}" target="_blank" rel="noreferrer">View Application Link ↗</a>`).join("") || ""}</div>`;
+      location: job.location?.display_name,
+      meta: formatDate(job.date_posted),
+      skills: job.source_skills?.length ? job.source_skills : job.skill_tags,
+      facts: [
+        { label: "Salary", value: formatSalary(job.salary) },
+        { label: "Recruiting term", value: job.recruiting_term?.display_name || "Term not specified" },
+      ],
+      links: (job.sources || []).map((source) => source.direct_url || source.url),
+    });
   } catch (requestError) {
     if (dialog.open) dialog.close();
     syncDialogScrollLock();
@@ -328,27 +312,6 @@ function updateSliderFill() {
   const maxPct = (maxVal / 100) * 100;
   fill.style.left = `${minPct}%`;
   fill.style.width = `${Math.max(0, maxPct - minPct)}%`;
-}
-
-function setupInfiniteScroll() {
-  const sentinel = $("#infinite-scroll-sentinel");
-  if (!sentinel) return;
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const [entry] = entries;
-      if (entry.isIntersecting && !state.loading && state.hasMore && state.cursor) {
-        loadJobs({ append: true });
-      }
-    },
-    {
-      root: null,
-      rootMargin: "400px",
-      threshold: 0,
-    },
-  );
-
-  observer.observe(sentinel);
 }
 
 function setupBackToTop() {
@@ -500,7 +463,6 @@ export {
   loadFacets,
   openJob,
   updateSliderFill,
-  setupInfiniteScroll,
   setupBackToTop,
   applyRegionFilter,
 };

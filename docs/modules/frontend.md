@@ -17,7 +17,9 @@ The browser calls the versioned REST API directly with `fetch`. API route order 
 | `waterlooworks.js` | Local source status, collection, list, and detail |
 | `tracker.js` | Application list, bookmarks, drawer, events, bulk operations, CSV, custom jobs |
 | `profile.js` | Profile editor, resume upload/import draft, history, save/delete |
-| `ats.js` | PDF extraction and ATS review |
+| `ats-shared.js` | Shared resume upload, ATS request, and score-breakdown rendering |
+| `ats-score.js` | Standalone resume ATS parsing score plus grounded AI commentary |
+| `ats-match.js` | Standalone resume-to-job match section |
 | `cover-letter.js` | Profile/resume input, generation, review, DOCX/PDF export |
 | `interview.js` | Questions, TTS, camera/recording, answer analysis |
 | `agent.js` | Sessions, chat, tools, approval, memory, preferences |

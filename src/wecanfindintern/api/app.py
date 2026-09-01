@@ -9,6 +9,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from wecanfindintern.agent.memory.manager import AgentMemoryManager
+from wecanfindintern.agent.memory.store import AgentMemoryStore
 from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig, EmbeddingGateway
 from wecanfindintern.agent.recommend.indexer import RecommendationIndexer
 from wecanfindintern.api.routes.agent import agent_router
@@ -17,6 +19,7 @@ from wecanfindintern.api.routes.cover_letter import cover_letter_router
 from wecanfindintern.api.routes.interview import interview_router
 from wecanfindintern.api.routes.jobs import jobs_router
 from wecanfindintern.api.routes.profile import profile_router
+from wecanfindintern.api.routes.resumes import resumes_router
 from wecanfindintern.api.routes.tracker import tracker_router
 from wecanfindintern.api.routes.waterlooworks import waterlooworks_router
 from wecanfindintern.config import Settings
@@ -40,15 +43,28 @@ async def _recommendation_index_loop(
             EmbeddingGateway(embedding_config) if embedding_config is not None else None
         ),
     )
+    # A document-version bump must refresh unchanged active jobs as well as jobs
+    # arriving through the ingestion trigger queue.
+    await indexer.enqueue_stale_public_documents()
     iteration = 0
     while True:
         try:
             report = await indexer.index_pending(limit=100)
             if iteration % 10 == 0:
-                waterloo_page = await waterlooworks.list_jobs(
-                    limit=10000, include_description=True
-                )
-                await indexer.index_waterloo_jobs(waterloo_page["items"])
+                waterloo_cursor: str | None = None
+                while True:
+                    waterloo_page = await waterlooworks.list_jobs(
+                        limit=500,
+                        cursor=waterloo_cursor,
+                        include_description=True,
+                    )
+                    await indexer.index_waterloo_jobs(waterloo_page["items"])
+                    waterloo_cursor = waterloo_page.get("next_cursor")
+                    if not waterloo_page.get("has_more") or not waterloo_cursor:
+                        break
+            # Document writes and embedding generation are separate retryable stages.
+            # This also repairs vectors left missing by a previous transient failure.
+            await indexer.embed_missing_primary_chunks(limit=100)
             iteration += 1
             await asyncio.sleep(2 if report.scanned >= 100 else 30)
         except asyncio.CancelledError:
@@ -68,6 +84,7 @@ def create_app() -> FastAPI:
         database = Database(settings)
         await database.open()
         app.state.database = database
+        app.state.agent_memory = AgentMemoryManager(AgentMemoryStore(database.pool))
         app.state.waterlooworks = WaterlooWorksService()
         recommendation_index_task = asyncio.create_task(
             _recommendation_index_loop(database, app.state.waterlooworks)
@@ -76,6 +93,7 @@ def create_app() -> FastAPI:
         recommendation_index_task.cancel()
         with suppress(asyncio.CancelledError):
             await recommendation_index_task
+        await app.state.agent_memory.shutdown()
         await app.state.waterlooworks.close()
         await database.close()
 
@@ -91,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router)
     app.include_router(tracker_router)
     app.include_router(profile_router)
+    app.include_router(resumes_router)
     app.include_router(waterlooworks_router)
     app.include_router(agent_router)
 

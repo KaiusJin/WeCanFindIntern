@@ -1,12 +1,23 @@
 import { $, $$, escapeHtml, formatRelativeTime, renderMarkdown, responseErrorMessage, showErrorDialog } from "./helpers.js";
-import { switchTab } from "./navigation.js";
+import {
+  loadWaterlooWorksBookmarks,
+  setPublicBookmarks,
+  setWaterlooWorksBookmarks,
+  toggleBookmarkJob,
+  toggleWaterlooWorksBookmark,
+  updateBookmarkButtons,
+} from "./bookmarks.js";
+import {
+  TRACKER_SOURCE_LABELS,
+  TRACKER_STAGE_LABELS,
+  loadTrackerContract,
+  trackerSourceOptions,
+  trackerStageOptions,
+} from "./tracker-contract.js";
 
 const trackerState = {
   applications: [],
   stats: {},
-  trackedJobIds: new Set(),
-  trackedJobs: new Map(),
-  waterlooWorksTracked: new Map(),
   selectedIds: new Set(),
   loading: false,
   page: 1,
@@ -21,17 +32,6 @@ const trackerState = {
 // =========================================================
 
 const TRACKER_FILTER_KEY = "wecan_tracker_filters_v2";
-const trackerStageLabels = {
-  interested: "Interested",
-  applied: "Applied",
-  interview: "Interviewing",
-  offer: "Offers",
-  rejected: "Refused",
-};
-
-const bookmarkOutlineIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
-const bookmarkFilledIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
-
 function trackerFiltersFromControls() {
   const [sort, direction] = ($("#tracker-sort")?.value || "updated:desc").split(":");
   return {
@@ -97,12 +97,11 @@ async function fetchTrackerData({ keepSelection = false } = {}) {
     trackerState.totalPages = data.total_pages || 0;
     if (bookmarksRes.ok) {
       const bookmarks = await bookmarksRes.json();
-      trackerState.trackedJobs = new Map(bookmarks.map((item) => [item.job_id, item]));
-      trackerState.trackedJobIds = new Set(trackerState.trackedJobs.keys());
+      setPublicBookmarks(bookmarks);
     }
     if (wwBookmarksRes.ok) {
       const wwBookmarks = await wwBookmarksRes.json();
-      trackerState.waterlooWorksTracked = new Map(wwBookmarks.map((item) => [item.external_job_id, item]));
+      setWaterlooWorksBookmarks(wwBookmarks);
     }
     if (!keepSelection) trackerState.selectedIds.clear();
     renderTrackerStats();
@@ -143,36 +142,21 @@ function trackerDate(value, fallback = "—") {
   return Number.isNaN(date.getTime()) ? fallback : new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-const trackerSourceLabels = {
-  wecanfindintern: "WecanFindIntern",
-  linkedin: "LinkedIn",
-  indeed: "Indeed",
-  waterloo_work: "WaterlooWork",
-  other: "Other",
-};
-
 function renderTrackerList() {
   const body = $("#tracker-table-body");
   if (!body) return;
   const items = trackerState.applications;
   $("#tracker-empty").hidden = Boolean(items.length);
-  const titleMap = {
-    "": "All applications",
-    interested: "Interested",
-    applied: "Applied",
-    interview: "Interviewing",
-    offer: "Offers",
-    rejected: "Refused",
-  };
-  $("#tracker-results-title").textContent = titleMap[trackerState.stageFilter] || "All applications";
+  const stageFilterLabels = { "": "All applications", ...TRACKER_STAGE_LABELS };
+  $("#tracker-results-title").textContent = stageFilterLabels[trackerState.stageFilter] || "All applications";
   $("#tracker-result-count").textContent = `${trackerState.total.toLocaleString()} record${trackerState.total === 1 ? "" : "s"}`;
   body.innerHTML = items.map((app) => {
     return `<tr class="tracker-row" data-app-id="${app.id}">
       <td class="select-col"><input class="tracker-row-check" data-app-id="${app.id}" type="checkbox" aria-label="Select ${escapeHtml(app.title)}" ${trackerState.selectedIds.has(app.id) ? "checked" : ""} /></td>
       <td><div class="tracker-role-cell"><strong>${escapeHtml(app.company_name)}</strong><span>${escapeHtml(app.title)}</span></div></td>
-      <td><select class="tracker-inline-stage stage-${escapeHtml(app.stage)}" data-app-id="${app.id}" aria-label="Change stage for ${escapeHtml(app.title)}"><option value="interested" ${app.stage === "interested" ? "selected" : ""}>Interested</option><option value="applied" ${app.stage === "applied" ? "selected" : ""}>Applied</option><option value="interview" ${app.stage === "interview" ? "selected" : ""}>Interview</option><option value="offer" ${app.stage === "offer" ? "selected" : ""}>Offer</option><option value="rejected" ${app.stage === "rejected" ? "selected" : ""}>Refused</option></select></td>
+      <td><select class="tracker-inline-stage stage-${escapeHtml(app.stage)}" data-app-id="${app.id}" aria-label="Change stage for ${escapeHtml(app.title)}">${trackerStageOptions(app.stage)}</select></td>
       <td><span class="tracker-cell-text">${escapeHtml(app.location_text || "Unspecified")}</span></td>
-      <td><span class="tracker-cell-text">${escapeHtml(trackerSourceLabels[app.source] || "Other")}</span></td>
+      <td><span class="tracker-cell-text">${escapeHtml(TRACKER_SOURCE_LABELS[app.source] || "Other")}</span></td>
       <td><input class="tracker-inline-date" data-app-id="${app.id}" type="date" value="${toDateInput(app.applied_at)}" aria-label="Applied date for ${escapeHtml(app.title)}" /></td>
       <td><span title="${escapeHtml(new Date(app.updated_at).toLocaleString())}">${escapeHtml(formatRelativeTime(app.updated_at))}</span></td>
       <td><button class="tracker-row-menu" data-app-id="${app.id}" type="button" aria-label="Open application">›</button></td>
@@ -180,6 +164,24 @@ function renderTrackerList() {
   }).join("");
   updateBulkBar();
 }
+
+function initializeTrackerContractControls() {
+  const bulkStage = $("#tracker-bulk-stage");
+  const customStage = $("#custom-stage");
+  const drawerStage = $("#drawer-stage");
+  const customSource = $("#custom-source");
+  const drawerSource = $("#drawer-source");
+  if (bulkStage) bulkStage.innerHTML = trackerStageOptions("", { placeholder: "Move to…" });
+  if (customStage) customStage.innerHTML = trackerStageOptions("interested");
+  if (drawerStage) drawerStage.innerHTML = trackerStageOptions("interested");
+  if (customSource) customSource.innerHTML = trackerSourceOptions("other");
+  if (drawerSource) drawerSource.innerHTML = trackerSourceOptions("other");
+}
+
+initializeTrackerContractControls();
+loadTrackerContract()
+  .then(initializeTrackerContractControls)
+  .catch((error) => console.warn("Using fallback Tracker contract:", error));
 
 function renderTrackerPagination() {
   const start = trackerState.total ? (trackerState.page - 1) * trackerState.pageSize + 1 : 0;
@@ -218,9 +220,9 @@ async function openTrackerDrawer(appId) {
   const isPlatformJob = app.origin_type === "platform_bookmark";
   const isWaterlooJob = app.source === "waterloo_work";
   $("#drawer-origin-notice").textContent = isWaterlooJob
-    ? "Bookmarked from WaterlooWorks · Job information is synced from WaterlooWorks and is read-only."
+    ? "Bookmarked from WaterlooWorks · Job information was saved from WaterlooWorks and is read-only."
     : isPlatformJob
-      ? "Bookmarked from WecanFindIntern · Job information is synced from the platform and is read-only."
+      ? "Bookmarked from WeCanFindIntern · Job information was saved from the platform and is read-only."
       : "External application · You can edit both the job information and tracking fields.";
   $("#drawer-origin-notice").classList.toggle("platform-origin", isPlatformJob);
   const fields = {
@@ -229,9 +231,16 @@ async function openTrackerDrawer(appId) {
     "#drawer-source": app.source || "other",
     "#drawer-url": app.job_url || "",
     "#drawer-jd-input": app.job_description || "",
+    "#drawer-company-input": app.company_name || "",
+    "#drawer-title-input": app.title || "",
+    "#drawer-location": app.location_text || "",
+    "#drawer-work-mode": app.work_mode || "",
+    "#drawer-salary": app.salary_text || "",
+    "#drawer-deadline": toDateInput(app.application_deadline),
   };
   Object.entries(fields).forEach(([selector, value]) => { $(selector).value = value; });
-  $("#drawer-salary").textContent = app.salary_text || "Not specified";
+  $("#drawer-external-status").textContent = app.external_status || "";
+  $("#drawer-external-status-group").hidden = !app.external_status;
   $("#drawer-jd-readonly").innerHTML = app.job_description ? renderMarkdown(app.job_description) : "<p>No job description is available.</p>";
   $("#drawer-jd-readonly").hidden = !isPlatformJob;
   $("#drawer-jd-input").hidden = isPlatformJob;
@@ -265,6 +274,12 @@ async function saveTrackerDrawer() {
   if ($("#tracker-detail-drawer").dataset.originType === "custom") {
     Object.assign(payload, {
       job_description: $("#drawer-jd-input").value.trim() || null,
+      company_name: $("#drawer-company-input").value.trim(),
+      title: $("#drawer-title-input").value.trim(),
+      location_text: $("#drawer-location").value.trim() || null,
+      work_mode: $("#drawer-work-mode").value || null,
+      salary_text: $("#drawer-salary").value.trim() || null,
+      application_deadline: $("#drawer-deadline").value || null,
       source: $("#drawer-source").value,
       job_url: $("#drawer-url").value.trim() || null,
     });
@@ -326,182 +341,6 @@ async function deleteTrackedApplication(appId) {
   if (!response.ok) { showErrorDialog(await responseErrorMessage(response, "The application could not be deleted."), { title: "Delete failed" }); return; }
   closeTrackerDrawer();
   await fetchTrackerData();
-}
-
-let plainToastTimer;
-function showPlainToast(message, actionLabel = null, onAction = null) {
-  let toast = $("#plain-toast");
-  if (!toast) {
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      `<div id="plain-toast" class="plain-toast" hidden><span class="plain-toast-msg"></span><button class="plain-toast-action" type="button" hidden></button></div>`
-    );
-    toast = $("#plain-toast");
-  }
-  const msgEl = toast.querySelector(".plain-toast-msg");
-  const actionBtn = toast.querySelector(".plain-toast-action");
-  msgEl.textContent = message;
-
-  if (actionLabel && onAction) {
-    actionBtn.textContent = actionLabel;
-    actionBtn.hidden = false;
-    actionBtn.onclick = () => {
-      toast.hidden = true;
-      toast.classList.remove("visible");
-      onAction();
-    };
-  } else {
-    actionBtn.hidden = true;
-    actionBtn.onclick = null;
-  }
-
-  toast.hidden = false;
-  requestAnimationFrame(() => toast.classList.add("visible"));
-  clearTimeout(plainToastTimer);
-  plainToastTimer = setTimeout(() => {
-    toast.classList.remove("visible");
-    setTimeout(() => { toast.hidden = true; }, 200);
-  }, 3200);
-}
-
-function updateBookmarkButtons() {
-  $$(".job-bookmark-btn").forEach((btn) => {
-    const tracked = trackerState.trackedJobs.get(btn.dataset.jobId);
-    const saved = Boolean(tracked);
-    btn.classList.toggle("saved", saved);
-    btn.setAttribute("aria-pressed", String(saved));
-
-    if (!saved) {
-      btn.title = "Save to Interested";
-      btn.innerHTML = bookmarkOutlineIcon;
-    } else if (tracked.stage === "interested") {
-      btn.title = "Interested · Click to remove";
-      btn.innerHTML = bookmarkFilledIcon;
-    } else {
-      const stageName = trackerStageLabels[tracked.stage] || tracked.stage;
-      btn.title = `${stageName} in Tracker · Click to view`;
-      btn.innerHTML = bookmarkFilledIcon;
-    }
-  });
-
-  $$(".ww-bookmark-btn").forEach((btn) => {
-    const tracked = trackerState.waterlooWorksTracked.get(btn.dataset.sourceJobId);
-    const saved = Boolean(tracked);
-    btn.classList.toggle("saved", saved);
-    btn.setAttribute("aria-pressed", String(saved));
-
-    if (!saved) {
-      btn.title = "Save to Interested";
-      btn.innerHTML = bookmarkOutlineIcon;
-    } else if (tracked.stage === "interested") {
-      btn.title = "Interested · Click to remove";
-      btn.innerHTML = bookmarkFilledIcon;
-    } else {
-      const stageName = trackerStageLabels[tracked.stage] || tracked.stage;
-      btn.title = `${stageName} in Tracker · Click to view`;
-      btn.innerHTML = bookmarkFilledIcon;
-    }
-  });
-}
-
-async function toggleBookmarkJob(jobId) {
-  const existing = trackerState.trackedJobs.get(jobId);
-  const buttons = $$(`.job-bookmark-btn[data-job-id="${jobId}"]`);
-  buttons.forEach((b) => { b.disabled = true; });
-
-  try {
-    if (!existing) {
-      const res = await fetch(`/api/v1/tracker/bookmarks/${jobId}`, { method: "PUT" });
-      if (!res.ok) throw new Error(await responseErrorMessage(res, "Could not save this job to your tracker."));
-      const app = await res.json();
-      trackerState.trackedJobs.set(jobId, { job_id: jobId, application_id: app.id, stage: app.stage });
-      trackerState.trackedJobIds.add(jobId);
-      updateBookmarkButtons();
-      showPlainToast("Saved to Interested", "Open Tracker ↗", () => {
-        switchTab("tab-tracker");
-      });
-      await fetchTrackerData({ keepSelection: true });
-    } else if (existing.stage === "interested") {
-      const res = await fetch(`/api/v1/tracker/bookmarks/${jobId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await responseErrorMessage(res, "Could not remove this bookmark."));
-      trackerState.trackedJobs.delete(jobId);
-      trackerState.trackedJobIds.delete(jobId);
-      updateBookmarkButtons();
-      showPlainToast("Removed from Interested");
-      await fetchTrackerData({ keepSelection: true });
-    } else {
-      const stageName = trackerStageLabels[existing.stage] || existing.stage;
-      showPlainToast(`This job is in stage [${stageName}] in your Tracker`, "Open Tracker ↗", () => {
-        switchTab("tab-tracker");
-        openTrackerDrawer(existing.application_id);
-      });
-    }
-  } catch (error) {
-    showErrorDialog(error, { title: "Tracker bookmark failed" });
-  } finally {
-    buttons.forEach((b) => { b.disabled = false; });
-  }
-}
-
-async function loadWaterlooWorksBookmarks() {
-  try {
-    const response = await fetch("/api/v1/tracker/bookmarks/waterlooworks");
-    if (!response.ok) return;
-    const bookmarks = await response.json();
-    trackerState.waterlooWorksTracked = new Map(
-      bookmarks.map((item) => [item.external_job_id, item]),
-    );
-    updateBookmarkButtons();
-  } catch (_) {
-    // Keep the previous state when the tracker is unavailable.
-  }
-}
-
-async function toggleWaterlooWorksBookmark(sourceJobId) {
-  const existing = trackerState.waterlooWorksTracked.get(sourceJobId);
-  const buttons = $$(`.ww-bookmark-btn[data-source-job-id="${sourceJobId}"]`);
-  buttons.forEach((b) => { b.disabled = true; });
-
-  try {
-    if (!existing) {
-      const response = await fetch(
-        `/api/v1/tracker/bookmarks/waterlooworks/${encodeURIComponent(sourceJobId)}`,
-        { method: "PUT" },
-      );
-      if (!response.ok) throw new Error(await responseErrorMessage(response, "Could not save this job to your tracker."));
-      const app = await response.json();
-      trackerState.waterlooWorksTracked.set(sourceJobId, {
-        external_job_id: sourceJobId,
-        application_id: app.id,
-        stage: app.stage,
-      });
-      updateBookmarkButtons();
-      showPlainToast("Saved to Interested", "Open Tracker ↗", () => {
-        switchTab("tab-tracker");
-      });
-      await fetchTrackerData({ keepSelection: true });
-    } else if (existing.stage === "interested") {
-      const response = await fetch(
-        `/api/v1/tracker/bookmarks/waterlooworks/${encodeURIComponent(sourceJobId)}`,
-        { method: "DELETE" },
-      );
-      if (!response.ok) throw new Error(await responseErrorMessage(response, "Could not remove this bookmark."));
-      trackerState.waterlooWorksTracked.delete(sourceJobId);
-      updateBookmarkButtons();
-      showPlainToast("Removed from Interested");
-      await fetchTrackerData({ keepSelection: true });
-    } else {
-      const stageName = trackerStageLabels[existing.stage] || existing.stage;
-      showPlainToast(`This job is in stage [${stageName}] in your Tracker`, "Open Tracker ↗", () => {
-        switchTab("tab-tracker");
-        openTrackerDrawer(existing.application_id);
-      });
-    }
-  } catch (error) {
-    showErrorDialog(error, { title: "Tracker bookmark failed" });
-  } finally {
-    buttons.forEach((b) => { b.disabled = false; });
-  }
 }
 
 let trackerSearchTimer;
@@ -588,6 +427,7 @@ $("#custom-job-form")?.addEventListener("submit", async (event) => {
     company_name: $("#custom-company").value.trim(), title: $("#custom-title").value.trim(),
     location_text: $("#custom-location").value.trim() || null, work_mode: $("#custom-work-mode").value || null,
     stage: $("#custom-stage").value, salary_text: $("#custom-salary").value.trim() || null,
+    application_deadline: $("#custom-deadline").value || null,
     source: $("#custom-source").value,
     applied_at: $("#custom-applied-at").value ? new Date(`${$("#custom-applied-at").value}T12:00:00`).toISOString() : null,
     job_url: $("#custom-url").value.trim() || null,
@@ -620,6 +460,7 @@ $("#custom-job-form")?.addEventListener("submit", async (event) => {
 export {
   fetchTrackerData,
   loadWaterlooWorksBookmarks,
+  openTrackerDrawer,
   toggleBookmarkJob,
   toggleWaterlooWorksBookmark,
   trackerState,

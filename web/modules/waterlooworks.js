@@ -1,64 +1,95 @@
 import {
   $,
   escapeHtml,
-  formatDate,
   formatSalary,
   formatRelativeTime,
-  renderMarkdown,
+  renderJobCard,
+  renderJobDetail,
   showErrorDialog,
   workModeLabel,
 } from "./helpers.js";
-import { syncDialogScrollLock } from "./settings.js";
 import {
+  BOOKMARK_FILLED,
+  BOOKMARK_OUTLINE,
+  bookmarkState,
   loadWaterlooWorksBookmarks,
   toggleWaterlooWorksBookmark,
-  trackerState,
   updateBookmarkButtons,
-} from "./tracker.js";
+} from "./bookmarks.js";
+import {
+  setActiveJobContext,
+  waterlooWorksJobContext,
+} from "./job-context.js?v=20260831-jobboard-parity-v3";
+import { setupInfiniteScroll } from "./pagination.js?v=20260831-jobboard-parity-v3";
+import { syncDialogScrollLock } from "./settings.js";
 
 let wwBusy = false;
+let wwStatus = "idle";
+let wwJobsRequestId = 0;
+let wwJobsAbortController = null;
+const wwJobsState = { cursor: null, hasMore: false, loading: false, total: 0 };
 
 // =========================================================
 // WATERLOOWORKS LOCAL IMPORT
 // =========================================================
 
-const WW_BOARD_LABELS = {
-  full_cycle: "Co-op: Full-Cycle",
-  employer_student_direct: "Employer-Student Direct",
-  graduating: "Graduating",
-  contract: "Contract",
-  campus: "Campus",
-};
-
-const WW_BOOKMARK_OUTLINE = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
-const WW_BOOKMARK_FILLED = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
-
 function renderWaterlooWorksStatus(data) {
+  const previousStatus = wwStatus;
   const status = data.status || "idle";
+  wwStatus = status;
   wwBusy = [
     "browser_starting",
     "waiting_for_login",
     "waiting_for_job_page",
     "collecting",
     "importing",
+    "syncing_applications",
   ].includes(status);
   $("#ww-unique-count").textContent = Number(data.unique_job_count || 0).toLocaleString();
-  $("#ww-posting-success-count").textContent = Number(data.posting_success_count || 0).toLocaleString();
+  const processedCount = Number(data.posting_inserted_count || 0) + Number(data.posting_known_count || 0);
+  $("#ww-posting-processed-count").textContent = processedCount.toLocaleString();
+  $("#ww-application-count").textContent = Number(data.application_count || 0).toLocaleString();
   $("#ww-board-failed-count").textContent = Number(data.board_failed_count || 0).toLocaleString();
-  $("#ww-finished-at").textContent = data.finished_at
-    ? `Finished ${formatRelativeTime(data.finished_at)}`
-    : (data.started_at ? `Started ${formatRelativeTime(data.started_at)}` : "No import yet");
-  $("#ww-launch").disabled = ["browser_starting", "collecting", "importing"].includes(status);
+  const trackerUpdated = $("#ww-tracker-updated-at");
+  const jobsUpdated = $("#ww-jobs-updated-at");
+  trackerUpdated.textContent = status === "syncing_applications"
+    ? "Updating Tracker…"
+    : (data.last_tracker_update_at
+      ? `Tracker updated ${formatRelativeTime(data.last_tracker_update_at)}`
+      : "Tracker not updated yet");
+  jobsUpdated.textContent = ["collecting", "importing"].includes(status)
+    ? "Updating jobs…"
+    : (data.last_job_update_at
+      ? `Jobs updated ${formatRelativeTime(data.last_job_update_at)}`
+      : "Jobs not updated yet");
+  $("#ww-status-message").textContent = data.message || "";
+  const boardSelect = $("#ww-job-board");
+  if (boardSelect && !boardSelect.dataset.catalogLoaded && data.boards?.length) {
+    const selected = boardSelect.value;
+    boardSelect.innerHTML = [
+      '<option value="">All boards</option>',
+      ...data.boards.map((board) => `<option value="${escapeHtml(board.name)}">${escapeHtml(board.label || board.name)}</option>`),
+      '<option value="applications">Submitted applications</option>',
+    ].join("");
+    boardSelect.value = selected;
+    boardSelect.dataset.catalogLoaded = "true";
+  }
+  $("#ww-launch").disabled = ["browser_starting", "collecting", "importing", "syncing_applications"].includes(status);
   $("#ww-launch").textContent = data.browser_open ? "Open / check WaterlooWorks ↗" : "Log into WaterlooWorks ↗";
   $("#ww-collect").disabled = !data.browser_open || !["ready", "completed", "partial"].includes(status);
   $("#ww-collect").textContent = ["collecting", "importing"].includes(status)
     ? "Import in progress…"
     : "Import all job boards";
+  $("#ww-sync-applications").disabled = !data.browser_open || !["ready", "completed", "partial"].includes(status);
+  $("#ww-sync-applications").textContent = status === "syncing_applications"
+    ? "Syncing applications…"
+    : "Sync submitted applications";
   for (const board of data.boards || []) {
     const row = document.querySelector(`[data-ww-board="${board.name}"]`);
     if (!row) continue;
     const countLabel = row.querySelector(".ww-board-count");
     const stateLabel = row.querySelector(".ww-board-state");
+    row.querySelector("strong").textContent = board.label || board.name;
     const labels = {
       pending: "Pending",
       collecting: "Collecting…",
@@ -66,61 +97,110 @@ function renderWaterlooWorksStatus(data) {
       failed: "Failed",
     };
     const marks = { pending: "…", collecting: "…", completed: "✓", failed: "✗" };
-    countLabel.textContent = `${Number(board.posting_success_count || 0).toLocaleString()} jobs`;
+    const boardSeen = Number(board.posting_inserted_count || 0) + Number(board.posting_known_count || 0);
+    countLabel.textContent = `${boardSeen.toLocaleString()} jobs`;
     stateLabel.className = `ww-board-state ${board.status}`;
     stateLabel.textContent = marks[board.status] || "…";
     stateLabel.setAttribute("aria-label", labels[board.status] || board.status);
   }
+  if (previousStatus === "syncing_applications" && ["completed", "partial"].includes(status)) {
+    loadWaterlooWorksJobs();
+    document.dispatchEvent(new CustomEvent("tracker:data-invalidated"));
+  }
+  if (["collecting", "importing"].includes(previousStatus) && ["completed", "partial"].includes(status)) {
+    loadWaterlooWorksJobs();
+  }
 }
 
-async function loadWaterlooWorksJobs() {
-  const params = new URLSearchParams({ limit: "100" });
+function renderWaterlooWorksJobs(items, list, { append = false } = {}) {
+  const markup = items.map((job) => {
+    const boards = job.boards || [];
+    const sourceBoards = boards.filter((value) => value !== "applications");
+    const isSaved = bookmarkState.waterlooWorksJobs.has(job.source_job_id);
+    return renderJobCard(job, {
+      source: "waterlooworks",
+      isSaved,
+      primaryTag: sourceBoards.length
+        ? (job.board_labels?.[sourceBoards[0]] || sourceBoards[0].replaceAll("_", " "))
+        : "",
+      secondaryTags: sourceBoards.slice(1).map(
+        (value) => job.board_labels?.[value] || value.replaceAll("_", " "),
+      ),
+      boards,
+      bookmarkIcon: isSaved ? BOOKMARK_FILLED : BOOKMARK_OUTLINE,
+    });
+  }).join("");
+  if (append) list.insertAdjacentHTML("beforeend", markup);
+  else list.innerHTML = markup;
+  updateBookmarkButtons();
+}
+
+async function loadWaterlooWorksJobs({ append = false } = {}) {
+  if (append && (wwJobsState.loading || !wwJobsState.hasMore)) return;
+  if (!append) {
+    wwJobsRequestId += 1;
+    wwJobsAbortController?.abort();
+  }
+  const requestId = wwJobsRequestId;
+  const params = new URLSearchParams({ limit: "20" });
   const query = $("#ww-job-query")?.value.trim();
   const board = $("#ww-job-board")?.value;
   if (query) params.set("query", query);
   if (board) params.set("board", board);
+  if (append && wwJobsState.cursor) params.set("cursor", wwJobsState.cursor);
   const list = $("#ww-job-list");
+  const loadingIndicator = $("#ww-loading-indicator");
+  const endOfResults = $("#ww-end-of-results");
+  wwJobsState.loading = true;
+  if (!append) {
+    wwJobsState.cursor = null;
+    wwJobsState.hasMore = false;
+    list.innerHTML = '<p class="muted-copy">Loading WaterlooWorks jobs…</p>';
+    if (endOfResults) endOfResults.hidden = true;
+  } else if (loadingIndicator) {
+    loadingIndicator.hidden = false;
+  }
+  const controller = new AbortController();
+  wwJobsAbortController = controller;
   try {
-    await loadWaterlooWorksBookmarks();
-    const response = await fetch(`/api/v1/waterlooworks/jobs?${params}`);
+    const bookmarksPromise = append
+      ? Promise.resolve()
+      : loadWaterlooWorksBookmarks().catch((error) => {
+        console.warn("WaterlooWorks bookmarks unavailable:", error);
+      });
+    const response = await fetch(`/api/v1/waterlooworks/jobs?${params}`, { signal: controller.signal });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not load WaterlooWorks jobs.");
-    $("#ww-jobs-total").textContent = `${Number(data.total || 0).toLocaleString()} jobs`;
-    if (!data.items?.length) {
+    await bookmarksPromise;
+    if (requestId !== wwJobsRequestId) return;
+    const items = data.items || [];
+    wwJobsState.total = Number(data.total_count || 0);
+    wwJobsState.cursor = data.next_cursor || null;
+    wwJobsState.hasMore = Boolean(data.has_more && wwJobsState.cursor);
+    $("#ww-jobs-total").textContent = `${wwJobsState.total.toLocaleString()} jobs`;
+    if (!items.length && !append) {
       list.innerHTML = '<p class="muted-copy">No matching WaterlooWorks jobs.</p>';
       return;
     }
-    list.innerHTML = data.items.map((job) => {
-      const boards = job.boards || [];
-      const isSaved = trackerState.waterlooWorksTracked?.has(job.source_job_id);
-      return `
-        <article class="job-card ww-job-card" data-source-job-id="${escapeHtml(job.source_job_id)}" data-boards="${escapeHtml(boards.join(","))}">
-          <div class="job-card-main">
-            <div class="company-mark">${escapeHtml((job.organization || "?").slice(0, 1).toUpperCase())}</div>
-            <div class="job-copy">
-              <h3>${escapeHtml(job.title)}</h3>
-              <p class="company-name">${escapeHtml(job.organization || "Company not specified")}</p>
-              <p class="job-location">${escapeHtml(job.location_text || "Location not specified")} <span>·</span> ${escapeHtml(formatDate(job.date_posted))}</p>
-            </div>
-            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
-              <button type="button" class="ww-bookmark-btn ${isSaved ? "saved" : ""}" data-source-job-id="${escapeHtml(job.source_job_id)}" title="${isSaved ? "Tracked in Pipeline" : "Bookmark / Track Job"}" aria-pressed="${isSaved}">${isSaved ? WW_BOOKMARK_FILLED : WW_BOOKMARK_OUTLINE}</button>
-              <div class="job-date">Job ID ${escapeHtml(job.source_job_id)}</div>
-            </div>
-          </div>
-          <div class="job-card-footer">
-            <div class="job-tags">
-              <span class="tag accent">WaterlooWorks</span>
-              ${boards.map((value) => `<span class="tag">${escapeHtml(WW_BOARD_LABELS[value] || value.replaceAll("_", " "))}</span>`).join("")}
-            </div>
-            <span class="salary">${escapeHtml(formatSalary(job.salary))}</span>
-          </div>
-        </article>
-      `;
-    }).join("");
-    updateBookmarkButtons();
+    const existingIds = new Set(
+      [...list.querySelectorAll(".ww-job-card")].map((card) => card.dataset.sourceJobId),
+    );
+    const newItems = items.filter((job) => !existingIds.has(job.source_job_id));
+    renderWaterlooWorksJobs(newItems, list, { append });
   } catch (error) {
-    list.innerHTML = "";
-    showErrorDialog(error, { title: "WaterlooWorks jobs unavailable" });
+    if (requestId !== wwJobsRequestId) return;
+    if (error.name === "AbortError") return;
+    if (!append) {
+      list.innerHTML = "";
+      showErrorDialog(error, { title: "WaterlooWorks jobs unavailable" });
+    } else {
+      console.error("WaterlooWorks jobs could not load more results:", error);
+    }
+  } finally {
+    if (controller.signal.aborted) return;
+    wwJobsState.loading = false;
+    if (loadingIndicator) loadingIndicator.hidden = true;
+    if (endOfResults) endOfResults.hidden = wwJobsState.hasMore || !list.querySelector(".ww-job-card");
   }
 }
 
@@ -147,10 +227,17 @@ async function runWaterlooWorksAction(path) {
 
 $("#ww-launch")?.addEventListener("click", () => runWaterlooWorksAction("launch"));
 $("#ww-collect")?.addEventListener("click", () => runWaterlooWorksAction("collect"));
+$("#ww-sync-applications")?.addEventListener("click", () => runWaterlooWorksAction("applications/sync"));
 $("#ww-job-search")?.addEventListener("click", loadWaterlooWorksJobs);
 $("#ww-job-board")?.addEventListener("change", loadWaterlooWorksJobs);
 $("#ww-job-query")?.addEventListener("keydown", (event) => {
   if (event.key === "Enter") loadWaterlooWorksJobs();
+});
+setupInfiniteScroll({
+  sentinelSelector: "#ww-infinite-scroll-sentinel",
+  isLoading: () => wwJobsState.loading,
+  canLoadMore: () => wwJobsState.hasMore && wwJobsState.cursor,
+  loadMore: () => loadWaterlooWorksJobs({ append: true }),
 });
 document.addEventListener("click", (event) => {
   const bookmarkBtn = event.target.closest(".ww-bookmark-btn");
@@ -161,11 +248,11 @@ document.addEventListener("click", (event) => {
   }
   const card = event.target.closest(".ww-job-card");
   if (card) {
-    openWaterlooWorksJob(card.dataset.sourceJobId, card.dataset.boards);
+    openWaterlooWorksJob(card.dataset.sourceJobId);
   }
 });
 
-async function openWaterlooWorksJob(sourceJobId, boardsCsv) {
+async function openWaterlooWorksJob(sourceJobId) {
   const dialog = $("#job-dialog");
   const detail = $("#job-detail");
   detail.innerHTML = `<p class="loading-detail">Loading job details…</p>`;
@@ -175,20 +262,28 @@ async function openWaterlooWorksJob(sourceJobId, boardsCsv) {
     const response = await fetch(`/api/v1/waterlooworks/jobs/${encodeURIComponent(sourceJobId)}`);
     if (!response.ok) throw new Error("Could not load job details");
     const job = await response.json();
-    const boards = (boardsCsv || "").split(",").filter(Boolean);
-    const boardsLabel = boards.map((value) => WW_BOARD_LABELS[value] || value.replaceAll("_", " ")).join(" · ") || "All boards";
-    detail.innerHTML = `
-      <p class="eyebrow">WaterlooWorks · ${escapeHtml(boardsLabel)}</p>
-      <h2>${escapeHtml(job.title)}</h2>
-      <p class="detail-company">${escapeHtml(job.organization || "Company not specified")}</p>
-      <p class="detail-location">${escapeHtml(job.location_text || "Location not specified")} · Job ID ${escapeHtml(job.source_job_id)}</p>
-      <div class="detail-grid">
-        <div><span>Salary</span><strong>${escapeHtml(formatSalary(job.salary))}</strong></div>
-        <div><span>Work mode</span><strong>${escapeHtml(workModeLabel(job.work_mode))}</strong></div>
-        <div class="detail-grid-full"><span>Application deadline</span><strong>${escapeHtml(job.application_deadline || "Not specified")}</strong></div>
-      </div>
-      <div class="detail-description">${job.description ? renderMarkdown(job.description) : "<p>No detailed description is available for this job.</p>"}</div>
-    `;
+    const description = job.description && ![
+      "there was an error loading this job posting",
+      "error loading this job posting",
+    ].includes(job.description.trim().toLowerCase()) ? job.description : "";
+    const boards = job.boards || [];
+    const boardsLabel = boards.map(
+      (value) => job.board_labels?.[value] || value.replaceAll("_", " "),
+    ).join(" · ") || "All boards";
+    setActiveJobContext(waterlooWorksJobContext({ ...job, description }));
+    detail.innerHTML = renderJobDetail(job, {
+      eyebrow: boardsLabel,
+      company: job.organization,
+      location: job.location_text,
+      meta: `Job ID ${job.source_job_id}`,
+      description,
+      facts: [
+        { label: "Salary", value: formatSalary(job.salary) },
+        { label: "Work mode", value: workModeLabel(job.work_mode) },
+        { label: "Application deadline", value: job.application_deadline || "Not specified", full: true },
+      ],
+      links: [job.application_url || job.source_url],
+    });
   } catch (error) {
     if (dialog.open) dialog.close();
     syncDialogScrollLock();
@@ -196,6 +291,11 @@ async function openWaterlooWorksJob(sourceJobId, boardsCsv) {
   }
 }
 let wwPollTimer = null;
+function startWaterlooWorksPolling() {
+  if (wwPollTimer !== null) return;
+  scheduleWaterlooWorksPoll();
+}
+
 function scheduleWaterlooWorksPoll() {
   const delay = wwBusy ? 2000 : 10000;
   wwPollTimer = setTimeout(() => {
@@ -203,6 +303,10 @@ function scheduleWaterlooWorksPoll() {
     scheduleWaterlooWorksPoll();
   }, delay);
 }
-scheduleWaterlooWorksPoll();
 
-export { loadWaterlooWorksStatus, loadWaterlooWorksJobs, openWaterlooWorksJob };
+export {
+  loadWaterlooWorksStatus,
+  loadWaterlooWorksJobs,
+  openWaterlooWorksJob,
+  startWaterlooWorksPolling,
+};

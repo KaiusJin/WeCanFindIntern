@@ -171,6 +171,13 @@ function renderMarkdown(rawText) {
 
 function label(value) {
   if (!value) return "Unspecified";
+  const canonicalLabels = {
+    co_op: "Co-op",
+    new_grad: "New grad",
+    full_time: "Full-time",
+    part_time: "Part-time",
+  };
+  if (canonicalLabels[value]) return canonicalLabels[value];
   return value.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
@@ -181,8 +188,155 @@ function workModeLabel(value) {
 
 function skillLabel(value) {
   if (!value) return "";
-  const map = { cpp: "C++", cplusplus: "C++", csharp: "C#", dotnet: ".NET", nodejs: "Node.js", react: "React", vue: "Vue", javascript: "JavaScript", typescript: "TypeScript" };
-  return map[value.toLowerCase()] || value.charAt(0).toUpperCase() + value.slice(1);
+  const normalized = String(value).toLowerCase().replaceAll("_", " ");
+  const map = {
+    cpp: "C++", cplusplus: "C++", csharp: "C#", dotnet: ".NET", nodejs: "Node.js",
+    nextjs: "Next.js", graphql: "GraphQL", grpc: "gRPC", html: "HTML", css: "CSS",
+    javascript: "JavaScript", typescript: "TypeScript", postgresql: "PostgreSQL",
+    sql_server: "SQL Server", bigquery: "BigQuery", github_actions: "GitHub Actions",
+    gitlab_ci: "GitLab CI", argocd: "Argo CD", power_bi: "Power BI",
+    scikit_learn: "scikit-learn", hugging_face: "Hugging Face", llm: "LLM",
+    ai_agents: "AI Agents", llamaindex: "LlamaIndex", semantic_kernel: "Semantic Kernel",
+    azure_openai: "Azure OpenAI", vertex_ai: "Vertex AI", vector_database: "Vector Database",
+    vector_search: "Vector Search", prompt_engineering: "Prompt Engineering",
+    function_calling: "Function Calling", tool_calling: "Tool Calling", mcp: "MCP",
+    fine_tuning: "Fine-tuning", model_evaluation: "Model Evaluation",
+    microsoft_office: "Microsoft Office", microsoft_365: "Microsoft 365", microsoft_word: "Microsoft Word",
+    microsoft_teams: "Microsoft Teams", google_workspace: "Google Workspace", google_docs: "Google Docs",
+    google_sheets: "Google Sheets", google_slides: "Google Slides", sharepoint: "SharePoint",
+    onedrive: "OneDrive", macos: "macOS", ios: "iOS", android: "Android", red_hat: "Red Hat",
+    chrome_os: "Chrome OS",
+  };
+  return map[String(value).toLowerCase()] || normalized.split(" ").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function renderJobTags({ primaryTag = "", secondaryTags = [], skillTags = [], category = "" } = {}) {
+  const normalizedSkills = [...new Set(skillTags || [])].slice(0, 4);
+  const tags = [...new Set([...normalizedSkills, category].filter(Boolean))];
+  const primary = primaryTag
+    ? `<span class="tag accent">${escapeHtml(primaryTag)}</span>`
+    : "";
+  const secondary = secondaryTags
+    .filter(Boolean)
+    .map((tag) => {
+      const value = typeof tag === "string" ? { label: tag } : tag;
+      return `<span class="tag ${value.className || ""}">${escapeHtml(value.label)}</span>`;
+    })
+    .join("");
+  const skillSet = new Set(skillTags || []);
+  const formatted = tags
+    .map((tag) => `<span class="tag">${escapeHtml(skillSet.has(tag) ? skillLabel(tag) : label(tag))}</span>`)
+    .join("");
+  return `${primary}${secondary}${formatted}`;
+}
+
+function renderJobCard(job, {
+  source = "job-board",
+  isSaved = false,
+  primaryTag = "",
+  secondaryTags = [],
+  dateText = "",
+  boards = [],
+  bookmarkIcon = "",
+} = {}) {
+  const isWaterlooWorks = source === "waterlooworks";
+  const sourceId = isWaterlooWorks ? job.source_job_id : job.id;
+  const companyName = job.company_name || job.organization || "Company not specified";
+  const locationText = job.location?.display_name || job.location_text || "Location not specified";
+  const defaultBookmarkIcon = isSaved
+    ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`
+    : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2 2h10a2 2 0 0 1 2 2z"></path></svg>`;
+  const bookmarkClass = isWaterlooWorks ? "ww-bookmark-btn" : "job-bookmark-btn";
+  const bookmarkAttribute = isWaterlooWorks ? "data-source-job-id" : "data-job-id";
+  const cardAttributes = isWaterlooWorks
+    ? `data-source-job-id="${escapeHtml(sourceId)}" data-boards="${escapeHtml(boards.join(","))}"`
+    : `data-id="${escapeHtml(sourceId)}" tabindex="0"`;
+  const visibleDate = dateText || formatDate(job.date_posted || job.published_at);
+  const meta = isWaterlooWorks ? `Job ID ${escapeHtml(sourceId)}` : escapeHtml(visibleDate);
+
+  return `<article class="job-card${isWaterlooWorks ? " ww-job-card" : ""}" ${cardAttributes}>
+    <div class="job-card-main">
+      <div class="company-mark">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>
+      <div class="job-copy">
+        <h3>${escapeHtml(job.title)}</h3>
+        <p class="company-name">${escapeHtml(companyName)}</p>
+        <p class="job-location">${escapeHtml(locationText)} <span>·</span> ${escapeHtml(workModeLabel(job.work_mode))}</p>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+        <button type="button" class="${bookmarkClass} ${isSaved ? "saved" : ""}" ${bookmarkAttribute}="${escapeHtml(sourceId)}" aria-pressed="${isSaved}" title="${isSaved ? "Tracked in Pipeline" : "Bookmark / Track Job"}>
+          ${bookmarkIcon || defaultBookmarkIcon}
+        </button>
+        <div class="job-date">${meta}</div>
+      </div>
+    </div>
+    <div class="job-card-footer">
+      <div class="job-tags">${renderJobTags({ primaryTag, secondaryTags, skillTags: job.skill_tags, category: job.job_category })}</div>
+      <span class="salary">${escapeHtml(formatSalary(job.salary))}</span>
+    </div>
+  </article>`;
+}
+
+function buildJobContextText({
+  title,
+  company,
+  location,
+  workMode,
+  recruitingTerm,
+  sourceJobId,
+  applicationDeadline,
+  description,
+} = {}) {
+  const metadata = [
+    `Location: ${location || "Unspecified"}`,
+    `Work Mode: ${workModeLabel(workMode)}`,
+  ];
+  if (recruitingTerm) metadata.push(`Recruiting Term: ${recruitingTerm}`);
+  if (sourceJobId) metadata.push(`WaterlooWorks Job ID: ${sourceJobId}`);
+  if (applicationDeadline) metadata.push(`Application Deadline: ${applicationDeadline}`);
+  return `${title || "Role"} at ${company || "Company"}\n\n${metadata.join("\n")}\n\nDescription:\n${description || ""}`;
+}
+
+function renderJobDetail(job, {
+  eyebrow = "",
+  company = "",
+  location = "",
+  meta = "",
+  description = job.description,
+  skills = job.source_skills?.length ? job.source_skills : job.skill_tags,
+  facts = [],
+  links = [],
+  showAiActions = true,
+} = {}) {
+  const skillsText = (skills || [])
+    .slice(0, 15)
+    .map(skillLabel)
+    .filter(Boolean)
+    .join(", ") || "Skills not specified";
+  const factMarkup = facts.map((fact) => `
+    <div${fact.full ? ' class="detail-grid-full"' : ""}>
+      <span>${escapeHtml(fact.label)}</span><strong>${escapeHtml(fact.value)}</strong>
+    </div>`).join("");
+  const aiActions = showAiActions ? `<div class="job-ai-actions">
+    <button class="btn-ai-action" type="button" data-ai-target="tab-ats-match">Job Match ↗</button>
+    <button class="btn-ai-action" type="button" data-ai-target="tab-interview">Mock Interview ↗</button>
+    <button class="btn-ai-action" type="button" data-ai-target="tab-cover-letter">Cover Letter ↗</button>
+    <button class="btn-ai-action" type="button" data-ai-target="tab-agent">Ask AI Agent ↗</button>
+  </div>` : "";
+  const linkMarkup = links.filter(Boolean).map((url) =>
+    `<a class="primary-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">View Application Link ↗</a>`,
+  ).join("");
+
+  return `<p class="eyebrow">${escapeHtml(eyebrow)}</p>
+    <h2>${escapeHtml(job.title)}</h2>
+    <p class="detail-company">${escapeHtml(company || "Company not specified")}</p>
+    <p class="detail-location">${escapeHtml(location || "Location not specified")}${meta ? ` · ${escapeHtml(meta)}` : ""}</p>
+    <div class="detail-grid">
+      ${factMarkup}
+      <div class="detail-grid-full"><span>Skills</span><strong>${escapeHtml(skillsText)}</strong></div>
+    </div>
+    <div class="detail-description">${description ? renderMarkdown(description) : "<p>No detailed description is available for this job.</p>"}</div>
+    ${aiActions}
+    ${linkMarkup ? `<div class="detail-actions" style="margin-top: 16px;">${linkMarkup}</div>` : ""}`;
 }
 
 function formatDate(value) {
@@ -212,12 +366,8 @@ function formatSalary(salary) {
   if (!salary || (salary.minimum == null && salary.maximum == null && salary.annualized_minimum == null && salary.annualized_maximum == null)) return "Salary not disclosed";
   const rawValues = [salary.minimum, salary.maximum].filter((value) => value != null).map(Number);
   if (rawValues.some((value) => !Number.isFinite(value) || value < 0)) return "Salary not disclosed";
-  const intervalLimits = {
-    hourly: [5, 500], daily: [40, 5000], weekly: [100, 25000],
-    monthly: [500, 100000], yearly: [5000, 2000000],
-  };
-  const limits = intervalLimits[salary.interval];
-  if (limits && rawValues.some((value) => value < limits[0] || value > limits[1])) return "Salary not disclosed";
+  // Plausibility validation belongs to the backend salary domain.  The browser
+  // only guards malformed transport values before formatting them.
   const hourlyMinimum = salary.interval === "hourly"
     ? salary.minimum
     : (salary.annualized_minimum == null ? null : Number(salary.annualized_minimum) / 2080);
@@ -283,6 +433,10 @@ export {
   label,
   workModeLabel,
   skillLabel,
+  renderJobTags,
+  renderJobCard,
+  renderJobDetail,
+  buildJobContextText,
   formatDate,
   formatRelativeTime,
   formatSalary,

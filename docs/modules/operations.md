@@ -81,6 +81,32 @@ tail -f logs/collector.log
 tail -f logs/collector-error.log
 ```
 
+## Windows Task Scheduler
+
+The Windows equivalent of the supplied `launchd` job is Task Scheduler. From
+PowerShell, after installing the Python dependencies and creating `.env`, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+& .\scripts\collection\register_windows_task.ps1
+```
+
+The task runs the campaign immediately after registration and then every four
+hours. It writes to `logs\collector.log` and `logs\collector-error.log`. To
+remove it:
+
+```powershell
+& .\scripts\collection\register_windows_task.ps1 -Unregister
+```
+
+The campaign lock is cross-platform: Unix uses `fcntl` and Windows uses the
+native `msvcrt` lock, so manual and scheduled campaigns cannot overlap on
+either platform.
+
+The Windows runner expects the virtual environment at `.venv\Scripts\python.exe`.
+It loads the same project `.env` file as the macOS runner and also runs the
+recruiting-term backfill after the main campaign.
+
 ## Maintenance scripts
 
 - `migrate.py`: apply numbered SQL migrations;
@@ -91,6 +117,22 @@ tail -f logs/collector-error.log
 - `export_schemas.py`: export versioned public JSON schemas;
 - `verify_data_api_contract.py`: validate public data contract;
 - `verify_frontend_api_contract.py`: verify front-end route references.
+
+## Local Ollama on Windows
+
+Ollama is platform-neutral from the application's perspective. Install Ollama
+for Windows, start its local service, and pull the configured models before
+registering the scheduled task:
+
+```powershell
+ollama pull qwen3-embedding:0.6b
+```
+
+The default endpoints remain `http://localhost:11434` for embeddings and
+`http://localhost:11434/v1` for chat-compatible requests. Keep
+`RECOMMEND_EMBEDDING_PROVIDER=Ollama`; no remote API key is required. If
+Ollama is not running, collection still completes, but recommendation indexing
+or Ollama-powered AI requests will report an unavailable-provider error.
 
 Raw snapshots are time-partitioned. Operators should create future partitions, monitor the default partition, use `VACUUM (ANALYZE)`, inspect slow queries with `EXPLAIN (ANALYZE, BUFFERS)`, and apply a retention policy by detaching/dropping expired partitions.
 

@@ -118,6 +118,18 @@ PYTHONPATH=src .venv/bin/python scripts/collection/run_collection_campaign.py
 
 The campaign expands `config/collection_plans.json`, runs source queries concurrently with bounded retries, filters records outside the requested Canada/US scope, completes ingestion and deduplication, then performs salary and recruiting-term enrichment. Collection is single-instance locked so manual and scheduled runs do not overlap.
 
+On Windows, use PowerShell Task Scheduler registration instead of the macOS
+`launchd` plist:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+& .\scripts\collection\register_windows_task.ps1
+```
+
+This runs the same Python campaign immediately and every four hours. See
+[`docs/modules/operations.md`](docs/modules/operations.md) for removal,
+logging, and local Ollama setup.
+
 ## WaterlooWorks
 
 Use the WaterlooWorks area in the browser UI to launch the dedicated Chrome profile. Complete Waterloo SSO/MFA in that window, wait for the connected/ready status, and start collection. The importer opens Full-Cycle, Employer-Student Direct, Graduating, Contract, and Campus boards, clicks `All Jobs`, imports each posting, and continues when one board fails.
@@ -144,7 +156,7 @@ Feature prefixes:
 /api/v1/agent
 ```
 
-Public job responses use the versioned `job.v3`, `job-page.v3`, and `job-facets.v2` contracts in `schemas/`. Source payloads are not returned by the public API.
+Public job responses use `job.v3` list items, `job-detail.v4` details, `job-page.v3` pages, and `job-facets.v2` facets in `schemas/`. Source payloads are not returned by the public API.
 
 ## Tests and checks
 

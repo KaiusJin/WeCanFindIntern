@@ -1,5 +1,7 @@
 import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, setupDropzone, showErrorDialog } from "./helpers.js";
 import { validateAiConfig } from "./settings.js";
+import { extractResumePdf, loadProfileContext } from "./resume-source.js";
+import { readSseEvents } from "./sse.js";
 
 // =========================================================
 // SECTION 4: COVER LETTER GENERATOR & EXPORT
@@ -8,35 +10,12 @@ import { validateAiConfig } from "./settings.js";
 let coverLetterProfile = null;
 let coverLetterProgressTimer = null;
 
-export function profileToCoverLetterText(profile) {
-  const lines = [];
-  const basics = profile?.basics || {};
-  if (basics.full_name) lines.push(basics.full_name);
-  [basics.email, basics.phone, basics.linkedin_url, basics.github_url, basics.portfolio_url]
-    .filter(Boolean).forEach((value) => lines.push(value));
-  const append = (title, entries, formatter) => {
-    if (!entries?.length) return;
-    lines.push("", title);
-    entries.forEach((entry) => lines.push(formatter(entry)));
-  };
-  append("Education", profile.education, (entry) => [entry.institution, entry.degree, entry.major, entry.specialization, entry.graduation_date_text].filter(Boolean).join(" | "));
-  append("Work Experience", profile.work_experience, (entry) => [entry.title, entry.company, entry.start_date_text, entry.end_date_text, entry.description, ...(entry.skills || [])].filter(Boolean).join(" | "));
-  append("Projects", profile.projects, (entry) => [entry.name, entry.description, entry.project_url, entry.github_url, ...(entry.skills || [])].filter(Boolean).join(" | "));
-  append("Skills", profile.skills, (entry) => entry.name);
-  append("Certifications", profile.certifications, (entry) => [entry.name, entry.issuer, entry.issue_date_text].filter(Boolean).join(" | "));
-  append("Languages", profile.languages, (entry) => [entry.name, entry.proficiency].filter(Boolean).join(" | "));
-  append("Awards", profile.awards, (entry) => [entry.title, entry.issuer, entry.date_text, entry.description].filter(Boolean).join(" | "));
-  return lines.join("\n").trim();
-}
-
 async function loadCoverLetterProfile() {
   const status = $("#cl-profile-source-status");
   try {
-    const response = await fetch("/api/v1/profile");
-    if (!response.ok) throw new Error("Could not load Profile.");
-    const profile = await response.json();
-    coverLetterProfile = profile;
-    const text = profileToCoverLetterText(profile);
+    const context = await loadProfileContext();
+    coverLetterProfile = context.profile;
+    const text = context.resume_text || "";
     $("#cl-resume-text").value = text;
     if (status) {
       status.textContent = text ? "Using saved Profile as candidate context" : "Your Profile is empty. Add Profile data or upload a resume.";
@@ -112,19 +91,37 @@ async function extractCoverLetterPdf(file) {
   if (!file) return;
   const label = $("#cl-file-label");
   if (label) label.textContent = `Extracting from ${file.name}…`;
-  const form = new FormData();
-  form.append("file", file);
   try {
-    const response = await fetch("/api/v1/ats/extract-pdf", { method: "POST", body: form });
-    const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error(result.detail || result.error || "Resume extraction failed.");
+    const result = await extractResumePdf(file);
     $("#cl-resume-text").value = result.text;
+    populateCoverLetterContact(result.contact_information);
     if (label) label.textContent = `✓ Extracted from ${file.name}`;
   } catch (error) {
     if (label) label.textContent = "Click or drag & drop resume PDF";
     $("#cl-resume-text").value = "";
     showErrorDialog(error, { title: "Resume upload failed" });
   }
+}
+
+function populateCoverLetterContact(contact) {
+  if (!contact) return;
+  const fields = {
+    "cl-full-name": contact.full_name,
+    "cl-email": contact.email,
+    "cl-phone": contact.phone,
+    "cl-linkedin": contact.linkedin,
+  };
+  Object.entries(fields).forEach(([id, value]) => {
+    const input = $(`#${id}`);
+    if (input) input.value = value || "";
+  });
+}
+
+function clearCoverLetterContact() {
+  ["cl-full-name", "cl-email", "cl-phone", "cl-linkedin"].forEach((id) => {
+    const input = $(`#${id}`);
+    if (input) input.value = "";
+  });
 }
 
 function syncCoverLetterResumeSource({ resetPdf = false } = {}) {
@@ -135,6 +132,7 @@ function syncCoverLetterResumeSource({ resetPdf = false } = {}) {
     if (resetPdf) {
       $("#cl-resume-text").value = "";
       $("#cl-file-label").textContent = "Click or drag & drop resume PDF";
+      clearCoverLetterContact();
     }
   } else loadCoverLetterProfile();
 }
@@ -216,23 +214,7 @@ $("#btn-generate-cl")?.addEventListener("click", async () => {
       }
     };
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop();
-      for (const part of parts) {
-        const line = part.trim();
-        if (!line.startsWith("data: ")) continue;
-        try {
-          handleEvent(JSON.parse(line.slice(6)));
-        } catch (_) { }
-      }
-    }
+    for await (const event of readSseEvents(res)) handleEvent(event);
     if (!data) throw new Error("Generation ended without a result");
     if (!data.ok) throw new Error(data.error || "Generation failed");
 

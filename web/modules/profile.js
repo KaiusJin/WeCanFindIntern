@@ -10,6 +10,7 @@ let profileImportId = null;
 let profileSaveTimer = null;
 let profileSaveInFlight = false;
 let profileSaveQueued = false;
+let profileForceSaveQueued = false;
 let profileDirty = false;
 
 const profileConfigs = [
@@ -70,7 +71,7 @@ function collectProfile() {
       card.querySelectorAll("[data-profile-field]").forEach((input) => { const raw = input.value.trim(); const field = input.dataset.profileField; if (input.dataset.profileType === "list") item[field] = raw ? raw.split(",").map((v) => v.trim()).filter(Boolean) : []; else if (input.dataset.profileType === "lines") item[field] = raw ? raw.split("\n").map((v) => v.trim()).filter(Boolean) : []; else item[field] = raw || null; });
       item[required[key]] ??= "";
       if (key === "skills") {
-        Object.keys(item).filter((field) => field !== "name").forEach((field) => delete item[field]);
+        Object.keys(item).filter((field) => !["id", "name"].includes(field)).forEach((field) => delete item[field]);
         if (!item.name) return;
       }
       payload[key].push(item);
@@ -125,7 +126,10 @@ function scheduleProfileAutosave({ immediate = false } = {}) {
 async function saveProfileWorkspace({ force = false } = {}) {
   if (profileSaveInFlight) {
     profileSaveQueued = true;
-    if (force) profileDirty = true;
+    if (force) {
+      profileDirty = true;
+      profileForceSaveQueued = true;
+    }
     return;
   }
   if (!force && !profileDirty) return;
@@ -138,33 +142,45 @@ async function saveProfileWorkspace({ force = false } = {}) {
 
   const payload = collectProfile();
   const importId = profileImportId;
-  const url = importId ? `/api/v1/profile/imports/${importId}/confirm` : "/api/v1/profile";
+  const confirmingImport = Boolean(importId && force);
+  const url = importId
+    ? (confirmingImport ? `/api/v1/profile/imports/${importId}/confirm` : `/api/v1/profile/imports/${importId}`)
+    : "/api/v1/profile";
   try {
     const response = await fetch(url, {
-      method: importId ? "POST" : "PUT",
+      method: confirmingImport ? "POST" : "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.detail || "Could not save profile.");
-    if (importId && profileImportId === importId) {
+    if (confirmingImport && profileImportId === importId) {
       profileImportId = null;
       $("#profile-draft-banner").hidden = true;
       $("#profile-editor-title").textContent = "Your profile";
     }
-    profileSavedData = result;
     profileData = result;
-    updateProfileCompletion(result.completion_percent ?? 0);
+    if (!importId || confirmingImport) profileSavedData = result;
+    if (result.completion_percent != null) updateProfileCompletion(result.completion_percent);
     const status = $("#profile-import-status");
-    if (importId) {
+    if (confirmingImport) {
       status.hidden = true;
+    } else if (importId) {
+      status.hidden = false;
+      status.textContent = "Import draft changes saved. Apply the draft when review is complete.";
     }
   } catch (error) {
     profileDirty = true;
     showErrorDialog(error, { title: "Profile changes could not be saved" });
   } finally {
     profileSaveInFlight = false;
-    if (profileSaveQueued) scheduleProfileAutosave({ immediate: true });
+    const queuedForce = profileForceSaveQueued;
+    profileForceSaveQueued = false;
+    if (profileSaveQueued) {
+      profileSaveQueued = false;
+      if (queuedForce) void saveProfileWorkspace({ force: true });
+      else scheduleProfileAutosave({ immediate: true });
+    }
   }
 }
 

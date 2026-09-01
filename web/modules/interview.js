@@ -1,12 +1,11 @@
 import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, setupDropzone, showErrorDialog, showSuccessDialog } from "./helpers.js";
 import { validateAiConfig } from "./settings.js";
-import { profileToCoverLetterText as profileToResumeText } from "./cover-letter.js";
+import { extractResumePdf, loadProfileContext } from "./resume-source.js";
+import { readSseEvents } from "./sse.js";
 
 // =========================================================
 // SECTION 3: AI INTERVIEW COACH & AUDIO RECORDER
 // =========================================================
-
-let interviewProfile = null;
 
 const interviewState = {
   questions: [],
@@ -64,15 +63,23 @@ function renderStepper() {
   });
 }
 
+function criteriaResultsMarkup(results) {
+  const verdictIcon = { met: "✓", partial: "◐", missed: "✕" };
+  return (results || []).map((result) => `
+    <div class="criterion-result criterion-${escapeHtml(result.verdict || "missed")}">
+      <span class="criterion-verdict">${verdictIcon[result.verdict] || "✕"}</span>
+      <span class="criterion-text"><strong>${escapeHtml(result.criterion || "")}</strong>${result.note ? ` — ${escapeHtml(result.note)}` : ""}</span>
+    </div>
+  `).join("");
+}
+
 // Candidate source: saved Profile or uploaded resume PDF (same flow as the
 // Cover Letter section).
 async function loadInterviewProfile() {
   const status = $("#int-profile-source-status");
   try {
-    const response = await fetch("/api/v1/profile");
-    if (!response.ok) throw new Error("Could not load Profile.");
-    interviewProfile = await response.json();
-    const text = profileToResumeText(interviewProfile);
+    const context = await loadProfileContext();
+    const text = context.resume_text || "";
     $("#int-resume-text").value = text;
     if (status) {
       status.textContent = text
@@ -98,12 +105,8 @@ async function extractInterviewPdf(file) {
   if (!file) return;
   const label = $("#int-file-label");
   if (label) label.textContent = `Extracting from ${file.name}…`;
-  const form = new FormData();
-  form.append("file", file);
   try {
-    const response = await fetch("/api/v1/ats/extract-pdf", { method: "POST", body: form });
-    const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error(result.detail || result.error || "Resume extraction failed.");
+    const result = await extractResumePdf(file);
     $("#int-resume-text").value = result.text;
     if (label) label.textContent = `✓ Extracted from ${file.name}`;
   } catch (error) {
@@ -186,25 +189,8 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
       throw new Error(await responseErrorMessage(res, "Interview questions could not be generated."));
     }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
     let questions = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop();
-      for (const part of parts) {
-        const line = part.trim();
-        if (!line.startsWith("data: ")) continue;
-        let event;
-        try {
-          event = JSON.parse(line.slice(6));
-        } catch (_) {
-          continue;
-        }
+    for await (const event of readSseEvents(res)) {
         if (event.type === "question") {
           questions.push(event.question);
           interviewState.questions = questions;
@@ -228,7 +214,6 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
           $("#interview-active-card").hidden = false;
           renderActiveQuestion(Math.min(interviewState.currentIndex, questions.length - 1));
         }
-      }
     }
     if (!interviewState.questions.length) {
       throw new Error("Model returned no questions");
@@ -353,10 +338,11 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
     formData.append("session_id", interviewState.sessionId);
     formData.append("question_index", String(interviewState.currentIndex));
   }
-  if (q?.eval_criteria?.length) {
+  const evaluationCriteria = q?.evaluation_criteria || q?.eval_criteria || [];
+  if (evaluationCriteria.length) {
     formData.append(
-      "question_criteria",
-      q.eval_criteria.map((c) => `- ${c}`).join("\n"),
+      "evaluation_criteria",
+      evaluationCriteria.map((c) => `- ${c}`).join("\n"),
     );
   }
 
@@ -407,13 +393,7 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
       const results = data.criteria_results || [];
       if (results.length) {
         criteriaBlock.hidden = false;
-        const verdictIcon = { met: "✓", partial: "◐", missed: "✕" };
-        criteriaList.innerHTML = results.map((result) => `
-          <div class="criterion-result criterion-${escapeHtml(result.verdict || "missed")}">
-            <span class="criterion-verdict">${verdictIcon[result.verdict] || "✕"}</span>
-            <span class="criterion-text"><strong>${escapeHtml(result.criterion || "")}</strong>${result.note ? ` — ${escapeHtml(result.note)}` : ""}</span>
-          </div>
-        `).join("");
+        criteriaList.innerHTML = criteriaResultsMarkup(results);
       } else {
         criteriaBlock.hidden = true;
       }
@@ -536,7 +516,10 @@ async function loadSessionDetail(sessionId) {
             <strong>Q${index + 1} (${escapeHtml(question.category_label || "")}):</strong>
             ${escapeHtml(question.question)}<br/>
             ${answer
-              ? `Score <strong>${answer.score}/100</strong> · ${escapeHtml(answer.summary || "")}`
+              ? `Score <strong>${answer.score}/100</strong> · ${escapeHtml(answer.summary || "")}
+                ${answer.criteria_results?.length
+                  ? `<div class="interview-criteria-wrap">${criteriaResultsMarkup(answer.criteria_results)}</div>`
+                  : ""}`
               : "Not practiced yet"}
           </div>
         `;
@@ -569,10 +552,6 @@ $("#clear-interview")?.addEventListener("click", () => {
   $("#int-file-label").textContent = "Click or drag & drop resume PDF";
   $("#int-resume-text").value = "";
   loadInterviewProfile();
-});
-refreshHistory();
-
-$("#clear-interview")?.addEventListener("click", () => {
   $("#interview-jd-text").value = "";
   $("#interview-answer-text").value = "";
   $("#interview-empty").hidden = false;
@@ -583,3 +562,4 @@ $("#clear-interview")?.addEventListener("click", () => {
     interviewState.stream = null;
   }
 });
+refreshHistory();

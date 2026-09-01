@@ -98,7 +98,7 @@ The important boundary is the separation of source data, canonical business data
 - `NormalizedJob` is stable relative to JobSpy and contains a diagnostic raw row.
 - `CanonicalJobInput` contains normalized company, location, compensation, classification, tags, source identity, and deduplication keys.
 - PostgreSQL stores current canonical fields and separate source/snapshot history.
-- `job.v3` and `job-page.v3` expose a versioned public shape without provider payloads.
+- `job.v3` list items, `job-detail.v4` details, and `job-page.v3` pages expose versioned public shapes without provider payloads.
 
 ## 5. Data processing rules
 
@@ -169,7 +169,7 @@ launch dedicated Chrome
     → per board open URL + All Jobs
     → extract Job IDs and posting details
     → normalize salary/location/description
-    → upsert SQLite by Job ID
+    → insert posting content once by Job ID; refresh observation timestamps only
     → update run/board snapshot
     → API polling and local UI rendering
 ```
@@ -178,7 +178,12 @@ The collector continues after an individual board failure. The snapshot distingu
 
 ## 9. Profile, Tracker, and career tools
 
-Profile provides a `profile.v1` record and a resume-to-draft-to-confirm workflow. PDF/LaTeX input is checked for type, magic bytes/UTF-8, size, structure, active content, minimum text, and language before parsing. The parser never compiles LaTeX and never mutates the saved profile without confirmation.
+Profile provides one current `profile.v1` record rather than a version history,
+plus a resume-to-draft-to-confirm workflow. PDF/LaTeX input is checked for type,
+magic bytes/UTF-8, size, structure, active content, minimum text, and language
+before parsing. The parser never compiles LaTeX. Normal edits autosave the current
+record; imported fields autosave into `profile_imports.parsed_payload` and mutate
+the current profile only when the user confirms Apply.
 
 Tracker stores current application state and event history. Public jobs, WaterlooWorks Job IDs, and custom entries have separate source identity. Bookmark writes are idempotent; stage/field updates create events; bulk actions report per-operation results.
 
@@ -217,7 +222,8 @@ The main browser data patterns are:
 - Jobs use facets plus keyset cursor pages and load details on demand.
 - WaterlooWorks polls asynchronous status and queries local jobs separately.
 - Tracker synchronizes filters to the URL and refreshes bookmark/application state after mutations.
-- Profile edits are local until save; imports are drafts until confirmation.
+- Profile edits autosave the single current profile. Import reviews autosave only
+  their draft payload and do not replace the current profile until explicit Apply.
 - AI settings are browser localStorage values sent per request; server-backed feature state remains in the databases.
 - Agent UI renders assistant/tool/approval results and refreshes memory/preferences independently.
 

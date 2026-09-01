@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260829-header-v3" />
+    <link rel="stylesheet" href="/styles.css?v=20260901-ai-commentary-v1" />
   </head>
   <body>
     <header class="topbar">
@@ -24,9 +24,13 @@
             <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 2v4M16 2v4M3 9h18"></path><path d="m9 14 2 2 4-4"></path></svg>
             <span>WaterlooWorks</span>
           </button>
-          <button class="nav-tab" data-tab="tab-ats" type="button">
+          <button class="nav-tab" data-tab="tab-ats-score" type="button">
             <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
-            <span>ATS Review</span>
+            <span>Resume ATS Score</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-ats-match" type="button">
+            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4"></circle><path d="M12 3v2M12 19v2M3 12h2M19 12h2"></path></svg>
+            <span>Job Match</span>
           </button>
           <button class="nav-tab" data-tab="tab-cover-letter" type="button">
             <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
@@ -247,27 +251,33 @@
               <div>
                 <h2>Run summary</h2>
               </div>
-              <span id="ww-finished-at" class="muted-copy">No import yet</span>
+              <div class="ww-update-times" aria-label="Latest updates">
+                <span id="ww-tracker-updated-at" class="muted-copy">Tracker not updated yet</span>
+                <span id="ww-jobs-updated-at" class="muted-copy">Jobs not updated yet</span>
+              </div>
             </div>
             <div class="ww-stat-grid">
               <div><span>Stored jobs</span><strong id="ww-unique-count">0</strong></div>
-              <div><span>Seen in latest import</span><strong id="ww-posting-success-count">0</strong></div>
+              <div><span>Processed in latest import</span><strong id="ww-posting-processed-count">0</strong></div>
+              <div><span>Submitted applications</span><strong id="ww-application-count">0</strong></div>
               <div><span>Boards failed</span><strong id="ww-board-failed-count">0</strong></div>
             </div>
             <div class="ww-actions">
               <button id="ww-launch" class="primary-button" type="button">Log into WaterlooWorks ↗</button>
               <button id="ww-collect" class="secondary-button" type="button" disabled>Import all job boards</button>
+              <button id="ww-sync-applications" class="secondary-button" type="button" disabled>Sync submitted applications</button>
             </div>
+            <p id="ww-status-message" class="muted-copy" aria-live="polite"></p>
           </article>
 
           <aside class="ww-side-panel">
-            <div class="ww-side-heading"><p class="eyebrow">INCLUDED BOARDS</p><span>5 sources</span></div>
+            <div class="ww-side-heading"><p class="eyebrow">INCLUDED BOARDS</p></div>
             <div class="ww-board-list">
-              <div data-ww-board="full_cycle"><strong>Co-op: Full-Cycle</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
-              <div data-ww-board="employer_student_direct"><strong>Employer-Student Direct</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
-              <div data-ww-board="graduating"><strong>Graduating jobs</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
-              <div data-ww-board="contract"><strong>Contract jobs</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
-              <div data-ww-board="campus"><strong>Campus jobs</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              <div data-ww-board="full_cycle"><strong>full_cycle</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              <div data-ww-board="employer_student_direct"><strong>employer_student_direct</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              <div data-ww-board="graduating"><strong>graduating</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              <div data-ww-board="contract"><strong>contract</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              <div data-ww-board="campus"><strong>campus</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
             </div>
           </aside>
 
@@ -280,123 +290,203 @@
               <input id="ww-job-query" type="search" placeholder="Search title, organization, or description" />
               <select id="ww-job-board">
                 <option value="">All boards</option>
-                <option value="full_cycle">Co-op: Full-Cycle</option>
-                <option value="employer_student_direct">Employer-Student Direct</option>
-                <option value="graduating">Graduating jobs</option>
-                <option value="contract">Contract jobs</option>
-                <option value="campus">Campus jobs</option>
+                <option value="applications">Submitted applications</option>
               </select>
               <button id="ww-job-search" class="secondary-button" type="button">Search</button>
             </div>
             <div id="ww-job-list" class="ww-job-list"><p class="muted-copy">No WaterlooWorks jobs stored yet.</p></div>
+            <div id="ww-infinite-scroll-sentinel" class="infinite-scroll-sentinel">
+              <div id="ww-loading-indicator" class="loading-indicator" hidden>
+                <div class="spinner"></div>
+                <span>Loading more opportunities…</span>
+              </div>
+              <div id="ww-end-of-results" class="end-of-results" hidden>
+                <span>✓ You've reached the end of the results</span>
+              </div>
+            </div>
           </div>
         </section>
       </div>
 
-      <!-- TAB 2: ATS RESUME REVIEW -->
-      <div id="tab-ats" class="tab-pane" hidden>
+      <!-- TAB 2: RESUME ATS SCORE -->
+      <div id="tab-ats-score" class="tab-pane" hidden>
         <section class="hero">
-          <h1>Optimize for the algorithm.</h1>
-          <p class="hero-copy">Check whether your resume parses cleanly, then measure its evidence-backed match to a specific job.</p>
+          <h1>Make your resume ATS-readable.</h1>
+          <p class="hero-copy">Score text extraction, section recognition, contact fields, dates, and reading order without using a job description.</p>
         </section>
 
         <section class="career-workspace">
           <div class="career-form-panel">
             <div class="career-panel-heading">
-              <h2>Resume & Job Target</h2>
-              <button id="clear-ats" class="text-button career-reset-button" type="button">Reset</button>
+              <h2>Resume</h2>
+              <button id="clear-ats-score" class="text-button career-reset-button" type="button">Reset</button>
             </div>
 
             <div class="field-group">
-              <label class="field-label" for="ats-file-input">1. Upload Resume (PDF)</label>
-              <div class="file-dropzone" id="ats-dropzone">
-                <input type="file" id="ats-file-input" accept=".pdf" class="file-input" />
+              <label class="field-label" for="ats-score-file-input">Upload Resume (PDF)</label>
+              <div class="file-dropzone" id="ats-score-dropzone">
+                <input type="file" id="ats-score-file-input" accept=".pdf" class="file-input" />
                 <div class="dropzone-content">
                   <span class="dropzone-icon">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
                   </span>
-                  <span class="dropzone-text" id="ats-file-label">Click or drag & drop resume PDF</span>
+                  <span class="dropzone-text" id="ats-score-file-label">Click or drag & drop resume PDF</span>
                 </div>
               </div>
             </div>
 
             <div class="field-group">
-              <label class="field-label" for="ats-resume-text">Resume Text (Extracted)</label>
-              <textarea id="ats-resume-text" class="career-textarea" rows="6" placeholder="Resume text will appear here automatically when you upload a PDF, or paste text directly..."></textarea>
+              <label class="field-label" for="ats-score-resume-text">Resume Text (Extracted)</label>
+              <textarea id="ats-score-resume-text" class="career-textarea" rows="10" placeholder="Resume text will appear here automatically when you upload a PDF, or paste text directly..."></textarea>
             </div>
 
-            <div class="field-group">
-              <label class="field-label" for="ats-jd-text">2. Target Job Description</label>
-              <textarea id="ats-jd-text" class="career-textarea" rows="6" placeholder="Paste target job description or click 'ATS Review' from any job in the search tab..."></textarea>
-            </div>
-
-            <button id="btn-run-ats" class="primary-button career-btn" type="button">
-              <span>Evaluate Resume–Job Match ↗</span>
+            <button id="btn-run-ats-score" class="primary-button career-btn" type="button">
+              <span>Calculate Resume ATS Score ↗</span>
             </button>
           </div>
 
           <div class="career-results-panel">
             <div class="results-toolbar">
               <div>
-                <p class="eyebrow">TRANSPARENT DIAGNOSTIC REPORT</p>
-                <h2>Resume Analysis</h2>
+                <p class="eyebrow">RESUME PARSING DIAGNOSTIC</p>
+                <h2>ATS Score</h2>
               </div>
             </div>
 
-            <div id="ats-loading" class="loading-state" hidden>
+            <div id="ats-score-loading" class="loading-state" hidden>
               <div class="spinner"></div>
-              <span>Calculating deterministic resume and job evidence…</span>
+              <span>Calculating deterministic resume readability…</span>
             </div>
 
-            <div id="ats-results-stack" class="ats-results-stack">
-              <div id="ats-readiness-card" class="career-card ats-module-card">
-                <div class="ats-card-title-row">
-                  <div><p class="eyebrow">MODULE 1</p><h3>Resume Parsing Readiness</h3></div>
-                  <span id="ats-readiness-mode" class="score-level-pill">Waiting for PDF</span>
-                </div>
-                <div id="ats-readiness-pending" class="ats-module-pending">
-                  <span class="ats-module-number">1</span>
-                  <div><strong>Can an ATS read your resume correctly?</strong><p>Upload your PDF to evaluate text extraction, section recognition, contact fields, dates, and reading order.</p></div>
-                </div>
-                <div id="ats-readiness-result" hidden>
-                  <div class="score-card-header">
-                    <div class="score-badge-circle"><span class="score-number" id="ats-readiness-score">0</span><span class="score-max">/100</span></div>
-                    <div class="score-meta-text"><span class="score-level-pill" id="ats-readiness-level">Readiness</span><p class="score-summary-text" id="ats-readiness-summary"></p></div>
+            <div id="ats-readiness-pending" class="empty-state">
+              <div class="empty-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"></path><path d="M6 17V9"></path><path d="M10 17V5"></path><path d="M14 17v-3"></path><path d="M18 17V7"></path></svg>
+              </div>
+              <h3>Ready to analyze your resume</h3>
+              <p>Upload a PDF or paste your resume text to check how clearly an ATS can read it.</p>
+            </div>
+
+            <div id="ats-readiness-result" class="career-card" hidden>
+              <div class="score-card-header">
+                <div class="score-badge-circle"><span class="score-number" id="ats-readiness-score">0</span><span class="score-max">/100</span></div>
+                <div class="score-meta-text"><span class="score-level-pill" id="ats-readiness-level">Readiness</span><p class="score-summary-text" id="ats-readiness-summary"></p></div>
+              </div>
+              <div class="report-block"><h4>Score breakdown</h4><div id="ats-readiness-breakdown" class="ats-breakdown-list"></div></div>
+              <div class="report-block"><h4>Parsing issues</h4><ul id="ats-readiness-issues" class="career-bullet-list"></ul><p id="ats-readiness-limitations" class="muted-copy"></p></div>
+              <div class="report-block">
+                <h4>AI feedback</h4>
+                <p id="ats-score-ai-status" class="muted-copy">Calculate the score to generate personalized feedback.</p>
+                <div id="ats-score-ai-result" class="ats-ai-feedback" hidden>
+                  <p id="ats-score-ai-summary" class="score-summary-text"></p>
+                  <div id="ats-score-ai-strengths-block" class="ats-ai-feedback-group">
+                    <strong>Strengths</strong>
+                    <ul id="ats-score-ai-strengths" class="career-bullet-list"></ul>
                   </div>
-                  <div class="report-block"><h4>Score breakdown</h4><div id="ats-readiness-breakdown" class="ats-breakdown-list"></div></div>
-                  <div class="report-block"><h4>Parsing issues</h4><ul id="ats-readiness-issues" class="career-bullet-list"></ul><p id="ats-readiness-limitations" class="muted-copy"></p></div>
+                  <div class="ats-ai-feedback-group">
+                    <strong>Priority improvements</strong>
+                    <ul id="ats-score-ai-improvements" class="career-bullet-list"></ul>
+                  </div>
                 </div>
               </div>
-
-              <div id="ats-match-card" class="career-card ats-module-card">
-                <div class="ats-card-title-row">
-                  <div><p class="eyebrow">MODULE 2</p><h3>Resume–Job Match</h3></div>
-                  <span id="ats-match-mode" class="score-level-pill">Waiting for job</span>
-                </div>
-                <div id="ats-match-pending" class="ats-module-pending">
-                  <span class="ats-module-number">2</span>
-                  <div><strong>How well does your evidence match this job?</strong><p>Add a job description to compare required skills, preferred skills, experience, education, and role alignment.</p></div>
-                </div>
-                <div id="ats-match-result" hidden>
-                  <div class="score-card-header">
-                    <div class="score-badge-circle"><span class="score-number" id="ats-match-score">0</span><span class="score-max">/100</span></div>
-                    <div class="score-meta-text"><span class="score-level-pill" id="ats-match-level">Match level</span><p class="score-summary-text" id="ats-match-summary"></p></div>
-                  </div>
-                  <div class="report-block"><h4>Score breakdown</h4><div id="ats-match-breakdown" class="ats-breakdown-list"></div></div>
-                  <div class="report-block"><h4>Matched evidence</h4><div id="ats-match-evidence" class="tag-badges-grid"></div></div>
-                  <div class="report-block"><h4>Missing or partial requirements</h4><div id="ats-match-gaps" class="tag-badges-grid gap-grid"></div></div>
-                  <div id="ats-eligibility-block" class="report-block" hidden><h4>Eligibility flags from the job description</h4><ul id="ats-eligibility-flags" class="career-bullet-list"></ul></div>
-                  <div class="report-block"><h4>Evidence-backed improvements</h4><ul id="ats-match-suggestions" class="career-bullet-list"></ul></div>
-                </div>
-              </div>
-
-              <p class="ats-method-note">These are transparent ATS-style diagnostics, not a simulation of a specific employer, Workday, Greenhouse, or admission probability.</p>
             </div>
           </div>
         </section>
       </div>
 
-      <!-- TAB 3: INTERVIEW COACH -->
+      <!-- TAB 3: JOB MATCH -->
+      <div id="tab-ats-match" class="tab-pane" hidden>
+        <section class="hero">
+          <h1>Measure your job match.</h1>
+          <p class="hero-copy">Compare evidence in your resume with the required skills, experience, education, and role alignment in one job description.</p>
+        </section>
+
+        <section class="career-workspace">
+          <div class="career-form-panel">
+            <div class="career-panel-heading">
+              <h2>Resume & Job Target</h2>
+              <button id="clear-ats-match" class="text-button career-reset-button" type="button">Reset</button>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="ats-match-file-input">1. Upload Resume (PDF)</label>
+              <div class="file-dropzone" id="ats-match-dropzone">
+                <input type="file" id="ats-match-file-input" accept=".pdf" class="file-input" />
+                <div class="dropzone-content">
+                  <span class="dropzone-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                  </span>
+                  <span class="dropzone-text" id="ats-match-file-label">Click or drag & drop resume PDF</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="ats-match-resume-text">Resume Text (Extracted)</label>
+              <textarea id="ats-match-resume-text" class="career-textarea" rows="6" placeholder="Resume text will appear here automatically when you upload a PDF, or paste text directly..."></textarea>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="ats-match-jd-text">2. Target Job Description</label>
+              <textarea id="ats-match-jd-text" class="career-textarea" rows="8" placeholder="Paste a target job description or open Job Match from a job detail..."></textarea>
+            </div>
+
+            <button id="btn-run-ats-match" class="primary-button career-btn" type="button">
+              <span>Calculate Job Match ↗</span>
+            </button>
+          </div>
+
+          <div class="career-results-panel">
+            <div class="results-toolbar">
+              <div>
+                <p class="eyebrow">EVIDENCE-BACKED COMPARISON</p>
+                <h2>Job Match</h2>
+              </div>
+            </div>
+
+            <div id="ats-match-loading" class="loading-state" hidden>
+              <div class="spinner"></div>
+              <span>Comparing resume evidence with the target job…</span>
+            </div>
+
+            <div id="ats-match-pending" class="empty-state">
+              <div class="empty-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4"></circle><path d="M12 3v2M12 19v2M3 12h2M19 12h2"></path></svg>
+              </div>
+              <h3>Ready to compare your resume</h3>
+              <p>Add your resume and a target job description to see how closely your experience matches the role.</p>
+            </div>
+
+            <div id="ats-match-result" class="career-card" hidden>
+              <div class="score-card-header">
+                <div class="score-badge-circle"><span class="score-number" id="ats-match-score">0</span><span class="score-max">/100</span></div>
+                <div class="score-meta-text"><span class="score-level-pill" id="ats-match-level">Match level</span><p class="score-summary-text" id="ats-match-summary"></p></div>
+              </div>
+              <div class="report-block"><h4>Score breakdown</h4><div id="ats-match-breakdown" class="ats-breakdown-list"></div></div>
+              <div class="report-block"><h4>Matched evidence</h4><div id="ats-match-evidence" class="tag-badges-grid"></div></div>
+              <div class="report-block"><h4>Missing or partial requirements</h4><div id="ats-match-gaps" class="tag-badges-grid gap-grid"></div></div>
+              <div id="ats-eligibility-block" class="report-block" hidden><h4>Eligibility flags from the job description</h4><ul id="ats-eligibility-flags" class="career-bullet-list"></ul></div>
+              <div class="report-block"><h4>Evidence-backed improvements</h4><ul id="ats-match-suggestions" class="career-bullet-list"></ul></div>
+              <div class="report-block">
+                <h4>AI feedback</h4>
+                <p id="job-match-ai-status" class="muted-copy">Calculate the match to generate personalized feedback.</p>
+                <div id="job-match-ai-result" class="ats-ai-feedback" hidden>
+                  <p id="job-match-ai-summary" class="score-summary-text"></p>
+                  <div id="job-match-ai-strengths-block" class="ats-ai-feedback-group">
+                    <strong>Strengths</strong>
+                    <ul id="job-match-ai-strengths" class="career-bullet-list"></ul>
+                  </div>
+                  <div class="ats-ai-feedback-group">
+                    <strong>Priority improvements</strong>
+                    <ul id="job-match-ai-improvements" class="career-bullet-list"></ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- TAB 4: INTERVIEW COACH -->
       <div id="tab-interview" class="tab-pane" hidden>
         <section class="hero">
           <h1>Master your interview.</h1>
@@ -547,7 +637,7 @@
             </div>
 
             <!-- Practice History & Progress -->
-            <div id="interview-history-card" class="career-card" style="margin-top: 16px;">
+            <div id="interview-history-card" class="career-card" style="margin-top: 16px;" hidden>
               <div class="history-head">
                 <h2>Practice history</h2>
                 <button id="btn-refresh-history" class="history-refresh" type="button">↻ Refresh</button>
@@ -719,9 +809,9 @@
             <button class="tracker-stat-card active" data-stat-stage="" type="button"><span>Total</span><strong id="stat-total">0</strong></button>
             <button class="tracker-stat-card" data-stat-stage="interested" type="button"><span>Interested</span><strong id="stat-interested">0</strong></button>
             <button class="tracker-stat-card" data-stat-stage="applied" type="button"><span>Applied</span><strong id="stat-applied">0</strong></button>
-            <button class="tracker-stat-card stat-blue" data-stat-stage="interview" type="button"><span>Interviewing</span><strong id="stat-interview">0</strong></button>
+            <button class="tracker-stat-card stat-blue" data-stat-stage="interview" type="button"><span>Interviews</span><strong id="stat-interview">0</strong></button>
             <button class="tracker-stat-card stat-green" data-stat-stage="offer" type="button"><span>Offers</span><strong id="stat-offer">0</strong></button>
-            <button class="tracker-stat-card" data-stat-stage="rejected" type="button"><span>Refused</span><strong id="stat-rejected">0</strong></button>
+            <button class="tracker-stat-card" data-stat-stage="rejected" type="button"><span>Rejected</span><strong id="stat-rejected">0</strong></button>
             <div class="tracker-stat-card"><span>Response rate</span><strong id="stat-rate">0%</strong></div>
           </div>
 
@@ -742,7 +832,7 @@
           <div id="tracker-list-view" class="tracker-view-pane">
             <div id="tracker-bulk-bar" class="tracker-bulk-bar" hidden>
               <strong><span id="tracker-selected-count">0</span> selected</strong>
-              <select id="tracker-bulk-stage" aria-label="Bulk change stage"><option value="">Move to…</option><option value="interested">Interested</option><option value="applied">Applied</option><option value="interview">Interview</option><option value="offer">Offer</option><option value="rejected">Refused</option></select>
+              <select id="tracker-bulk-stage" aria-label="Bulk change stage"><option value="">Move to…</option></select>
               <button id="tracker-bulk-delete" class="bulk-btn bulk-btn-delete" type="button">Delete</button>
               <button id="tracker-clear-selection" class="bulk-btn bulk-btn-clear" type="button">Clear</button>
             </div>
@@ -864,13 +954,7 @@
           </div>
           <div class="field-group">
             <label class="field-label" for="custom-stage">Initial Stage</label>
-            <select id="custom-stage" class="career-select">
-              <option value="interested" selected>Interested (Planning to Apply)</option>
-              <option value="applied">Applied (Submitted)</option>
-              <option value="interview">Interview (In Progress)</option>
-              <option value="offer">Offer (Received)</option>
-              <option value="rejected">Refused</option>
-            </select>
+            <select id="custom-stage" class="career-select"><option value="interested">Interested</option></select>
           </div>
           <div class="field-group">
             <label class="field-label" for="custom-salary">Salary / Pay Rate</label>
@@ -878,17 +962,15 @@
           </div>
           <div class="field-group">
             <label class="field-label" for="custom-source">Source</label>
-            <select id="custom-source" class="career-select">
-              <option value="wecanfindintern">WecanFindIntern</option>
-              <option value="linkedin">LinkedIn</option>
-              <option value="indeed">Indeed</option>
-              <option value="waterloo_work">WaterlooWork</option>
-              <option value="other" selected>Other</option>
-            </select>
+            <select id="custom-source" class="career-select"><option value="other">Other</option></select>
           </div>
           <div class="field-group">
             <label class="field-label" for="custom-applied-at">Applied date</label>
             <input type="date" id="custom-applied-at" class="career-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="custom-deadline">Application deadline</label>
+            <input type="date" id="custom-deadline" class="career-input" />
           </div>
         </div>
         <div class="field-group" style="margin-top: 14px;">
@@ -926,15 +1008,21 @@
             <textarea id="drawer-jd-input" class="career-textarea" rows="14" placeholder="Paste the full job description here..."></textarea>
           </div>
           <div class="tracker-drawer-grid tracker-source-link-grid">
-          <label class="field-group job-content-field"><span class="field-label">Source</span><select id="drawer-source" class="career-select"><option value="wecanfindintern">WecanFindIntern</option><option value="linkedin">LinkedIn</option><option value="indeed">Indeed</option><option value="waterloo_work">WaterlooWork</option><option value="other">Other</option></select></label>
+          <label class="field-group job-content-field"><span class="field-label">Company</span><input id="drawer-company-input" class="career-input" type="text" /></label>
+          <label class="field-group job-content-field"><span class="field-label">Job title</span><input id="drawer-title-input" class="career-input" type="text" /></label>
+          <label class="field-group job-content-field"><span class="field-label">Location</span><input id="drawer-location" class="career-input" type="text" /></label>
+          <label class="field-group job-content-field"><span class="field-label">Work mode</span><select id="drawer-work-mode" class="career-select"><option value="">Not specified</option><option value="hybrid">Hybrid</option><option value="remote">Remote</option><option value="onsite">In-person</option><option value="unknown">Unknown</option></select></label>
+          <label class="field-group job-content-field"><span class="field-label">Source</span><select id="drawer-source" class="career-select"><option value="other">Other</option></select></label>
           <div class="field-group job-content-field"><span class="field-label">Link</span><div class="tracker-link-row"><input id="drawer-url" class="career-input" type="url" /><button id="drawer-copy-job" class="secondary-button" type="button">Copy</button><a id="drawer-open-job" class="secondary-button" href="#" target="_blank" rel="noreferrer">Open ↗</a></div></div>
-          <label class="field-group job-content-field"><span class="field-label">Salary / Pay Rate</span><span id="drawer-salary" class="tracker-cell-text">Not specified</span></label>
+          <label class="field-group job-content-field"><span class="field-label">Salary / Pay Rate</span><input id="drawer-salary" class="career-input" type="text" /></label>
+          <label class="field-group job-content-field"><span class="field-label">Application deadline</span><input id="drawer-deadline" class="career-input" type="date" /></label>
           </div>
         </div>
         <h3 class="tracker-detail-section-title">Application tracking</h3>
         <div class="tracker-drawer-grid tracker-status-grid">
-          <label class="field-group"><span class="field-label">Stage</span><select id="drawer-stage" class="career-select"><option value="interested">Interested</option><option value="applied">Applied</option><option value="interview">Interview</option><option value="offer">Offer</option><option value="rejected">Refused</option></select></label>
+          <label class="field-group"><span class="field-label">Stage</span><select id="drawer-stage" class="career-select"><option value="interested">Interested</option></select></label>
           <label class="field-group"><span class="field-label">Applied date</span><input id="drawer-applied-at" class="career-input" type="date" /></label>
+          <label id="drawer-external-status-group" class="field-group" hidden><span class="field-label">WaterlooWorks status</span><span id="drawer-external-status" class="tracker-cell-text"></span></label>
         </div>
         <div class="drawer-save-row"><span id="drawer-save-status" class="settings-save-feedback" hidden>Saved</span><button id="save-tracker-drawer" class="primary-button" type="button">Save changes</button></div>
         <section class="timeline-section">
@@ -1076,6 +1164,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script type="module" src="/modules/main.js?v=20260829-header-v3"></script>
+    <script type="module" src="/modules/main.js?v=20260901-empty-state-v1"></script>
   </body>
 </html>

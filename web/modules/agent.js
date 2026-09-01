@@ -6,14 +6,20 @@ import {
   showErrorDialog,
   workModeLabel,
 } from "./helpers.js";
+import { readSseEvents } from "./sse.js";
 import { syncDialogScrollLock, validateAiConfig } from "./settings.js";
-import { openJob, state } from "./jobs.js";
-import { openWaterlooWorksJob } from "./waterlooworks.js";
 import {
+  jobContextState,
+  publicJobContext,
+  waterlooWorksJobContext,
+} from "./job-context.js?v=20260831-jobboard-parity-v3";
+import {
+  bookmarkState,
+  loadPublicBookmarks,
+  loadWaterlooWorksBookmarks,
   toggleBookmarkJob,
   toggleWaterlooWorksBookmark,
-  trackerState,
-} from "./tracker.js";
+} from "./bookmarks.js";
 
 // =========================================================
 // SECTION 8: AI AGENT CHAT
@@ -63,10 +69,10 @@ function clearAttachedJob() {
 }
 
 function attachActiveJobContext() {
-  if (!state.activeJobContext) return false;
+  if (!jobContextState.activeJobContext) return false;
   attachedJobContext = {
-    ...state.activeJobContext,
-    source: state.activeJobContext.source || "public",
+    ...jobContextState.activeJobContext,
+    source: jobContextState.activeJobContext.source || "public",
   };
   updateContextChip();
   return true;
@@ -230,8 +236,12 @@ function renderPreview(preview) {
 function renderApprovalCard(approval) {
   const chat = $("#agent-chat");
   if (!chat) return;
+  const existing = [...chat.querySelectorAll("[data-agent-approval-id]")]
+    .find((item) => item.dataset.agentApprovalId === approval.id);
+  if (existing) return;
   const card = document.createElement("div");
   card.className = "agent-approval-card";
+  card.dataset.agentApprovalId = approval.id;
   card.innerHTML = `
     <div class="agent-approval-title">Confirm action · ${escapeHtml(approval.tool_name)}</div>
     <div class="agent-approval-preview">${renderPreview(approval.preview)}</div>
@@ -249,6 +259,39 @@ function renderApprovalCard(approval) {
   });
 }
 
+const TRACKER_WRITE_TOOLS = new Set([
+  "add_interested",
+  "update_tracker_stage",
+  "remove_interested",
+]);
+
+function removeApprovalCard(approvalId) {
+  if (!approvalId) return;
+  [...document.querySelectorAll("[data-agent-approval-id]")]
+    .find((item) => item.dataset.agentApprovalId === approvalId)
+    ?.remove();
+}
+
+async function applyAgentTurnEffects(result) {
+  const successfulTrackerWrite = (result?.tool_calls || []).some(
+    (call) => call.status === "succeeded" && TRACKER_WRITE_TOOLS.has(call.tool_name),
+  );
+  if (!successfulTrackerWrite) return;
+  await refreshAgentBookmarkState();
+  document.dispatchEvent(new CustomEvent("tracker:data-invalidated"));
+}
+
+async function finalizeAgentTurn(result, bubble = null) {
+  const content = result?.message?.content;
+  if (content) {
+    if (!bubble) bubble = appendMessage("assistant", renderMarkdown(content));
+    else bubble.querySelector(".agent-bubble").innerHTML = renderMarkdown(content);
+  }
+  removeApprovalCard(result?.approval?.id);
+  await applyAgentTurnEffects(result);
+  return bubble;
+}
+
 const AGENT_BOOKMARK_ICON_SAVED = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
 const AGENT_BOOKMARK_ICON_OPEN = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
 const AGENT_VIEW_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
@@ -259,8 +302,8 @@ function agentJobKey(job) {
 
 function isAgentJobTracked(job) {
   return job.source === "waterloo_work"
-    ? trackerState.waterlooWorksTracked.has(String(job.job_id))
-    : trackerState.trackedJobIds.has(String(job.job_id));
+    ? bookmarkState.waterlooWorksJobs.has(String(job.job_id))
+    : bookmarkState.publicJobs.has(String(job.job_id));
 }
 
 function renderRecommendationCards(toolCalls, afterElement = null) {
@@ -337,8 +380,7 @@ async function decideApproval(approvalId, approved, card) {
     );
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Approval request failed");
-    card.remove();
-    appendMessage("assistant", renderMarkdown(data.message.content));
+    await finalizeAgentTurn(data);
   } catch (err) {
     card.querySelectorAll("button").forEach((button) => { button.disabled = false; });
     showErrorDialog(err, { title: "Agent action failed" });
@@ -364,6 +406,9 @@ function buildContext() {
       source: ctx.source || "public",
       title: ctx.title,
       company: ctx.company,
+      location: ctx.location,
+      work_mode: ctx.workMode,
+      application_deadline: ctx.applicationDeadline,
       jd: ctx.jd,
     },
   };
@@ -391,6 +436,11 @@ async function sendAgentMessage(text) {
   appendMessage("user", escapeText(text));
   $("#agent-input").value = "";
 
+  const approvalButtons = [
+    ...document.querySelectorAll("[data-agent-approval-id] button"),
+  ];
+  approvalButtons.forEach((button) => { button.disabled = true; });
+
   const streamAbort = new AbortController();
   activeStream = streamAbort;
   setStreamActive(true);
@@ -403,6 +453,7 @@ async function sendAgentMessage(text) {
 
   let bubble = null;
   let accumulated = "";
+  let receivedDone = false;
   const showDelta = (delta) => {
     if (!bubble) {
       thinking.remove();
@@ -443,24 +494,7 @@ async function sendAgentMessage(text) {
     }
     thinking.remove();
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop();
-      for (const part of parts) {
-        const line = part.trim();
-        if (!line.startsWith("data: ")) continue;
-        let event;
-        try {
-          event = JSON.parse(line.slice(6));
-        } catch (_) {
-          continue;
-        }
+    for await (const event of readSseEvents(res)) {
         if (event.type === "text_delta") {
           showDelta(event.delta);
         } else if (event.type === "tool") {
@@ -470,17 +504,17 @@ async function sendAgentMessage(text) {
         } else if (event.type === "error") {
           throw new Error(event.detail || "Agent request failed");
         } else if (event.type === "done") {
+          receivedDone = true;
           currentSessionId = event.result.session.id;
           persistSession();
           updateContextChip();
           renderSessionList();
           loadMemoryStatus();
-          if (bubble && event.result.message?.content) {
-            bubble.querySelector(".agent-bubble").innerHTML =
-              renderMarkdown(event.result.message.content);
-          }
+          bubble = await finalizeAgentTurn(event.result, bubble);
         }
-      }
+    }
+    if (!receivedDone) {
+      throw new Error("The Agent response ended before a final result was received.");
     }
   } catch (err) {
     if (thinking.parentElement) thinking.remove();
@@ -496,6 +530,9 @@ async function sendAgentMessage(text) {
       showErrorDialog(err, { title: "Agent response failed" });
     }
   } finally {
+    approvalButtons.forEach((button) => {
+      if (button.isConnected) button.disabled = false;
+    });
     activeStream = null;
     setStreamActive(false);
   }
@@ -560,13 +597,19 @@ async function deleteMemory(memoryId) {
   }
 }
 
-function viewAgentJob(key) {
+async function viewAgentJob(key) {
   const job = renderedAgentJobs.get(key);
   if (!job) return;
-  if (job.source === "waterloo_work") {
-    openWaterlooWorksJob(String(job.job_id), (job.boards || []).join(","));
-  } else {
-    openJob(String(job.job_id));
+  try {
+    if (job.source === "waterloo_work") {
+      const module = await import("./waterlooworks.js?v=20260831-jobboard-parity-v3");
+      await module.openWaterlooWorksJob(String(job.job_id));
+    } else {
+      const module = await import("./jobs.js?v=20260831-jobboard-parity-v3");
+      await module.openJob(String(job.job_id));
+    }
+  } catch (error) {
+    showErrorDialog(error, { title: "Job details unavailable" });
   }
 }
 
@@ -579,6 +622,15 @@ function updateAgentSaveButtons(key, job) {
       button.title = tracked ? "Tracked in Pipeline" : "Bookmark / Track Job";
     }
   });
+}
+
+async function refreshAgentBookmarkState() {
+  try {
+    await Promise.all([loadPublicBookmarks(), loadWaterlooWorksBookmarks()]);
+    renderedAgentJobs.forEach((job, key) => updateAgentSaveButtons(key, job));
+  } catch (_) {
+    // Recommendation cards remain usable when Tracker state is unavailable.
+  }
 }
 
 async function saveAgentJob(key, button) {
@@ -606,7 +658,7 @@ function closeAttachDialog() {
 function renderCurrentJobOption() {
   const option = $("#agent-current-job-option");
   if (!option) return;
-  const job = state.activeJobContext;
+  const job = jobContextState.activeJobContext;
   option.hidden = !job;
   option.innerHTML = job
     ? `<p>Currently viewed job</p>
@@ -699,26 +751,6 @@ async function searchAttachJobs() {
       button.textContent = "Search";
     }
   }
-}
-
-function publicJobContext(job) {
-  return {
-    id: String(job.id),
-    source: "public",
-    title: job.title,
-    company: job.company_name,
-    jd: `${job.title || "Role"} at ${job.company_name || "Company"}\n\nLocation: ${job.location?.display_name || "Unspecified"}\nWork Mode: ${workModeLabel(job.work_mode)}\nRecruiting Term: ${job.recruiting_term?.display_name || "Unspecified"}\n\nDescription:\n${job.description || ""}`,
-  };
-}
-
-function waterlooWorksJobContext(job) {
-  return {
-    id: String(job.source_job_id),
-    source: "waterloo_work",
-    title: job.title,
-    company: job.organization,
-    jd: `${job.title || "Role"} at ${job.organization || "Company"}\n\nJob ID: ${job.source_job_id}\nLocation: ${job.location_text || "Unspecified"}\nWork Mode: ${workModeLabel(job.work_mode)}\nApplication Deadline: ${job.application_deadline || "Unspecified"}\n\nDescription:\n${job.description || ""}`,
-  };
 }
 
 async function attachSelectedJob(key, button) {
@@ -852,6 +884,7 @@ try {
   );
 } catch (_) { }
 renderSessionList();
+refreshAgentBookmarkState();
 if (currentSessionId) {
   switchSession(currentSessionId);
 } else {

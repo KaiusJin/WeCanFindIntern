@@ -1,6 +1,6 @@
 import { $, escapeHtml, showErrorDialog } from "./helpers.js";
 import { switchTab } from "./navigation.js";
-import { applyRegionFilter } from "./jobs.js";
+import { applyRegionFilter } from "./jobs.js?v=20260831-jobboard-parity-v3";
 
 // =========================================================
 // JOB DISTRIBUTION HEATMAP — real choropleth (d3-geo).

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import fcntl
 import json
 import random
 import signal
@@ -19,9 +18,7 @@ from typing import Any
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.db.repositories.jobs import JobIngestionRepository
-from wecanfindintern.db.repositories.recruiting_term import RecruitingTermRepository
-from wecanfindintern.db.repositories.salary import SalaryRepository
-from wecanfindintern.domain.jobs import canonical_job_from_jobspy, parse_location
+from wecanfindintern.domain.location import parse_location
 from wecanfindintern.ingestion.collection_catalog import expand_collection_catalog
 from wecanfindintern.ingestion.jobspy_adapter import (
     JobSpyQuery,
@@ -29,18 +26,33 @@ from wecanfindintern.ingestion.jobspy_adapter import (
     scrape_checked,
 )
 from wecanfindintern.ingestion.location_query import resolve_query_location
-from wecanfindintern.ingestion.recruiting_term_enrichment import enrich_recruiting_terms
-from wecanfindintern.ingestion.salary_enrichment import enrich_missing_salaries
+from wecanfindintern.ingestion.pipeline import run_ingestion_pipeline
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
+
+
+def acquire_process_lock(lock_file) -> None:
+    """Acquire a non-blocking process lock on Unix or Windows."""
+
+    if sys.platform == "win32":
+        lock_file.seek(0)
+        lock_file.write("0")
+        lock_file.flush()
+        lock_file.seek(0)
+        try:
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            raise BlockingIOError from exc
+    else:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def log(message: str, level: str = "INFO") -> None:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{now_str}] [{level}] {message}", flush=True)
-
-
-def chunks(items: list, size: int):
-    for offset in range(0, len(items), size):
-        yield items[offset : offset + size]
 
 
 async def collect_all(
@@ -212,42 +224,27 @@ async def run(
     counts: Counter[str] = Counter()
     scraped_at = datetime.now(UTC)
     try:
-        # Stage 2: build salary-free records and deduplicate the complete campaign.
-        canonical_jobs = [
-            await asyncio.to_thread(
-                canonical_job_from_jobspy,
-                job,
-                scraped_at=scraped_at,
-                allow_salary_extraction=False,
-            )
-            for job in normalized_jobs
-        ]
-        for batch in chunks(canonical_jobs, batch_size):
-            counts.update(
-                await repository.ingest_batch(
-                    run_id=run_record.internal_id,
-                    jobs=batch,
-                    scraped_at=scraped_at,
-                )
-            )
-        log(
-            f"Dedupe stage complete: created={counts['created']}, "
-            f"merged={counts['merged']}, unchanged={counts['unchanged']}"
+        pipeline = await run_ingestion_pipeline(
+            pool=database.pool,
+            run_id=run_record.internal_id,
+            jobs=normalized_jobs,
+            scraped_at=scraped_at,
+            batch_size=batch_size,
+            outcomes=counts,
+            after_persist=lambda persisted: log(
+                f"Dedupe stage complete: created={persisted['created']}, "
+                f"merged={persisted['merged']}, unchanged={persisted['unchanged']}"
+            ),
         )
 
         # Stages 3 and 4: LLM Enrichments
-        salary = await enrich_missing_salaries(
-            SalaryRepository(database.pool), normalized_jobs
-        )
+        salary = pipeline.salary
         log(
             f"Salary stages complete: source={salary.structured}, "
             f"regex={salary.regex}, deepseek={salary.llm}"
         )
 
-        term = await enrich_recruiting_terms(
-            RecruitingTermRepository(database.pool),
-            [job.source_fingerprint for job in normalized_jobs],
-        )
+        term = pipeline.recruiting_term
         log(
             f"Recruiting term stages complete: regex={term.regex}, "
             f"deepseek={term.llm}, not_found={term.not_found}, "
@@ -269,6 +266,7 @@ async def run(
             "database_stats": {
                 "created": counts["created"],
                 "merged": counts["merged"],
+                "updated": counts["updated"],
                 "unchanged": counts["unchanged"],
             },
             "salary_stats": {
@@ -350,7 +348,7 @@ def main() -> None:
 
     with args.lock_file.open("a+", encoding="utf-8") as lock_file:
         try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquire_process_lock(lock_file)
         except BlockingIOError:
             log(f"Campaign already running; lock is held at {args.lock_file}", level="WARN")
             return
