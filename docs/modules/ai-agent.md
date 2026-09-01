@@ -180,3 +180,20 @@ Explicit preferences are key/value records with a whitelist of keys and a 300-ch
 - Tool/repository failure: result is marked failed and audited.
 
 Session and audit records should contain only the minimum information needed for replay and explanation. API keys, passwords, MFA values, cookies, and arbitrary SQL are outside the Agent contract.
+
+## Concurrency and recovery behavior
+
+Each message turn is bounded to four planner rounds and a feedback budget. A
+pending approval is a single-use state transition: the repository only executes
+the original persisted arguments while the approval is pending, so duplicate
+button clicks or repeated confirmation cannot execute the write twice. A
+conflict is returned as an approval conflict and the client should refresh the
+session.
+
+The Agent does not checkpoint an in-progress model turn. If the request or
+process stops, persisted user/tool/audit records are the recovery evidence; the
+user can resend the request. Reads may be repeated, but writes never happen from
+an incomplete plan. Planner/provider transport errors use the shared gateway's
+bounded retry; malformed JSON, invalid tool arguments, ambiguous references and
+missing jobs terminate safely with no mutation. Recommendation retrieval can
+fall back to lexical/skill signals when vector or optional review is unavailable.

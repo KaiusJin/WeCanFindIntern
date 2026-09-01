@@ -12,4 +12,7 @@
 - [Frontend](frontend.md)
 - [Operations and Verification](operations.md)
 
+Cross-cutting reliability, retry, checkpoint, rollback, and recovery behavior is
+documented in [Reliability and Recovery](../RELIABILITY_AND_RECOVERY.md).
+
 Use the [system-wide technical document](../TECHNICAL_DOCUMENTATION.md) for cross-module flows and the [documentation index](../README.md) for stable contract references.

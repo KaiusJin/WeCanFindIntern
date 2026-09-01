@@ -18,6 +18,8 @@ This directory contains the English technical documentation for the current impl
 | [LLM-Assisted Career Tools](modules/llm-assisted-tools.md) | LLM gateway, cover letters, interview coaching, TTS, prompts, and provider behavior |
 | [Frontend](modules/frontend.md) | Static application shell, ES modules, API integration, state, rendering, and browser storage |
 | [Operations and Verification](modules/operations.md) | Setup, migrations, collection operations, launchd, maintenance scripts, tests, and checks |
+| [Desktop Scheme C](DESKTOP_SCHEME_C.md) | Electron runtime, embedded PostgreSQL/Python, background collection, security, backups, and macOS/Windows release builds |
+| [Reliability and Recovery](RELIABILITY_AND_RECOVERY.md) | Failure classification, concurrency limits, retry policy, idempotent reruns, checkpoints, rollback, and operational recovery |
 
 ## Existing contract references
 

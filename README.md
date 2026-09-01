@@ -1,8 +1,92 @@
 # WeCanFindIntern
 
-WeCanFindIntern is a local job-search and application workspace for internship, co-op, new-grad, and related opportunities. It collects jobs from multiple public sources through a pinned vendored JobSpy integration, standardizes and deduplicates them in PostgreSQL, serves a versioned FastAPI API and static browser UI, imports WaterlooWorks postings through a dedicated interactive Chrome session, and provides Profile, Application Tracker, ATS, cover-letter, mock-interview, and guarded AI Agent workflows.
+> Find the right opportunity, understand your fit, and move from discovery to application in one focused workspace.
 
-## What is included
+[Visit the WeCanFindIntern product site](https://wcfi.kaiusjin.com/) for the product
+overview and user-facing introduction.
+
+WeCanFindIntern is a local-first career workspace for internships, co-ops,
+new-grad roles, and related opportunities. It brings job discovery, resume
+understanding, application preparation, interview practice, and application
+tracking together so that the search is not just a stream of links—it becomes a
+repeatable workflow.
+
+## License
+
+WeCanFindIntern is licensed under the [GNU Affero General Public License,
+version 3 or later](LICENSE).
+
+The AGPL applies to the original project code. Vendored and bundled
+third-party components remain subject to their own licenses; their copyright
+notices and license terms must be preserved when distributing the project or a
+packaged application. Job and profile data are not automatically licensed by
+the AGPL and may be subject to separate source-site terms, privacy
+requirements, and applicable law.
+
+## Why WeCanFindIntern?
+
+Job hunting often means switching between job boards, spreadsheets, resume
+tools, notes, and interview prep. WeCanFindIntern gives those steps a shared
+context:
+
+- discover opportunities across multiple public sources and WaterlooWorks;
+- compare roles using normalized location, schedule, salary, skills, and fit signals;
+- keep one structured profile and turn a resume into a reviewable draft;
+- prepare grounded cover letters, ATS diagnostics, interview questions, and answer feedback;
+- track interest, applications, interviews, offers, and source-specific status in one timeline;
+- use an AI assistant for search and organization while keeping every write action behind confirmation.
+
+## From search to offer
+
+```text
+Discover → Understand → Prepare → Practice → Track → Improve
+   jobs      profile       resume       interview    applications   feedback
+```
+
+The product is designed for students and early-career applicants who want more
+signal and less tab-switching. It supports both a lightweight browser workflow
+for development and a self-contained macOS/Windows desktop workflow for a
+private, persistent personal workspace.
+
+## Product highlights
+
+### A clearer job search
+
+Search results from Indeed, LinkedIn, Glassdoor, ZipRecruiter, and Google Jobs
+are standardized into comparable records instead of being treated as unrelated
+provider pages. WaterlooWorks stays connected to its dedicated authenticated
+Chrome session while still appearing in the same broader career workflow.
+
+### Preparation grounded in your evidence
+
+Profile, resume, ATS, cover-letter, and interview tools work from the candidate's
+actual profile and resume evidence. Deterministic ATS diagnostics explain
+parsing readiness and job-match signals; generated writing is reviewed for
+unsupported claims instead of silently presenting invented experience.
+
+### A tracker that remembers the journey
+
+Bookmarks, applications, stages, events, deadlines, source links, and custom
+opportunities live together. WaterlooWorks external application status is kept
+separate from the user's own workflow stage, so an imported source update does
+not unexpectedly overwrite personal decisions.
+
+### Helpful AI with user control
+
+The Agent can search, explain, recommend, and prepare changes. It cannot perform
+application/profile writes without explicit approval. Provider choice remains
+flexible—remote providers and local Ollama are supported—and repeated requests
+can use content-addressed caching.
+
+### Local-first and privacy-aware
+
+The project keeps application data in your own PostgreSQL/SQLite stores, isolates
+WaterlooWorks browser credentials, validates resume uploads before parsing, and
+supports an Electron desktop build with embedded services and operating-system
+secure storage for AI keys. Public job collection still uses the internet, but
+the application does not require a rented server or a hosted account to run.
+
+## Technical capabilities
 
 - Multi-source JobSpy collection for Indeed, LinkedIn, Glassdoor, ZipRecruiter, and Google Jobs.
 - Stable `NormalizedJob` and `CanonicalJobInput` boundaries independent of provider DataFrame shapes.
@@ -32,6 +116,8 @@ Start with the [system-wide technical documentation](docs/TECHNICAL_DOCUMENTATIO
 - [LLM-assisted career tools](docs/modules/llm-assisted-tools.md)
 - [Frontend](docs/modules/frontend.md)
 - [Operations and verification](docs/modules/operations.md)
+- [Desktop Scheme C: Electron, embedded services, and release builds](docs/DESKTOP_SCHEME_C.md)
+- [Reliability, concurrency, retry, and recovery](docs/RELIABILITY_AND_RECOVERY.md)
 
 Stable contract references remain available for JobSpy, the Data API, the job taxonomy, Profile, Agent design context, and migrations.
 
@@ -43,7 +129,16 @@ Stable contract references remain available for JobSpy, the Data API, the job ta
 - Chrome for WaterlooWorks import
 - API keys for the selected remote AI provider; Ollama can run locally without a remote key
 
+The desktop release bundles Python and PostgreSQL for end users. Desktop builds are
+platform-specific and require Node.js 22+, Python 3.12+, Electron dependencies,
+and the native PostgreSQL build prerequisites described in
+[`docs/DESKTOP_SCHEME_C.md`](docs/DESKTOP_SCHEME_C.md).
+
 ## Quick start
+
+For the self-contained macOS/Windows application (no Docker and no rented server),
+use [Desktop Scheme C](docs/DESKTOP_SCHEME_C.md). The commands below remain the
+browser/development workflow.
 
 Create an environment and install dependencies:
 
@@ -116,7 +211,7 @@ Run the configured campaign:
 PYTHONPATH=src .venv/bin/python scripts/collection/run_collection_campaign.py
 ```
 
-The campaign expands `config/collection_plans.json`, runs source queries concurrently with bounded retries, filters records outside the requested Canada/US scope, completes ingestion and deduplication, then performs salary and recruiting-term enrichment. Collection is single-instance locked so manual and scheduled runs do not overlap.
+The campaign expands `config/collection_plans.json`, runs source queries concurrently with bounded retries, filters records outside the requested Canada/US scope, completes ingestion and deduplication, then performs salary and recruiting-term enrichment. Collection is single-instance locked so manual and scheduled runs do not overlap. Page offsets are not persisted as checkpoints: if the process stops, rerun the campaign; source fingerprints, unique constraints, payload hashes, and batch transactions make this safe. See [`docs/RELIABILITY_AND_RECOVERY.md`](docs/RELIABILITY_AND_RECOVERY.md) for failure handling and recovery rules.
 
 On Windows, use PowerShell Task Scheduler registration instead of the macOS
 `launchd` plist:
@@ -167,6 +262,11 @@ git diff --check
 ```
 
 `make check` runs Ruff, the Python test suite, frontend-to-OpenAPI contract verification, and Node syntax checks for all frontend modules.
+
+For a desktop smoke test, build the platform-specific PostgreSQL bundle and
+backend, then run Electron from `desktop/`; the release workflow is manually
+triggered and produces installers as artifacts. A desktop restore creates a
+safety backup first and rolls back automatically if restore fails.
 
 ## Project conventions
 

@@ -8,7 +8,7 @@ The application uses PostgreSQL for public jobs and all cross-feature applicatio
 
 ## Migration sequence
 
-`scripts/maintenance/migrate.py` applies the numbered SQL files in order and records applied versions. The current schema evolves through core jobs/sources/raw snapshots/ingestion runs, automated collection plans/checkpoints, classification and location hierarchy, salary/recruiting-term enrichment, application tracking, profile storage, AI Agent persistence, and Agent memory persistence.
+`scripts/maintenance/migrate.py` applies the numbered SQL files in order and records applied versions. The current schema evolves through core jobs/sources/raw snapshots/ingestion runs, collection-plan metadata, classification and location hierarchy, salary/recruiting-term enrichment, application tracking, profile storage, AI Agent persistence, and Agent memory persistence. The old persisted collection-checkpoint table was removed; the current campaign resumes by safe idempotent rerun from source.
 
 Each migration is designed to be rerunnable through `IF EXISTS`, `IF NOT EXISTS`, guarded constraints, or controlled alteration checks. The migration directory README describes the operational command and ordering.
 
@@ -93,6 +93,38 @@ Facets are generated from active jobs and return counts for opportunities, sched
 The jobs repository uses source fingerprint and dedupe-block advisory locks inside the transaction. This prevents two concurrent writers from creating the same source or racing on the same cross-source block while allowing unrelated blocks to proceed concurrently.
 
 For an unchanged source payload, the repository updates visibility timestamps and counters without adding a duplicate raw snapshot. For a changed payload, it updates source/current canonical values and writes a new snapshot tied to the ingestion run. Dedupe decisions remain auditable.
+
+### Transaction, concurrency, and recovery contract
+
+An ingestion campaign is not one giant transaction. Canonical jobs are written
+in `batch_size` batches, and each repository mutation owns a short transaction.
+If a batch fails, that batch rolls back; already committed batches and their run
+metadata are retained. Re-running the campaign is the recovery mechanism because
+`source_fingerprint`, source uniqueness, dedupe locks, and payload hashes make
+the write path idempotent.
+
+Advisory locks are acquired inside the transaction and released automatically at
+commit/rollback. A fingerprint lock prevents the same source row from racing; a
+dedupe-block lock serializes only candidates that could actually match. Pool
+limits and statement timeout bound resource usage, but do not replace query
+optimization or deployment-level worker limits.
+
+The API returns a readable error for a transaction or pool failure. It does not
+silently convert a failed write to success, and it does not delete the complete
+job corpus as a rollback. Historical recovery requires a targeted maintenance
+operation or a verified PostgreSQL backup restore.
+
+### Read/write behavior by outcome
+
+| Situation | Database behavior | API/operation behavior |
+|---|---|---|
+| repeated source record | unique lookup and update/unchanged outcome | no duplicate canonical row |
+| changed source payload | current source/canonical fields update and new snapshot by hash | detail remains source-linked |
+| duplicate across sources | audited merge and new source edge | one public job with multiple links |
+| invalid cursor/filter | no SQL mutation | 422 |
+| missing public UUID | no mutation | 404 |
+| timeout/deadlock/constraint error | current transaction rolls back | readable error; retry after diagnosis |
+| raw snapshot partition absent | safe/default partition may receive row | create future partitions and monitor default |
 
 ## Contract files and verification
 

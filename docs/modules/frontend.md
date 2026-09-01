@@ -55,4 +55,19 @@ The API contract verifier scans front-end fetch/link references and checks that 
 
 ## Browser state
 
-AI settings are stored locally in the browser because the service receives them per request. Tracker filter state is reflected in the URL for reload/share behavior. Server-backed application data—profile, jobs, resumes, Tracker, Agent conversations, approvals, memory, and preferences—comes from PostgreSQL/SQLite API calls rather than being treated as browser-only state.
+AI settings are stored locally because the service receives them per request. In the Electron desktop build, API keys are encrypted through the operating-system secure store and only non-secret preferences remain in renderer local storage; the browser development build retains its local-storage fallback. Tracker filter state is reflected in the URL for reload/share behavior. Server-backed application data—profile, jobs, resumes, Tracker, Agent conversations, approvals, memory, and preferences—comes from PostgreSQL/SQLite API calls rather than being treated as browser-only state.
+
+## Loading, failure, and retry behavior
+
+The UI distinguishes initial loading, empty success, partial/board progress, and
+request failure. Filter changes reset keyset cursors; failed list/detail calls do
+not advance the saved cursor. WaterlooWorks status is polled while a background
+task is active, and the displayed board counters remain usable when one board
+fails. Agent approval buttons are disabled/updated from the returned approval
+state so a browser retry cannot assume that a write occurred.
+
+The frontend does not implement an independent automatic retry loop for every
+HTTP request. It displays the server's readable error and lets the user retry;
+server-side collection, provider, and repository layers own bounded retries and
+idempotency. In desktop mode, the preload bridge is the only path for secrets,
+backup, tray, and background-collection commands.

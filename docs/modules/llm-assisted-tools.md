@@ -67,6 +67,27 @@ The front end chooses provider/model/API base and sends them per request. The se
 
 The system does not assume every provider supports structured response formatting: OpenAI, DeepSeek, GLM, Qwen and Ollama receive the JSON-object response format; Gemini relies on the common parser and prompt contract.
 
+## Retry, fallback, and partial-result rules
+
+The gateway retries only transport-like provider failures, with a bounded
+exponential delay and the caller's retry limit. Missing key/model/provider,
+malformed JSON, and business validation failures are not retried. A cache lookup
+hit returns the parsed result without a provider call; an unavailable cache is
+treated as a miss and must not block the feature.
+
+| Feature | Guaranteed fallback |
+|---|---|
+| salary/recruiting-term enrichment | structured source/regex result; failed LLM leaves existing value intact |
+| ATS score/match | deterministic result independent of provider |
+| ATS commentary | deterministic score remains visible if commentary fails |
+| cover letter | up to five Writer/Reviewer rounds, then last non-empty draft marked unapproved |
+| interview answer | typed answer takes precedence; local STT failure is actionable and does not corrupt history |
+| Agent plan | safe assistant response; no approval/write from malformed or incomplete output |
+
+These are fallbacks, not silent claims of success: UI/API responses preserve
+warnings, failure state, approval state, or `review_approved=false` where
+applicable.
+
 ## Frontend responsibilities
 
 The cover-letter, interview, Agent, and settings modules load/save provider

@@ -82,6 +82,25 @@ When the request has `country_indeed=Canada` or `USA`/`United States`, the retur
 
 The campaign takes a single-instance file lock. This protects launchd runs from overlapping with manual runs. `run_collection_campaign_launchd.sh` loads `.env`, changes to the project directory, and redirects normal/error output to the configured log files.
 
+### Concurrency and restart semantics
+
+The semaphore limits query tasks, not the number of API workers or database
+connections. Blocking JobSpy work runs in threads so the event loop can schedule
+other queries. The database phase begins only after all network tasks finish;
+therefore a slow source cannot interleave half-collected source data with an
+already-running dedupe batch.
+
+Page offsets and `seen_for_query` are process-local. The campaign deliberately
+does not persist a per-page checkpoint. If the process stops, rerun the full
+campaign: already committed batches are safe because source fingerprints and
+database unique constraints make them unchanged/idempotent, while changed raw
+payloads are recorded by hash. This is a restart-from-source strategy, not a
+claim of resumable page-level crawling.
+
+The lock only prevents overlap; it does not record progress and should not be
+deleted as a recovery step. A desktop shutdown marks an interrupted background
+run and schedules a fresh run on the next eligible interval.
+
 ## Persistence handoff
 
 The campaign creates one ingestion run, converts every `NormalizedJob` into a salary-free `CanonicalJobInput`, and writes in batches. This ordering is intentional: all source records are available to the deduplication stage before the enrichment stages run, and the same description hash can be used to cache later AI enrichment.
@@ -96,6 +115,13 @@ The single-query CLI supports raw CSV and normalized JSONL output for developmen
 - Unknown country/location: the original location text is preserved; canonical structured fields remain unset rather than guessed.
 - Database failure: the persistence stage fails the run; collection results are not silently reported as fully ingested.
 - LLM enrichment failure: existing structured values are retained; failed enrichment is recorded in stage statistics and is not allowed to erase a job.
+
+The campaign is `partial` when one or more source queries exhaust retries but the
+database pipeline completes. A database or pipeline exception is fatal to the
+current command, but committed earlier batches remain valid and the next run can
+reconcile them. Enrichment is intentionally best-effort: source salary wins,
+then regex, then DeepSeek; a failed model call leaves the job without a derived
+value for a later retry.
 
 ## Safe extension procedure
 

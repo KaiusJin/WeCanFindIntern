@@ -80,6 +80,25 @@ The shared snapshot includes `idle`, `waiting_for_login`, `ready`, `collecting`,
 
 If a board cannot be reached, the board is marked failed and the run can finish as partial. If the browser closes, the service reports idle/closed-browser state rather than claiming a successful sync.
 
+## Retry and restart behavior
+
+The browser collector has bounded readiness waits (page shell, `All Jobs`, and
+posting API/table) and isolates failures at board and posting level. It does not
+persist a browser page cursor or a per-posting checkpoint. A cancelled or
+interrupted run is recovered by launching/reconnecting and running collection
+again.
+
+Recovery is safe because the SQLite repository keys posting content by external
+Job ID and board membership by `(source_job_id, board)`. A known posting is
+counted as known and only `last_seen_at` changes; it is not rewritten from a
+possibly partial page. This also means a second run may revisit every board, but
+cannot create duplicate posting content. A board failure produces a partial run,
+not a rollback of successfully imported boards.
+
+The service lock prevents two collection/application-sync tasks from using the
+same Chrome target concurrently. The SQLite busy timeout handles short write
+contention; it is not a general retry loop for a permanently locked database.
+
 ## API
 
 - `GET /api/v1/waterlooworks/status`

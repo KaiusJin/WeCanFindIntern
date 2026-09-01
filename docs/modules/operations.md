@@ -26,6 +26,12 @@ PYTHONPATH=src .venv/bin/uvicorn wecanfindintern.api.app:app --reload
 
 Open `http://127.0.0.1:8000/`. `/health` performs a database connectivity check.
 
+For the packaged desktop path, use [Desktop Scheme C](../DESKTOP_SCHEME_C.md).
+The Electron main process starts embedded PostgreSQL first, starts the packaged
+FastAPI sidecar on a random loopback port, waits for its `ready` marker, and then
+loads the same static frontend. It does not start Docker. User data lives under
+the OS application-data directory and survives app upgrades.
+
 ## Collection operations
 
 Inspect a provider response:
@@ -60,6 +66,12 @@ PYTHONPATH=src .venv/bin/python scripts/collection/run_collection_campaign.py
 ```
 
 The campaign uses a single-instance lock, retries source failures, and executes collection before persistence/enrichment. Logs include query counts, retries, failures, created/merged/unchanged rows, and enrichment results.
+
+The lock prevents overlap but is not a checkpoint. Page offsets are in memory;
+after interruption, rerun the campaign from the beginning. Committed batches are
+safe to retain because source fingerprints and unique constraints make the write
+path idempotent. A run with exhausted source retries but a completed database
+stage is partial, not a reason to delete the database.
 
 ## macOS launchd
 
@@ -146,6 +158,24 @@ git diff --check
 
 `make check` runs Ruff, pytest, front-end/API contract verification, and Node syntax checks. The tests cover domain normalization/classification, JobSpy adapter behavior, enrichment, repositories/routes, Profile security/parser, Tracker, WaterlooWorks, Agent tools/orchestrator, and Agent memory.
 
+## Recovery runbook
+
+1. Check `/health` and the relevant run summary/log before changing data.
+2. Classify the failure as source, database, provider, Chrome/WaterlooWorks,
+   migration, or packaging failure.
+3. Fix configuration or the external dependency, then retry the smallest safe
+   operation. For a stopped campaign or WaterlooWorks run, a full rerun is the
+   supported recovery path.
+4. For recommendation failures, inspect queue `attempts`/`last_error`; repair
+   the embedding provider before re-enqueueing or backfilling.
+5. For desktop database recovery, create/verify a safety backup before restore;
+   failed restore rolls back automatically. Do not copy a PostgreSQL 16 data
+   directory into another major version.
+6. Run `make check` and `git diff --check` after code/schema changes.
+
+See [Reliability and Recovery](../RELIABILITY_AND_RECOVERY.md) for the outcome
+matrix and detailed per-module rules.
+
 ## Operational failure interpretation
 
 - `/health` failure means PostgreSQL or pool configuration is unavailable.
@@ -154,3 +184,9 @@ git diff --check
 - A partial WaterlooWorks run means one or more boards failed while others may have imported successfully; inspect per-board counts.
 - LLM feature errors are provider/configuration/output errors and do not indicate database corruption.
 - Contract-check failures indicate route/frontend drift and should be fixed before merging a feature change.
+- A desktop sidecar startup timeout means the packaged backend did not emit
+  `ready` within 60 seconds; inspect backend stdout/stderr and migration logs
+  before retrying.
+- A desktop `PG_VERSION` mismatch is a major-version upgrade problem, not a
+  transient startup failure; use the documented backup/restore or `pg_upgrade`
+  path.
