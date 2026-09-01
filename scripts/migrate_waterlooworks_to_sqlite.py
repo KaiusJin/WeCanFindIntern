@@ -6,13 +6,12 @@ import argparse
 import json
 import os
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
 
-from wecanfindintern.waterlooworks.extractor import WATERLOOWORKS_BOARDS
+from wecanfindintern.waterlooworks.config import WATERLOOWORKS_BOARDS, waterlooworks_database_path
 from wecanfindintern.waterlooworks.repository import WaterlooWorksRepository
 
 
@@ -25,12 +24,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     database_url = os.environ["DATABASE_URL"]
-    sqlite_path = Path(
-        os.getenv(
-            "WATERLOOWORKS_DB_PATH",
-            str(Path.home() / ".wecanfindintern" / "waterlooworks.sqlite3"),
-        )
-    ).expanduser()
+    sqlite_path = waterlooworks_database_path()
 
     with psycopg.connect(database_url, row_factory=dict_row) as connection:
         legacy = _read_legacy_postings(connection)

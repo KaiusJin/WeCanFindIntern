@@ -7,21 +7,20 @@ from datetime import date
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from wecanfindintern.domain.salary import ParsedSalary, extract_salary_from_description
-from wecanfindintern.ingestion.jobspy_adapter import (
+from wecanfindintern.domain.normalized_job import (
     CompanyDetails,
     NormalizedJob,
     build_source_fingerprint,
 )
-
-WATERLOOWORKS_ORIGIN = "https://waterlooworks.uwaterloo.ca"
-WATERLOOWORKS_BOARDS: tuple[tuple[str, str], ...] = (
-    ("full_cycle", f"{WATERLOOWORKS_ORIGIN}/myAccount/co-op/full/jobs.htm"),
-    ("employer_student_direct", f"{WATERLOOWORKS_ORIGIN}/myAccount/co-op/direct/jobs.htm"),
-    ("graduating", f"{WATERLOOWORKS_ORIGIN}/myAccount/graduating/jobs.htm"),
-    ("contract", f"{WATERLOOWORKS_ORIGIN}/myAccount/contract/jobs.htm"),
-    ("campus", f"{WATERLOOWORKS_ORIGIN}/myAccount/campus/jobs.htm"),
+from wecanfindintern.domain.salary import ParsedSalary, extract_salary_from_description
+from wecanfindintern.waterlooworks.browser_scripts import (
+    WATERLOOWORKS_EXTRACTION_HELPERS,
 )
+from wecanfindintern.waterlooworks.config import WATERLOOWORKS_ORIGIN
+from wecanfindintern.waterlooworks.taxonomy import (
+    WATERLOOWORKS_BOARD_EMPLOYMENT_EVIDENCE,
+)
+from wecanfindintern.waterlooworks.text import clean_waterlooworks_text
 
 # Structured numeric rate fields, e.g. "Rate Of Pay Per Hour" -> hourly.
 _RATE_FIELD_INTERVALS = {
@@ -53,83 +52,9 @@ _BOILERPLATE_VALUES = {
 
 # This runs inside the authenticated WaterlooWorks job-list page. Authentication
 # remains entirely in Chrome; only the extracted posting records cross into the app.
-EXTRACT_JOBS_SCRIPT = r"""
+EXTRACT_JOBS_SCRIPT = WATERLOOWORKS_EXTRACTION_HELPERS + r"""
 (async () => {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  function callWW(fn, id, name, timeout = 20000) {
-    return new Promise((resolve, reject) => {
-      let finished = false;
-      const timer = setTimeout(() => {
-        if (!finished) {
-          finished = true;
-          reject(new Error(`${name}(${id}) timeout`));
-        }
-      }, timeout);
-      try {
-        fn(id, (data) => {
-          if (finished) return;
-          finished = true;
-          clearTimeout(timer);
-          data == null
-            ? reject(new Error(`${name}(${id}) returned empty`))
-            : resolve(data);
-        });
-      } catch (error) {
-        clearTimeout(timer);
-        reject(error);
-      }
-    });
-  }
-
-  function cleanText(value) {
-    return String(value || "")
-      .replace(/\u00a0/g, " ")
-      .replace(/\r\n/g, "\n")
-      .replace(/\r/g, "\n")
-      .replace(/[ \t]+\n/g, "\n")
-      .replace(/\n[ \t]+/g, "\n")
-      .replace(/[ \t]{2,}/g, " ")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-  }
-
-  function htmlToText(html) {
-    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
-    doc.querySelectorAll("script,style,button,input,select,textarea").forEach((el) => el.remove());
-    doc.querySelectorAll("br").forEach((el) => el.replaceWith("\n"));
-    doc.querySelectorAll("li").forEach((el) => {
-      el.insertBefore(document.createTextNode("\n- "), el.firstChild);
-    });
-    doc.querySelectorAll("tr").forEach((el) => el.appendChild(document.createTextNode("\n")));
-    return cleanText(doc.body.innerText || doc.body.textContent);
-  }
-
-  function parseOverview(html) {
-    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
-    const fields = {};
-    const lists = {};
-    doc.querySelectorAll(".tag__key-value-list.js--question--container").forEach((container) => {
-      const labelElement = container.querySelector(".label");
-      if (!labelElement) return;
-      const label = cleanText(labelElement.textContent).replace(/:$/, "").trim();
-      const clone = container.cloneNode(true);
-      const clonedLabel = clone.querySelector(".label");
-      if (clonedLabel) clonedLabel.remove();
-      clone.querySelectorAll("br").forEach((el) => el.replaceWith("\n"));
-      clone.querySelectorAll("li").forEach((el) => {
-        el.insertBefore(document.createTextNode("\n- "), el.firstChild);
-      });
-      clone.querySelectorAll("tr").forEach((el) => el.appendChild(document.createTextNode("\n")));
-      const value = cleanText(clone.innerText || clone.textContent);
-      if (label && value) fields[label] = value;
-      const items = [...container.querySelectorAll("li")]
-        .map((item) => cleanText(item.textContent))
-        .filter(Boolean);
-      if (items.length) lists[label] = items;
-    });
-    return { fields, lists };
-  }
 
   function getPageRows() {
     return [...document.querySelectorAll("table tbody tr")]
@@ -289,13 +214,7 @@ def normalize_waterlooworks_job(raw: dict[str, Any]) -> NormalizedJob:
         (raw.get("application") or {}).get("deadline")
     )
     board = _text(raw.get("jobBoard"))
-    employment_types = {
-        "full_cycle": ["co-op"],
-        "employer_student_direct": ["co-op"],
-        "graduating": ["new_grad", "full_time"],
-        "contract": ["contract"],
-        "campus": ["part_time"],
-    }.get(board, [])
+    employment_types = list(WATERLOOWORKS_BOARD_EMPLOYMENT_EVIDENCE.get(board, ()))
 
     return NormalizedJob(
         source_fingerprint=build_source_fingerprint("waterlooworks", source_id, source_url),
@@ -318,7 +237,7 @@ def normalize_waterlooworks_job(raw: dict[str, Any]) -> NormalizedJob:
 
 
 def _text(value: Any) -> str:
-    return " ".join(str(value or "").split())
+    return clean_waterlooworks_text(value)
 
 
 def _description(value: Any) -> str | None:
@@ -326,6 +245,11 @@ def _description(value: Any) -> str | None:
     text = re.sub(r"<[^>]+>", " ", text)
     lines = [" ".join(line.split()) for line in text.split("\n")]
     normalized = "\n".join(line for line in lines if line)
+    if normalized.casefold() in {
+        "there was an error loading this job posting",
+        "error loading this job posting",
+    }:
+        return None
     return normalized or None
 
 

@@ -300,3 +300,173 @@ def test_bookmark_waterlooworks_job_includes_salary():
     assert "$40/hr" in params
     assert "waterloo_work" in query
     assert params[0] == "123456"
+
+
+def test_sync_waterlooworks_application_creates_applied_tracker_record():
+    now = datetime.now(UTC)
+    public_id = uuid4()
+
+    class FakeCursor:
+        def __init__(self):
+            self.row = None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, query, params):
+            assert query.count("%s") == len(params)
+            if "SELECT public_id, stage" in query:
+                self.row = None
+            elif "INSERT INTO application_tracker(" in query:
+                self.row = {
+                    "id": public_id,
+                    "job_id": None,
+                    "external_job_id": "471365",
+                    "company_name": "Forward Inc",
+                    "title": "GTM Engineering",
+                    "location_text": "Austin, Texas, United States",
+                    "work_mode": "remote",
+                    "job_url": None,
+                    "job_description": "Build GTM systems.",
+                    "salary_text": "CAD 40–60 /hourly",
+                    "origin_type": "platform_bookmark",
+                    "source": "waterloo_work",
+                    "stage": "applied",
+                    "applied_at": now,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+
+        async def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def cursor(self, row_factory=None):
+            return self.cursor_obj
+
+        def transaction(self):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakePool:
+        def connection(self):
+            return FakeConnection()
+
+    item = asyncio.run(
+        TrackerRepository(FakePool()).sync_waterlooworks_application(
+            source_job_id="471365",
+            company_name="Forward Inc",
+            title="GTM Engineering",
+            stage=ApplicationStage.APPLIED,
+            waterlooworks_status="Applied",
+            submitted_at=now,
+            location_text="Austin, Texas, United States",
+            work_mode="remote",
+            job_description="Build GTM systems.",
+            salary_text="CAD 40–60 /hourly",
+        )
+    )
+    assert item.external_job_id == "471365"
+    assert item.stage == ApplicationStage.APPLIED
+
+
+def test_sync_waterlooworks_application_preserves_user_stage_and_archive_state():
+    now = datetime.now(UTC)
+    public_id = uuid4()
+
+    class FakeCursor:
+        def __init__(self):
+            self.row = None
+            self.update_query = ""
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, query, params):
+            assert query.count("%s") == len(params)
+            if "SELECT public_id, stage" in query:
+                self.row = {
+                    "public_id": public_id,
+                    "stage": "offer",
+                    "external_stage": "applied",
+                    "external_status": "Applied",
+                }
+            elif "UPDATE application_tracker SET" in query:
+                self.update_query = query
+                self.row = {
+                    "id": public_id,
+                    "job_id": None,
+                    "external_job_id": "471365",
+                    "company_name": "Forward Inc",
+                    "title": "GTM Engineering",
+                    "location_text": "Austin, Texas, United States",
+                    "work_mode": "remote",
+                    "job_url": "https://example.test/jobs/471365",
+                    "job_description": "Build GTM systems.",
+                    "application_deadline": None,
+                    "salary_text": "CAD 40.00–60.00 /hourly",
+                    "origin_type": "platform_bookmark",
+                    "source": "waterloo_work",
+                    "stage": "offer",
+                    "external_stage": "rejected",
+                    "external_status": "Not selected",
+                    "applied_at": now,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+
+        async def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def cursor(self, row_factory=None):
+            return self.cursor_obj
+
+        def transaction(self):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    connection = FakeConnection()
+
+    class FakePool:
+        def connection(self):
+            return connection
+
+    item = asyncio.run(
+        TrackerRepository(FakePool()).sync_waterlooworks_application(
+            source_job_id="471365",
+            company_name="Forward Inc",
+            title="GTM Engineering",
+            stage=ApplicationStage.REJECTED,
+            waterlooworks_status="Not selected",
+            submitted_at=now,
+            job_url="https://example.test/jobs/471365",
+        )
+    )
+
+    assert item.stage == ApplicationStage.OFFER
+    assert item.external_stage == ApplicationStage.REJECTED
+    assert ", stage=%s" not in connection.cursor_obj.update_query
+    assert "archived_at" not in connection.cursor_obj.update_query

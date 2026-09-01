@@ -11,8 +11,11 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from wecanfindintern.domain.normalization import to_decimal
+from wecanfindintern.api.dependencies import get_tracker_repository
+from wecanfindintern.application.waterlooworks_tracker import waterlooworks_tracker_fields
 from wecanfindintern.tracker.models import (
+    APPLICATION_STAGE_LABELS,
+    TRACKER_SOURCE_LABELS,
     ApplicationStage,
     TrackedApplication,
     TrackedExternalJobState,
@@ -20,6 +23,7 @@ from wecanfindintern.tracker.models import (
     TrackerBulkDeleteRequest,
     TrackerBulkResult,
     TrackerBulkUpdateRequest,
+    TrackerContractResponse,
     TrackerCreateRequest,
     TrackerEvent,
     TrackerListResponse,
@@ -30,30 +34,17 @@ from wecanfindintern.tracker.repository import TrackerRepository
 tracker_router = APIRouter(prefix="/api/v1/tracker", tags=["Application Tracker"])
 
 
-def get_tracker_repo(request: Request) -> TrackerRepository:
-    return TrackerRepository(request.app.state.database.pool)
+TrackerRepoDep = Annotated[TrackerRepository, Depends(get_tracker_repository)]
 
 
-TrackerRepoDep = Annotated[TrackerRepository, Depends(get_tracker_repo)]
+@tracker_router.get("/contract", response_model=TrackerContractResponse)
+async def get_tracker_contract() -> TrackerContractResponse:
+    """Expose the backend-owned stage/source vocabulary to the frontend."""
 
-
-def _waterlooworks_salary_text(job: dict[str, Any]) -> str | None:
-    """Format structured WaterlooWorks salary the same way the tracker formats public jobs."""
-
-    minimum = to_decimal(job.get("salary_min"))
-    maximum = to_decimal(job.get("salary_max"))
-    if minimum is None and maximum is None:
-        return None
-    if minimum is not None and maximum is not None:
-        amount = f"{minimum:.2f}–{maximum:.2f}"
-    elif minimum is not None:
-        amount = f"from {minimum:.2f}"
-    else:
-        amount = f"up to {maximum:.2f}"
-    parts = [job.get("salary_currency"), amount]
-    if job.get("salary_interval"):
-        parts.append(f"/{job['salary_interval']}")
-    return " ".join(part for part in parts if part)
+    return TrackerContractResponse(
+        stages={stage.value: label for stage, label in APPLICATION_STAGE_LABELS.items()},
+        sources={source.value: label for source, label in TRACKER_SOURCE_LABELS.items()},
+    )
 
 
 @tracker_router.get("", response_model=TrackerListResponse)
@@ -114,15 +105,7 @@ async def bookmark_waterlooworks_job(
     if not job:
         raise HTTPException(status_code=404, detail="WaterlooWorks job not found")
     item = await repo.bookmark_waterlooworks_job(
-        source_job_id=source_job_id,
-        company_name=job.get("organization") or "Company not specified",
-        title=job.get("title") or "Untitled role",
-        location_text=job.get("location_text"),
-        work_mode=job.get("work_mode"),
-        job_url=None,
-        job_description=job.get("description"),
-        application_deadline=job.get("application_deadline"),
-        salary_text=_waterlooworks_salary_text(job),
+        **waterlooworks_tracker_fields(job)
     )
     if not item:
         raise HTTPException(status_code=500, detail="Could not bookmark WaterlooWorks job")
@@ -205,6 +188,8 @@ def build_tracker_csv(items: list[TrackedApplication]) -> str:
             "Work mode",
             "Source",
             "Applied at",
+            "Application deadline",
+            "External status",
             "Salary",
             "Job URL",
         ]
@@ -219,6 +204,10 @@ def build_tracker_csv(items: list[TrackedApplication]) -> str:
                 item.work_mode or "",
                 item.source.value,
                 item.applied_at.isoformat() if item.applied_at else "",
+                item.application_deadline.isoformat()
+                if item.application_deadline
+                else "",
+                item.external_status or "",
                 item.salary_text or "",
                 item.job_url or "",
             ]

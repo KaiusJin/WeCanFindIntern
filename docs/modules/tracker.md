@@ -6,13 +6,13 @@ The Tracker records a candidate’s application workflow independently from chan
 
 ## Stages and source identity
 
-`tracker/models.py` defines the stages `interested`, `applied`, `interview`, `offer`, and `rejected`. The database does not force a single linear transition; users can edit the current stage. Every change is recorded as an event so the current snapshot and historical timeline can be shown separately.
+`tracker/models.py` defines the stages `interested`, `applied`, `interview`, `offer`, and `rejected`. The database does not force a single linear transition; users can edit the current stage. Actual stage transitions are recorded as events so repeated saves do not add duplicate timeline entries.
 
-Tracker origins/sources distinguish platform, WaterlooWorks, and custom records. A platform record uses a public job UUID. A WaterlooWorks record uses `source_job_id`. A custom record stores its own title/company/link/details without a public-job foreign key.
+Tracker origins distinguish platform bookmarks from custom records. Source values retain provider identity for WeCanFindIntern, LinkedIn, Indeed, Glassdoor, ZipRecruiter, Google Jobs, and WaterlooWorks, with `other` as the explicit fallback. A platform record uses a public job UUID. A WaterlooWorks record uses `source_job_id`. A custom record stores its own title/company/link/details without a public-job foreign key.
 
 ## Data model
 
-`TrackedApplication` contains the application id, optional job/source identity, title/company/location/description snapshots, source URL and direct URL, stage, dates, follow-up/deadline information, notes/metadata defined by the model, and timestamps. `TrackedJobState` and `TrackedExternalJobState` represent bookmark state for public and WaterlooWorks jobs.
+`TrackedApplication` contains the application id, optional job/source identity, title/company/location/description snapshots, source URL, stage, application deadline, salary, and timestamps. WaterlooWorks records additionally expose `external_stage` and the raw `external_status`; these are source observations and are not the user's workflow stage. `TrackedJobState` and `TrackedExternalJobState` represent bookmark state for public and WaterlooWorks jobs.
 
 `application_tracker_events` stores stage and field history tied to the tracker record. Foreign keys cascade events when the parent application is deleted.
 
@@ -23,6 +23,11 @@ Tracker origins/sources distinguish platform, WaterlooWorks, and custom records.
 `PUT /bookmarks/{job_id}` creates or returns the public platform Interested record. A unique platform-job index makes repeated clicks idempotent. DELETE removes the bookmark record.
 
 WaterlooWorks has parallel endpoints under `/bookmarks/waterlooworks/{source_job_id}`. The repository retrieves the local WaterlooWorks posting for display fields and keeps it out of the public jobs table.
+
+Submitted-application synchronization updates source-owned job fields and the
+external status. It does not overwrite a user's `stage`, clear `archived_at`, or
+replace manual stage timestamps on an existing record. A record created by the
+first sync uses the external stage only as its initial stage.
 
 ### Full applications
 
@@ -40,6 +45,8 @@ Repeated Interested actions do not create duplicate rows. Stage changes update t
 
 `GET /api/v1/tracker` supports query, stage/source and pagination/sort controls and returns applications plus statistics/page metadata. `GET /bookmarks` and `GET /bookmarks/waterlooworks` return bookmark state used by job cards. `GET /{application_id}/events` returns the chronological timeline.
 
+Response rate is historical rather than current-stage-only: the denominator is every non-Interested or timestamped submission, and the numerator is every record that has ever reached interview or offer. A later rejection or manual stage correction therefore does not erase a previously received response.
+
 Job descriptions and source details are resolved for the tracker drawer. If a source posting has disappeared, the tracker’s saved snapshot remains available and the UI shows that the live description is unavailable rather than deleting the application.
 
 ## CSV export
@@ -48,7 +55,7 @@ Job descriptions and source details are resolved for the tracker drawer. If a so
 
 ## Frontend behavior
 
-`web/modules/tracker.js` handles filter persistence in the browser URL, list paging, page-size selection, selection and bulk stage/delete actions, the detail drawer, event timeline loading, public and WaterlooWorks bookmark buttons, custom-job creation, copy/open-link actions, and CSV export. After a mutation it refreshes the list and bookmark state to keep cards and Tracker consistent.
+`web/modules/tracker.js` handles filter persistence in the browser URL, list paging, page-size selection, selection and bulk stage/delete actions, the detail drawer, event timeline loading, custom-job creation, copy/open-link actions, and CSV export. Shared bookmark state and mutations live in `web/modules/bookmarks.js`; it emits invalidation/open requests that `main.js` routes to the lazily loaded Tracker module, avoiding a Tracker↔bookmarks module cycle.
 
 ## Agent integration
 

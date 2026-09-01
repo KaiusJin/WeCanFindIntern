@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from datetime import date
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from wecanfindintern.api.dependencies import get_tracker_repository
+from wecanfindintern.application.salary_projection import salary_response
+from wecanfindintern.application.waterlooworks_tracker import (
+    sync_waterlooworks_job_to_tracker,
+)
+from wecanfindintern.domain.classification import OpportunityType
 from wecanfindintern.domain.location import clean_location_display
-from wecanfindintern.domain.normalization import annualize_salary, to_decimal
+from wecanfindintern.tracker.repository import TrackerRepository
+from wecanfindintern.waterlooworks.models import (
+    WaterlooWorksJob,
+    WaterlooWorksJobPage,
+)
 from wecanfindintern.waterlooworks.service import WaterlooWorksService
 
 waterlooworks_router = APIRouter(
@@ -16,28 +27,26 @@ waterlooworks_router = APIRouter(
 )
 
 
-def _with_salary(item: dict[str, Any]) -> dict[str, Any]:
+def _to_api_job(item: dict[str, Any]) -> dict[str, Any]:
     """Expose structured salary in the same shape as public job postings."""
 
-    item["location_text"] = clean_location_display(item.get("location_text"))
-    minimum = to_decimal(item.get("salary_min"))
-    maximum = to_decimal(item.get("salary_max"))
-    interval = item.get("salary_interval")
-    salary = None
-    if minimum is not None or maximum is not None:
-        salary = {
-            "interval": interval,
-            "minimum": minimum,
-            "maximum": maximum,
-            "currency": item.get("salary_currency"),
-            "source": "waterlooworks",
-            "annualized_minimum": annualize_salary(minimum, interval),
-            "annualized_maximum": annualize_salary(maximum, interval),
-        }
+    result = dict(item)
+    result["location_text"] = clean_location_display(result.get("location_text"))
+    result["skill_tags"] = list(result.get("skill_tags") or [])
+    minimum = result.get("salary_min")
+    maximum = result.get("salary_max")
+    interval = result.get("salary_interval")
+    salary = salary_response(
+        interval=interval,
+        minimum=minimum,
+        maximum=maximum,
+        currency=result.get("salary_currency"),
+        source="waterlooworks",
+    )
     for key in ("salary_min", "salary_max", "salary_interval", "salary_currency"):
-        item.pop(key, None)
-    item["salary"] = salary
-    return item
+        result.pop(key, None)
+    result["salary"] = salary.model_dump(mode="json") if salary else None
+    return result
 
 
 def get_service(request: Request) -> WaterlooWorksService:
@@ -47,6 +56,11 @@ def get_service(request: Request) -> WaterlooWorksService:
 
 
 ServiceDep = Annotated[WaterlooWorksService, Depends(get_service)]
+WorkModeFilter = Annotated[
+    list[Literal["remote", "hybrid", "onsite", "unknown"]] | None,
+    Query(),
+]
+OpportunityTypeFilter = Annotated[list[OpportunityType] | None, Query()]
 
 
 @waterlooworks_router.get("/status")
@@ -70,33 +84,70 @@ async def collect(service: ServiceDep) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
-@waterlooworks_router.get("/jobs")
+@waterlooworks_router.post("/applications/sync", status_code=202)
+async def sync_applications(
+    service: ServiceDep,
+    tracker: Annotated[TrackerRepository, Depends(get_tracker_repository)],
+) -> dict[str, Any]:
+    try:
+        async def sync_one(job: dict[str, Any]) -> object:
+            return await sync_waterlooworks_job_to_tracker(tracker, job)
+
+        return await service.start_application_sync(sync_one)
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@waterlooworks_router.get("/jobs", response_model=WaterlooWorksJobPage)
 async def list_jobs(
     service: ServiceDep,
     board: str | None = Query(default=None, max_length=40),
     query: str | None = Query(default=None, max_length=200),
+    company: str | None = Query(default=None, max_length=160),
+    skill: str | None = Query(default=None, max_length=80),
+    category: str | None = Query(default=None, max_length=60),
+    city: str | None = Query(default=None, max_length=120),
+    region: str | None = Query(default=None, max_length=32),
+    country: str | None = Query(default=None, max_length=64),
+    work_mode: WorkModeFilter = None,
+    opportunity_type: OpportunityTypeFilter = None,
+    posted_after: date | None = None,
     limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-) -> dict[str, Any]:
+    cursor: str | None = Query(default=None, max_length=256),
+) -> WaterlooWorksJobPage:
     try:
         payload = await service.list_jobs(
             board=board,
             query=query,
+            company=company,
+            skill=skill,
+            category=category,
+            city=city,
+            region=region,
+            country=country,
+            work_modes=work_mode,
+            opportunity_types=(
+                [value.value for value in opportunity_type]
+                if opportunity_type
+                else None
+            ),
+            posted_after=posted_after.isoformat() if posted_after else None,
             limit=limit,
-            offset=offset,
+            cursor=cursor,
+            include_description=False,
         )
-        payload["items"] = [_with_salary(item) for item in payload["items"]]
-        return payload
-    except RuntimeError as error:
+        payload["items"] = [_to_api_job(item) for item in payload["items"]]
+        return WaterlooWorksJobPage.model_validate(payload)
+    except (RuntimeError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
-@waterlooworks_router.get("/jobs/{source_job_id}")
+@waterlooworks_router.get("/jobs/{source_job_id}", response_model=WaterlooWorksJob)
 async def get_job(
     source_job_id: str,
     service: ServiceDep,
-) -> dict[str, Any]:
+) -> WaterlooWorksJob:
     item = await service.get_job(source_job_id)
     if not item:
         raise HTTPException(status_code=404, detail="WaterlooWorks job not found")
-    return _with_salary(item)
+    return WaterlooWorksJob.model_validate(_to_api_job(item))

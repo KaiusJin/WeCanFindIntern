@@ -4,14 +4,16 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
+from wecanfindintern.domain.salary import format_salary_text
 from wecanfindintern.tracker.models import (
+    APPLICATION_STAGE_LABELS,
     ApplicationStage,
     TrackedApplication,
     TrackedJobState,
@@ -20,11 +22,13 @@ from wecanfindintern.tracker.models import (
     TrackerOrigin,
     TrackerStatsResponse,
     TrackerUpdateRequest,
+    application_stage_label,
 )
 
 APPLICATION_COLUMNS = """
     public_id AS id, job_id, external_job_id, company_name, title, location_text, work_mode,
-    job_url, job_description, salary_text, origin_type, source_type AS source, stage,
+    job_url, job_description, application_deadline, salary_text, origin_type,
+    source_type AS source, stage, external_stage, external_status,
     applied_at, created_at, updated_at
 """
 
@@ -34,19 +38,65 @@ SORT_COLUMNS = {
     "applied": "applied_at",
     "company": "lower(company_name)",
 }
+BOOKMARK_CREATED_DETAILS = "Opportunity saved to pipeline"
 
-STAGE_TITLES: dict[str, str] = {
-    "interested": "Interested",
-    "applied": "Applied",
-    "interview": "Interview",
-    "offer": "Offer",
-    "rejected": "Refused",
-}
+def _stage_title_sql(expression: str) -> str:
+    clauses = " ".join(
+        f"WHEN '{stage.value}' THEN '{label}'"
+        for stage, label in APPLICATION_STAGE_LABELS.items()
+    )
+    return f"CASE {expression} {clauses} ELSE initcap({expression}) END"
 
 
 class TrackerRepository:
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self.pool = pool
+
+    @staticmethod
+    async def _record_bookmark_created_event(
+        cursor: Any, application_public_id: UUID, occurred_at: datetime
+    ) -> None:
+        await cursor.execute(
+            """
+            INSERT INTO application_tracker_events (
+                application_id, event_type, title, details, occurred_at
+            )
+            SELECT id, 'created', %s, %s, %s
+            FROM application_tracker WHERE public_id = %s
+            AND NOT EXISTS (
+                SELECT 1 FROM application_tracker_events
+                WHERE application_id = application_tracker.id AND event_type = 'created'
+            );
+            """,
+            (
+                application_stage_label(ApplicationStage.INTERESTED),
+                BOOKMARK_CREATED_DETAILS,
+                occurred_at,
+                application_public_id,
+            ),
+        )
+
+    async def _unbookmark(
+        self, *, reference_predicate: str, parameters: tuple[Any, ...]
+    ) -> tuple[bool, str | None]:
+        """Delete an interested bookmark selected by one trusted repository predicate."""
+
+        async with self.pool.connection() as connection, connection.transaction():
+            async with connection.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(
+                    f"SELECT id, stage FROM application_tracker WHERE {reference_predicate};",
+                    parameters,
+                )
+                row = await cursor.fetchone()
+                if not row:
+                    return False, None
+                if row["stage"] != "interested":
+                    return False, row["stage"]
+                await cursor.execute(
+                    "DELETE FROM application_tracker WHERE id = %s;",
+                    (row["id"],),
+                )
+                return True, None
 
     @staticmethod
     def _list_where(
@@ -123,6 +173,33 @@ class TrackerRepository:
                 row = await cursor.fetchone()
         return TrackedApplication.model_validate(row) if row else None
 
+    async def get_application_for_public_job(
+        self, job_id: UUID
+    ) -> TrackedApplication | None:
+        async with self.pool.connection() as connection:
+            row = await (
+                await connection.execute(
+                    f"""SELECT {APPLICATION_COLUMNS} FROM application_tracker
+                    WHERE job_id=%s AND archived_at IS NULL;""",
+                    (job_id,),
+                )
+            ).fetchone()
+        return TrackedApplication.model_validate(row) if row else None
+
+    async def get_application_for_external_job(
+        self, source: str, external_job_id: str
+    ) -> TrackedApplication | None:
+        async with self.pool.connection() as connection:
+            row = await (
+                await connection.execute(
+                    f"""SELECT {APPLICATION_COLUMNS} FROM application_tracker
+                    WHERE source_type=%s AND external_job_id=%s
+                      AND archived_at IS NULL;""",
+                    (source, external_job_id),
+                )
+            ).fetchone()
+        return TrackedApplication.model_validate(row) if row else None
+
     async def list_tracked_job_states(self) -> list[TrackedJobState]:
         sql = """
             SELECT job_id, public_id AS application_id, stage
@@ -166,12 +243,13 @@ class TrackerRepository:
         query = f"""
             INSERT INTO application_tracker (
                 company_name, title, location_text, work_mode, job_url, job_description,
-                salary_text, stage, applied_at, interview_at, offer_at, rejected_at,
+                application_deadline, salary_text, stage, applied_at,
+                interview_at, offer_at, rejected_at,
                 origin_type, source_type,
                 created_at, updated_at
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s
             ) RETURNING {APPLICATION_COLUMNS};
         """
         values = (
@@ -181,6 +259,7 @@ class TrackerRepository:
             req.work_mode,
             req.job_url,
             req.job_description,
+            req.application_deadline,
             req.salary_text,
             req.stage.value,
             applied_at,
@@ -193,7 +272,7 @@ class TrackerRepository:
             now,
         )
         stage_key = req.stage.value if req.stage else "interested"
-        stage_title = STAGE_TITLES.get(stage_key, stage_key.title())
+        stage_title = application_stage_label(stage_key)
         async with self.pool.connection() as connection, connection.transaction():
             async with connection.cursor(row_factory=dict_row) as cursor:
                 await cursor.execute(query, values)
@@ -202,11 +281,12 @@ class TrackerRepository:
                     """
                         INSERT INTO application_tracker_events (
                             application_id, event_type, title, details, occurred_at
-                        ) SELECT id, 'created', %s, 'Opportunity saved to pipeline', %s
+                        ) SELECT id, 'created', %s, %s, %s
                         FROM application_tracker WHERE public_id = %s;
                         """,
                     (
                         stage_title,
+                        BOOKMARK_CREATED_DETAILS,
                         now,
                         row["id"],
                     ),
@@ -216,43 +296,12 @@ class TrackerRepository:
     async def bookmark_job(self, job_id: UUID) -> TrackedApplication | None:
         """Create or restore one tracker record from canonical job data."""
         now = datetime.now(UTC)
-        sql = f"""
-            INSERT INTO application_tracker (
-                job_id, company_name, title, location_text, work_mode, job_url,
-                job_description, salary_text, origin_type, source_type, stage,
-                created_at, updated_at
-            )
-            SELECT
-                j.public_id,
-                COALESCE(NULLIF(j.company_name, ''), 'Company not specified'),
-                j.title,
-                j.location_text,
-                j.work_mode,
-                COALESCE(js.direct_url, js.source_url),
-                j.description,
-                CASE
-                    WHEN j.salary_min IS NULL AND j.salary_max IS NULL THEN NULL
-                    ELSE concat_ws(' ', j.salary_currency,
-                        CASE
-                            WHEN j.salary_min IS NOT NULL AND j.salary_max IS NOT NULL
-                                THEN trim(to_char(j.salary_min, 'FM999999990.00'))
-                                    || '–'
-                                    || trim(to_char(j.salary_max, 'FM999999990.00'))
-                            WHEN j.salary_min IS NOT NULL
-                                THEN 'from ' || trim(to_char(j.salary_min, 'FM999999990.00'))
-                            ELSE 'up to ' || trim(to_char(j.salary_max, 'FM999999990.00'))
-                        END,
-                        CASE WHEN j.salary_interval IS NOT NULL THEN '/' || j.salary_interval END)
-                END,
-                'platform_bookmark',
-                CASE lower(COALESCE(js.source, ''))
-                    WHEN 'linkedin' THEN 'linkedin'
-                    WHEN 'indeed' THEN 'indeed'
-                    WHEN 'waterloo_work' THEN 'waterloo_work'
-                    WHEN 'waterlooworks' THEN 'waterloo_work'
-                    ELSE 'wecanfindintern'
-                END,
-                'interested', %s, %s
+        select_sql = """
+            SELECT j.public_id, j.company_name, j.title, j.location_text,
+                   j.work_mode, j.description, j.salary_min, j.salary_max,
+                   j.salary_currency, j.salary_interval,
+                   COALESCE(js.direct_url, js.source_url) AS job_url,
+                   js.source AS job_source
             FROM jobs j
             LEFT JOIN LATERAL (
                 SELECT source, source_url, direct_url
@@ -261,7 +310,17 @@ class TrackerRepository:
                 ORDER BY first_seen_at, id
                 LIMIT 1
             ) js ON true
-            WHERE j.public_id = %s
+            WHERE j.public_id = %s;
+        """
+        insert_sql = f"""
+            INSERT INTO application_tracker (
+                job_id, company_name, title, location_text, work_mode, job_url,
+                job_description, salary_text, origin_type, source_type, stage,
+                created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s,
+                'platform_bookmark', %s, 'interested', %s, %s
+            )
             ON CONFLICT (job_id) WHERE job_id IS NOT NULL DO UPDATE SET
                 company_name = EXCLUDED.company_name,
                 title = EXCLUDED.title,
@@ -278,23 +337,46 @@ class TrackerRepository:
         """
         async with self.pool.connection() as connection, connection.transaction():
             async with connection.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(sql, (now, now, job_id))
+                await cursor.execute(select_sql, (job_id,))
+                source_job = await cursor.fetchone()
+                if not source_job:
+                    return None
+                source_type = {
+                    "linkedin": "linkedin",
+                    "indeed": "indeed",
+                    "glassdoor": "glassdoor",
+                    "zip_recruiter": "zip_recruiter",
+                    "ziprecruiter": "zip_recruiter",
+                    "google": "google",
+                    "google_jobs": "google",
+                    "waterloo_work": "waterloo_work",
+                    "waterlooworks": "waterloo_work",
+                }.get((source_job["job_source"] or "").lower(), "wecanfindintern")
+                salary_text = format_salary_text(
+                    source_job["salary_min"],
+                    source_job["salary_max"],
+                    currency=source_job["salary_currency"],
+                    interval=source_job["salary_interval"],
+                )
+                await cursor.execute(
+                    insert_sql,
+                    (
+                        source_job["public_id"],
+                        source_job["company_name"] or "Company not specified",
+                        source_job["title"],
+                        source_job["location_text"],
+                        source_job["work_mode"],
+                        source_job["job_url"],
+                        source_job["description"],
+                        salary_text,
+                        source_type,
+                        now,
+                        now,
+                    ),
+                )
                 row = await cursor.fetchone()
                 if row:
-                    await cursor.execute(
-                        """
-                        INSERT INTO application_tracker_events (
-                            application_id, event_type, title, details, occurred_at
-                        )
-                        SELECT id, 'created', 'Interested', 'Opportunity saved to pipeline', %s
-                        FROM application_tracker WHERE public_id = %s
-                        AND NOT EXISTS (
-                            SELECT 1 FROM application_tracker_events
-                            WHERE application_id = application_tracker.id AND event_type = 'created'
-                        );
-                        """,
-                        (now, row["id"]),
-                    )
+                    await self._record_bookmark_created_event(cursor, row["id"], now)
         return TrackedApplication.model_validate(row) if row else None
 
     async def unbookmark_job(self, job_id: UUID) -> tuple[bool, str | None]:
@@ -305,23 +387,10 @@ class TrackerRepository:
             (False, current_stage) if the application is protected in an active stage.
             (False, None) if the record was not found.
         """
-        async with self.pool.connection() as connection, connection.transaction():
-            async with connection.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(
-                    "SELECT id, stage FROM application_tracker WHERE job_id = %s;",
-                    (job_id,),
-                )
-                row = await cursor.fetchone()
-                if not row:
-                    return False, None
-                stage = row["stage"]
-                if stage != "interested":
-                    return False, stage
-                await cursor.execute(
-                    "DELETE FROM application_tracker WHERE job_id = %s;",
-                    (job_id,),
-                )
-                return True, None
+        return await self._unbookmark(
+            reference_predicate="job_id = %s",
+            parameters=(job_id,),
+        )
 
     async def bookmark_waterlooworks_job(
         self,
@@ -333,7 +402,7 @@ class TrackerRepository:
         work_mode: str | None = None,
         job_url: str | None = None,
         job_description: str | None = None,
-        application_deadline: str | None = None,
+        application_deadline: date | None = None,
         salary_text: str | None = None,
     ) -> TrackedApplication | None:
         """Create or restore one tracker record referencing a WaterlooWorks job."""
@@ -384,20 +453,7 @@ class TrackerRepository:
                 )
                 row = await cursor.fetchone()
                 if row:
-                    await cursor.execute(
-                        """
-                        INSERT INTO application_tracker_events (
-                            application_id, event_type, title, details, occurred_at
-                        )
-                        SELECT id, 'created', 'Interested', 'Opportunity saved to pipeline', %s
-                        FROM application_tracker WHERE public_id = %s
-                        AND NOT EXISTS (
-                            SELECT 1 FROM application_tracker_events
-                            WHERE application_id = application_tracker.id AND event_type = 'created'
-                        );
-                        """,
-                        (now, row["id"]),
-                    )
+                    await self._record_bookmark_created_event(cursor, row["id"], now)
         return TrackedApplication.model_validate(row) if row else None
 
     async def unbookmark_waterlooworks_job(
@@ -405,24 +461,151 @@ class TrackerRepository:
     ) -> tuple[bool, str | None]:
         """Safely remove a WaterlooWorks-tracked job if still 'interested'."""
 
+        return await self._unbookmark(
+            reference_predicate=(
+                "external_job_id = %s AND source_type = 'waterloo_work'"
+            ),
+            parameters=(source_job_id,),
+        )
+
+    async def sync_waterlooworks_application(
+        self,
+        *,
+        source_job_id: str,
+        company_name: str,
+        title: str,
+        stage: ApplicationStage,
+        waterlooworks_status: str,
+        submitted_at: datetime | None = None,
+        location_text: str | None = None,
+        work_mode: str | None = None,
+        job_url: str | None = None,
+        job_description: str | None = None,
+        application_deadline: date | None = None,
+        salary_text: str | None = None,
+    ) -> TrackedApplication:
+        """Mirror source-owned fields without overriding user workflow state."""
+
+        now = datetime.now(UTC)
+        applied_at = submitted_at or now
+        interview_at = now if stage == ApplicationStage.INTERVIEW else None
+        offer_at = now if stage == ApplicationStage.OFFER else None
+        rejected_at = now if stage == ApplicationStage.REJECTED else None
+        stage_title = application_stage_label(stage)
         async with self.pool.connection() as connection, connection.transaction():
             async with connection.cursor(row_factory=dict_row) as cursor:
                 await cursor.execute(
-                    "SELECT id, stage FROM application_tracker "
-                    "WHERE external_job_id = %s AND source_type = 'waterloo_work';",
+                    """
+                    SELECT public_id, stage, external_stage, external_status
+                    FROM application_tracker
+                    WHERE source_type='waterloo_work' AND external_job_id=%s
+                    FOR UPDATE
+                    """,
                     (source_job_id,),
                 )
-                row = await cursor.fetchone()
-                if not row:
-                    return False, None
-                stage = row["stage"]
-                if stage != "interested":
-                    return False, stage
-                await cursor.execute(
-                    "DELETE FROM application_tracker WHERE id = %s;",
-                    (row["id"],),
-                )
-                return True, None
+                previous = await cursor.fetchone()
+                if previous:
+                    await cursor.execute(
+                        f"""
+                        UPDATE application_tracker SET
+                            company_name=%s, title=%s, location_text=%s, work_mode=%s,
+                            job_url=COALESCE(NULLIF(%s, ''), job_url),
+                            job_description=COALESCE(NULLIF(%s, ''), job_description),
+                            application_deadline=COALESCE(%s, application_deadline),
+                            salary_text=COALESCE(%s, salary_text),
+                            origin_type='platform_bookmark',
+                            external_stage=%s, external_status=%s,
+                            applied_at=COALESCE(applied_at, %s),
+                            updated_at=%s
+                        WHERE public_id=%s
+                        RETURNING {APPLICATION_COLUMNS}
+                        """,
+                        (
+                            company_name,
+                            title,
+                            location_text,
+                            work_mode,
+                            job_url,
+                            job_description,
+                            application_deadline,
+                            salary_text,
+                            stage.value,
+                            waterlooworks_status,
+                            applied_at,
+                            now,
+                            previous["public_id"],
+                        ),
+                    )
+                    row = await cursor.fetchone()
+                    if previous["external_status"] != waterlooworks_status:
+                        old_status = previous["external_status"] or "Not previously synced"
+                        await cursor.execute(
+                            """
+                            INSERT INTO application_tracker_events(
+                                application_id, event_type, title, details, occurred_at
+                            ) SELECT id, 'external_status', %s, %s, %s
+                            FROM application_tracker WHERE public_id=%s
+                            """,
+                            (
+                                "WaterlooWorks status updated",
+                                f"{old_status} → {waterlooworks_status}",
+                                now,
+                                previous["public_id"],
+                            ),
+                        )
+                else:
+                    await cursor.execute(
+                        f"""
+                        INSERT INTO application_tracker(
+                            external_job_id, source_type, company_name, title,
+                            location_text, work_mode, job_url, job_description,
+                            application_deadline, salary_text, origin_type, stage,
+                            external_stage, external_status,
+                            applied_at, interview_at, offer_at, rejected_at,
+                            created_at, updated_at
+                        ) VALUES (
+                            %s, 'waterloo_work', %s, %s, %s, %s, %s, %s, %s, %s,
+                            'platform_bookmark', %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        ) RETURNING {APPLICATION_COLUMNS}
+                        """,
+                        (
+                            source_job_id,
+                            company_name,
+                            title,
+                            location_text,
+                            work_mode,
+                            job_url,
+                            job_description,
+                            application_deadline,
+                            salary_text,
+                            stage.value,
+                            stage.value,
+                            waterlooworks_status,
+                            applied_at,
+                            interview_at,
+                            offer_at,
+                            rejected_at,
+                            now,
+                            now,
+                        ),
+                    )
+                    row = await cursor.fetchone()
+                    await cursor.execute(
+                        """
+                        INSERT INTO application_tracker_events(
+                            application_id, event_type, title, details, occurred_at
+                        ) SELECT id, 'created', %s, %s, %s
+                        FROM application_tracker WHERE public_id=%s
+                        """,
+                        (
+                            stage_title,
+                            f"Imported from WaterlooWorks application status: "
+                            f"{waterlooworks_status}",
+                            submitted_at or now,
+                            row["id"],
+                        ),
+                    )
+        return TrackedApplication.model_validate(row)
 
     async def update_application(
         self, public_id: UUID, req: TrackerUpdateRequest
@@ -435,6 +618,7 @@ class TrackerRepository:
             "work_mode",
             "job_url",
             "job_description",
+            "application_deadline",
             "salary_text",
             "applied_at",
             "source",
@@ -488,9 +672,9 @@ class TrackerRepository:
                 """
                 await cursor.execute(query, params)
                 row = await cursor.fetchone()
-                if req.stage is not None:
-                    prev_title = STAGE_TITLES.get(previous["stage"], previous["stage"].title())
-                    new_title = STAGE_TITLES.get(req.stage.value, req.stage.value.title())
+                if req.stage is not None and previous["stage"] != req.stage.value:
+                    prev_title = application_stage_label(previous["stage"])
+                    new_title = application_stage_label(req.stage)
                     occurred = now
                     if req.stage == ApplicationStage.APPLIED and req.applied_at:
                         occurred = req.applied_at
@@ -503,11 +687,7 @@ class TrackerRepository:
                             """,
                         (
                             new_title,
-                            (
-                                f"{prev_title} → {new_title}"
-                                if previous["stage"] != req.stage.value
-                                else f"{new_title} recorded"
-                            ),
+                            f"{prev_title} → {new_title}",
                             occurred,
                             public_id,
                         ),
@@ -534,44 +714,35 @@ class TrackerRepository:
             if timestamp_field:
                 updates.append(f"{timestamp_field} = COALESCE({timestamp_field}, now())")
         params.append(ids)
-        sql = f"UPDATE application_tracker SET {', '.join(updates)} WHERE public_id = ANY(%s);"
+        where = "public_id = ANY(%s)"
+        if stage:
+            where += " AND stage IS DISTINCT FROM %s"
+            params.append(stage.value)
+        sql = f"UPDATE application_tracker SET {', '.join(updates)} WHERE {where};"
         async with self.pool.connection() as connection, connection.transaction():
             if stage:
                 await connection.execute(
-                    """
+                    f"""
                     INSERT INTO application_tracker_events (
                         application_id, event_type, title, details, occurred_at
                     )
                     SELECT id, 'stage_change',
-                        CASE %s
-                            WHEN 'interested' THEN 'Interested'
-                            WHEN 'applied' THEN 'Applied'
-                            WHEN 'interview' THEN 'Interview'
-                            WHEN 'offer' THEN 'Offer'
-                            WHEN 'rejected' THEN 'Refused'
-                            ELSE initcap(%s)
-                        END,
-                        CASE application_tracker.stage
-                            WHEN 'interested' THEN 'Interested'
-                            WHEN 'applied' THEN 'Applied'
-                            WHEN 'interview' THEN 'Interview'
-                            WHEN 'offer' THEN 'Offer'
-                            WHEN 'rejected' THEN 'Refused'
-                            ELSE initcap(application_tracker.stage)
-                        END || ' → ' ||
-                        CASE %s
-                            WHEN 'interested' THEN 'Interested'
-                            WHEN 'applied' THEN 'Applied'
-                            WHEN 'interview' THEN 'Interview'
-                            WHEN 'offer' THEN 'Offer'
-                            WHEN 'rejected' THEN 'Refused'
-                            ELSE initcap(%s)
-                        END,
+                        {_stage_title_sql('%s')},
+                        {_stage_title_sql('application_tracker.stage')} || ' → ' ||
+                        {_stage_title_sql('%s')},
                         now()
                     FROM application_tracker
-                    WHERE public_id = ANY(%s);
+                    WHERE public_id = ANY(%s)
+                      AND application_tracker.stage IS DISTINCT FROM %s;
                     """,
-                    (stage.value, stage.value, stage.value, stage.value, ids),
+                    (
+                        stage.value,
+                        stage.value,
+                        stage.value,
+                        stage.value,
+                        ids,
+                        stage.value,
+                    ),
                 )
             result = await connection.execute(sql, params)
         return result.rowcount or 0
@@ -598,7 +769,20 @@ class TrackerRepository:
                 count(*) FILTER (WHERE stage = 'applied' AND archived_at IS NULL) AS applied,
                 count(*) FILTER (WHERE stage = 'interview' AND archived_at IS NULL) AS interview,
                 count(*) FILTER (WHERE stage = 'offer' AND archived_at IS NULL) AS offer,
-                count(*) FILTER (WHERE stage = 'rejected' AND archived_at IS NULL) AS rejected
+                count(*) FILTER (WHERE stage = 'rejected' AND archived_at IS NULL) AS rejected,
+                count(*) FILTER (
+                    WHERE archived_at IS NULL
+                      AND (
+                          stage <> 'interested'
+                          OR applied_at IS NOT NULL
+                          OR interview_at IS NOT NULL
+                          OR offer_at IS NOT NULL
+                      )
+                ) AS submitted,
+                count(*) FILTER (
+                    WHERE archived_at IS NULL
+                      AND (interview_at IS NOT NULL OR offer_at IS NOT NULL)
+                ) AS responded
             FROM application_tracker;
         """
         async with self.pool.connection() as connection:
@@ -609,7 +793,8 @@ class TrackerRepository:
         interview = int(row.get("interview", 0))
         offer = int(row.get("offer", 0))
         rejected = int(row.get("rejected", 0))
-        submitted = applied + interview + offer + rejected
+        responded = int(row.get("responded", 0))
+        submitted = int(row.get("submitted", 0))
         return TrackerStatsResponse(
             total=int(row.get("total", 0)),
             interested_count=int(row.get("interested", 0)),
@@ -617,26 +802,19 @@ class TrackerRepository:
             interview_count=interview,
             offer_count=offer,
             rejected_count=rejected,
-            response_rate_percent=round((interview + offer) / submitted * 100, 1)
+            response_rate_percent=round(responded / submitted * 100, 1)
             if submitted
             else 0.0,
         )
 
     async def list_events(self, public_id: UUID) -> list[TrackerEvent]:
-        ensure_sql = """
+        ensure_sql = f"""
             INSERT INTO application_tracker_events (
                 application_id, event_type, title, details, occurred_at
             )
             SELECT a.id, 'created',
-                CASE a.stage
-                    WHEN 'interested' THEN 'Interested'
-                    WHEN 'applied' THEN 'Applied'
-                    WHEN 'interview' THEN 'Interview'
-                    WHEN 'offer' THEN 'Offer'
-                    WHEN 'rejected' THEN 'Refused'
-                    ELSE initcap(a.stage)
-                END,
-                'Opportunity saved to pipeline',
+                {_stage_title_sql('a.stage')},
+                %s,
                 COALESCE(a.created_at, now())
             FROM application_tracker a
             WHERE a.public_id = %s
@@ -654,7 +832,7 @@ class TrackerRepository:
         """
         async with self.pool.connection() as connection, connection.transaction():
             async with connection.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(ensure_sql, (public_id,))
+                await cursor.execute(ensure_sql, (BOOKMARK_CREATED_DETAILS, public_id))
                 await cursor.execute(sql, (public_id,))
                 rows = await cursor.fetchall()
         return [TrackerEvent.model_validate(row) for row in rows]

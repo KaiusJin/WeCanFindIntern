@@ -8,9 +8,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from wecanfindintern.waterlooworks.browser import ChromeSession
+from wecanfindintern.waterlooworks.config import WATERLOOWORKS_BOARDS
 from wecanfindintern.waterlooworks.extractor import (
     EXTRACT_JOBS_SCRIPT,
-    WATERLOOWORKS_BOARDS,
 )
 from wecanfindintern.waterlooworks.repository import WaterlooWorksRepository
 from wecanfindintern.waterlooworks.state import WaterlooWorksSnapshot
@@ -44,7 +44,8 @@ class WaterlooWorksCollector:
                 board_state.update(
                     status="collecting",
                     discovered_count=0,
-                    posting_success_count=0,
+                    posting_inserted_count=0,
+                    posting_known_count=0,
                     posting_failed_count=0,
                     error=None,
                 )
@@ -86,7 +87,8 @@ class WaterlooWorksCollector:
                     board_state.update(
                         status="completed",
                         discovered_count=len(raw_board_jobs),
-                        posting_success_count=outcomes["posting_success"],
+                        posting_inserted_count=outcomes["posting_inserted"],
+                        posting_known_count=outcomes["posting_known"],
                         posting_failed_count=outcomes["posting_failed"],
                         error="; ".join(posting_errors[:3])[:500] or None,
                     )
@@ -108,15 +110,20 @@ class WaterlooWorksCollector:
                 "; ".join(board_errors)[:1000] or None,
             )
             self.snapshot.unique_job_count = totals["unique_job_count"]
-            self.snapshot.posting_success_count = totals["posting_success_count"]
+            self.snapshot.posting_inserted_count = totals["posting_inserted_count"]
+            self.snapshot.posting_known_count = totals["posting_known_count"]
             self.snapshot.posting_failed_count = totals["posting_failed_count"]
             self.snapshot.board_failed_count = totals["board_failed_count"]
             self.snapshot.finished_at = datetime.now(UTC).isoformat()
+            self.snapshot.last_job_update_at = await asyncio.to_thread(
+                self.repository.latest_job_update_at
+            )
             self.snapshot.status = totals["status"]
             self.snapshot.message = (
-                f"WaterlooWorks sync finished: {totals['posting_success_count']} postings "
-                f"succeeded, {totals['posting_failed_count']} postings failed; "
-                f"{totals['board_failed_count']} boards failed."
+                f"{totals['posting_failed_count']} posting failures across "
+                f"{totals['board_failed_count']} boards."
+                if totals["posting_failed_count"] or totals["board_failed_count"]
+                else ""
             )
         except asyncio.CancelledError:
             if run_id is not None:
