@@ -9,6 +9,12 @@ __pycache__/
 .env
 .runtime/
 logs/
+desktop/node_modules/
+desktop/out/
+desktop/resources/backend/
+desktop/resources/postgres/
+build/pyinstaller/
+:memory:.ses
 .uvicorn.log
 data/raw/*
 !data/raw/.gitkeep
