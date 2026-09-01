@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "wecanfindintern"
 version = "0.1.0"
 description = "High-throughput job collection and data API for WeCanFindIntern"
+license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.116,<1.0",
