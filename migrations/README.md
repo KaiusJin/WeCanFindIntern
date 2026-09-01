@@ -20,9 +20,24 @@ profiles. A database account without extension-creation permission must have an
 administrator enable them before the migration runs.
 
 The runner records migration filename and checksum in `schema_migrations` and
-refuses to silently accept changes to an already-applied migration. For a legacy
-database created before this tracking table existed, verify its schema and run
+refuses to silently accept changes to an already-applied migration. For an
+existing database created before this tracking table, verify its schema and run
 `migrate.py --baseline-existing` exactly once before applying newer migrations.
+
+```mermaid
+flowchart TD
+    A[Read migrations directory] --> B[Sort filenames lexicographically]
+    B --> C[Read schema_migrations]
+    C --> D{File already recorded?}
+    D -->|yes, checksum matches| E[Skip]
+    D -->|yes, checksum differs| F[Stop with checksum mismatch]
+    D -->|no| G[Execute SQL transaction]
+    G --> H[Record filename and checksum]
+    E --> I{More files?}
+    H --> I
+    I -->|yes| D
+    I -->|no| J[Migration complete]
+```
 
 ## Ordering
 

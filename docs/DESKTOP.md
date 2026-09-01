@@ -1,21 +1,25 @@
-# Desktop Scheme C (local-first Electron application)
+# Desktop Application
 
-Scheme C packages the existing web UI and FastAPI application as a self-contained
-desktop product for macOS and Windows. It does not require Docker, a rented server,
-or a separately installed Python/PostgreSQL runtime.
+The delivered desktop runtime packages the web UI and FastAPI application as a
+self-contained local-first product for macOS and Windows. End users run the
+bundled Python service and PostgreSQL runtime directly from Electron; Docker and
+a separately installed Python/PostgreSQL runtime are development dependencies,
+not desktop runtime dependencies.
 
 ## Runtime architecture
 
-```text
-Electron main process
-  ├─ sandboxed BrowserWindow + restricted preload bridge
-  ├─ tray, login startup, backup/restore, OS secure storage
-  ├─ embedded PostgreSQL 16 child process (random loopback port)
-  └─ packaged Python/FastAPI child process (random loopback port)
-       ├─ packaged migrations
-       ├─ static web UI and local API
-       ├─ resident four-hour public-job collector
-       └─ recommendation-index maintenance
+```mermaid
+flowchart TD
+    E[Electron main process] --> R[Sandboxed BrowserWindow]
+    E --> I[Restricted preload IPC]
+    E --> S[OS safeStorage]
+    E --> P[Embedded PostgreSQL 16<br/>random loopback port]
+    E --> B[Packaged Python/FastAPI sidecar<br/>random loopback port]
+    B --> M[Checksummed migrations]
+    B --> W[Static web and token-protected API]
+    B --> C[Resident four-hour collection]
+    B --> X[Recommendation index maintenance]
+    R -->|exact origin + injected token| W
 ```
 
 The renderer has no Node.js access. Context isolation and Chromium sandboxing are
@@ -51,10 +55,21 @@ applied migration checksums prevent silent schema drift.
 
 AI API keys are encrypted through Electron `safeStorage` (macOS Keychain and Windows
 DPAPI-backed storage). Non-secret AI preferences remain in renderer local storage.
-On first desktop launch, legacy keys found in local storage are moved to secure
+On first desktop launch, existing keys found in local storage are moved to secure
 storage and removed from the browser record.
 
 ## Backup and recovery
+
+```mermaid
+flowchart TD
+    A[User selects backup] --> Q[Schedule pending restore copy]
+    Q --> R[Electron restart]
+    R --> S[Create pre-restore safety backup]
+    S --> T{pg_restore succeeds?}
+    T -->|yes| U[Remove pending file and continue startup]
+    T -->|no| V[Restore safety backup]
+    V --> W[Preserve failed restore and report error]
+```
 
 The app creates one PostgreSQL custom-format backup per day and retains the latest
 14 automatic backups. Manual backup and restore are available from the tray.
@@ -74,6 +89,16 @@ manual recovery. A backup is not a substitute for source-level reruns: public
 collection and WaterlooWorks use their own idempotent restart semantics.
 
 ## Build prerequisites
+
+The build pipeline is platform-native:
+
+```mermaid
+flowchart LR
+    N[Install Node/Python build dependencies] --> P[Build portable PostgreSQL + extensions]
+    P --> B[Build PyInstaller FastAPI sidecar]
+    B --> E[Electron Forge package/make]
+    E --> A[Platform installer artifacts]
+```
 
 Common:
 
@@ -128,9 +153,8 @@ publish to an app store.
 
 Unsigned artifacts are suitable for internal verification. For normal direct
 distribution, set `APPLE_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
-`APPLE_TEAM_ID` in the macOS release environment. Windows code signing can be
-added to the Squirrel maker/release job when a certificate is available. Signing
-is independent of app-store submission.
+`APPLE_TEAM_ID` in the macOS release environment. Electron Forge applies those
+settings during the macOS packaging/notarization path.
 
 Major PostgreSQL upgrades must not point a newer server directly at the existing
 data directory. Ship a backup/restore or `pg_upgrade` migration before changing the
@@ -140,7 +164,7 @@ binaries while preserving the data directory.
 ## Operational boundaries
 
 - No Docker process is started by the desktop build.
-- No inbound network port is exposed; both services bind to loopback.
+- No externally reachable listener is created; both services bind to loopback.
 - Public job collection still needs outbound internet access and must respect
   source-site terms and rate limits.
 - WaterlooWorks requires a locally installed Google Chrome and interactive SSO/MFA.
@@ -155,7 +179,7 @@ binaries while preserving the data directory.
 |---|---|---|
 | app opens but API is unavailable | backend sidecar exited or timed out | inspect `logs/backend-*.log`, then retry after fixing resources/migrations |
 | PostgreSQL bundle incomplete | native runtime or pgvector artifact missing | rebuild the platform bundle; do not use a host data directory |
-| PostgreSQL major mismatch | existing user data was created by another major version | restore a compatible dump or perform a planned `pg_upgrade` |
+| PostgreSQL major mismatch | existing user data was created by another major version | restore a compatible dump or perform the documented `pg_upgrade` procedure |
 | `401 Desktop authentication required` | renderer request lacks the current launch token | reload through Electron; do not expose the sidecar port publicly |
 | collection status says interrupted | previous background task stopped while `running` | leave existing data in place; the scheduler performs a fresh idempotent run |
 | restore failed | selected custom-format dump was incompatible/corrupt or DB failed | automatic safety rollback; preserve both error logs and safety backup |

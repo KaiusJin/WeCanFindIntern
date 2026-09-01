@@ -4,6 +4,17 @@
 
 WaterlooWorks is a browser-assisted, local-only source. It is not inserted into the public PostgreSQL `jobs` table and is not passed through JobSpy’s cross-source deduplication. WaterlooWorks identity is the external Job ID. A Job ID and its first-observed posting data are inserted once and remain immutable on later encounters. Board membership is a separate relationship: a later encounter can add a previously unseen board edge. Re-observation updates only `last_seen_at` freshness metadata on the job and existing board edge; it never rewrites posting content.
 
+```mermaid
+flowchart LR
+    U[User] -->|launch and SSO/MFA| C[Dedicated Chrome profile]
+    C --> B[Five WaterlooWorks boards]
+    B --> X[Browser scripts and extractor]
+    X --> S[(WaterlooWorks SQLite)]
+    S --> A[WaterlooWorks API]
+    A --> F[Jobs UI and recommendations]
+    A --> T[Tracker snapshot and status sync]
+```
+
 The module consists of:
 
 | File | Responsibility |
@@ -55,6 +66,24 @@ The configured boards are:
 
 The collector updates the shared `WaterlooWorksSnapshot`, so the UI can display progress without waiting for the whole run.
 
+```mermaid
+sequenceDiagram
+    participant S as WaterlooWorksService
+    participant C as Dedicated Chrome
+    participant D as Extractor
+    participant Q as SQLite repository
+    loop each configured board
+        S->>C: navigate and wait for authenticated shell
+        C->>C: select All Jobs and discover posting IDs
+        loop each posting
+            C->>D: page, API or table payload
+            D->>Q: insert new Job ID or update freshness
+        end
+        Q-->>S: board counters and errors
+    end
+    S-->>S: finish success or partial run
+```
+
 ## Extraction contract
 
 The normalized local record includes source Job ID, title, organization, division, location text, city/province/country, work mode, structured salary, posted date, application deadline, application URL, application delivery, required documents, source URL, description, and the raw posting payload.
@@ -67,7 +96,7 @@ Salary extraction converts WaterlooWorks fields into minimum, maximum, interval,
 
 On startup, the service reads the most recent run and reconstructs the UI snapshot. Job content is immutable by source Job ID: a normal re-encounter is counted separately as already known and does not rewrite the posting payload, description, deadline, salary, or derived classification. It updates only `last_seen_at`. A missing board edge may be inserted, while an existing edge updates only its own `last_seen_at`. Schema compatibility upgrades may add missing columns, but they do not backfill or delete existing job content. Submitted-application status remains independently refreshable in `waterlooworks_applications` and Tracker.
 
-List queries support board, text query, company, skill, category, location, work mode, canonical opportunity type, posted date, limit, cursor, and `include_description`. `full_cycle` and `employer_student_direct` map to `opportunity_type=co_op`; they are not silently relabeled as internships. The Campus board contributes `part_time` employment/schedule evidence but does not force an opportunity type, because schedule and opportunity are separate dimensions. Pagination is cursor-based and responses expose `total_count`, `next_cursor`, and `has_more`. List and detail responses use the same row decoder and remove all internal/legacy fields.
+List queries support board, text query, company, skill, category, location, work mode, canonical opportunity type, posted date, limit, cursor, and `include_description`. `full_cycle` and `employer_student_direct` map to `opportunity_type=co_op`; they are not silently relabeled as internships. The Campus board contributes `part_time` employment/schedule evidence but does not force an opportunity type, because schedule and opportunity are separate dimensions. Pagination is cursor-based and responses expose `total_count`, `next_cursor`, and `has_more`. List and detail responses use the same row decoder and remove all storage-internal fields.
 
 ## Service states
 
@@ -99,6 +128,19 @@ The service lock prevents two collection/application-sync tasks from using the
 same Chrome target concurrently. The SQLite busy timeout handles short write
 contention; it is not a general retry loop for a permanently locked database.
 
+## User and recovery scenarios
+
+| Situation | Service result | User/operator action |
+|---|---|---|
+| Waterloo SSO/MFA is incomplete | `waiting_for_login` | finish sign-in in the dedicated window, then refresh status |
+| Authenticated browser is ready | collection request is accepted with 202 | follow per-board progress until success/partial |
+| One board cannot load | other boards continue and the run becomes `partial` | retain imported jobs, correct the browser/source issue, rerun all boards |
+| One posting cannot be parsed | posting failure/count is recorded | rerun collection; known Job IDs remain idempotent |
+| Chrome closes during a run | task stops with closed/idle state | launch the dedicated profile and rerun |
+| Collection or application sync is active | service lock prevents a second task | wait for the active task and read its status |
+| Submitted-application detail fails | list status remains and detail failure is recorded | rerun application sync; Tracker records are retained |
+| SQLite is briefly busy | connection waits up to the 30-second busy timeout | let the active write finish, then retry |
+
 ## API
 
 - `GET /api/v1/waterlooworks/status`
@@ -129,3 +171,10 @@ detail API call fails, the verified application-list fields are retained and the
 run reports a description failure. The `applications` list filter is derived
 from `waterlooworks_applications`; application synchronization does not add or
 update board membership.
+
+## Verification surface
+
+`tests/test_waterlooworks.py` covers extraction, storage, run state,
+application sync, idempotency, and API-facing behavior. `tests/test_routes.py`
+covers route contracts; frontend references are checked by
+`scripts/dev/verify_frontend_api_contract.py`.

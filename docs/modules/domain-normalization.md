@@ -4,6 +4,19 @@
 
 The domain layer converts source records into deterministic business values used by storage, search, filtering, display, recommendations, and application support. It is independent from JobSpy internals and PostgreSQL row shapes.
 
+```mermaid
+flowchart LR
+    S[Provider source row] --> N[NormalizedJob]
+    N --> C[CanonicalJobInput]
+    C --> L[Location and work mode]
+    C --> K[Role classification and tags]
+    C --> P[Salary and recruiting term]
+    L --> J[(Canonical jobs)]
+    K --> J
+    P --> J
+    J --> A[API, search, recommendation and Tracker]
+```
+
 ## Canonical contract
 
 `src/wecanfindintern/domain/jobs.py` defines the principal canonical contract,
@@ -88,3 +101,30 @@ The result is a scored decision with matched rules and algorithm version. A conf
 ## Recalculation rules
 
 Derived values must be recomputable from stored canonical/raw data. When classification rules change, `scripts/maintenance/backfill_job_classification.py` recalculates current jobs and stores the new classification version. Salary and recruiting-term backfills use their own repositories and content-hash caches. A recalculation must not mutate source URLs, source IDs, source fingerprints, or raw snapshots.
+
+```mermaid
+flowchart TD
+    A[Change deterministic rule or model version] --> B[Run owning backfill]
+    B --> C[Read canonical/raw inputs]
+    C --> D[Recompute derived fields]
+    D --> E[Persist value and version/hash]
+    E --> F[Verify API facets and contract]
+```
+
+## Input and recalculation scenarios
+
+| Input/state | Normalized result | Operational rule |
+|---|---|---|
+| Complete structured source value | typed canonical value | preserve source text and normalized value |
+| Unknown or ambiguous location/work mode | raw text plus unset/`unknown` structured fields | do not invent country, city, mode, or coordinates |
+| Implausible salary | absent derived salary | retain raw source evidence; never serialize zero as a substitute |
+| Multiple role signals | deterministic ordered category plus supporting tags | title controls primary role; JD tools remain skills |
+| Classification algorithm change | recomputed fields with new `classification_version` | use the classification backfill; keep source identity unchanged |
+| Title/JD changes after enrichment | new content hash and recalculation eligibility | caches reuse only matching inputs |
+
+## Verification surface
+
+Domain behavior is covered by `tests/test_location.py`,
+`tests/test_job_classification.py`, `tests/test_salary_enrichment.py`, and
+`tests/test_recruiting_term.py`. Public vocabulary is cross-checked against
+[Job Data Taxonomy](../JOB_DATA_TAXONOMY.md) and the schemas in `schemas/`.

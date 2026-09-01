@@ -5,27 +5,26 @@ by separate deterministic API routes. It does not claim to reproduce Workday,
 Greenhouse, Taleo, or an employer's
 ranking model, and neither score is an admission probability.
 
-## Design references
+```mermaid
+flowchart TD
+    R[Resume text or validated PDF extraction] --> P[Parsing readiness categories]
+    R --> M[Resume/job evidence matcher]
+    J[Target job description] --> M
+    P --> S1[Deterministic parsing score and evidence]
+    M --> S2[Deterministic match score, gaps and evidence]
+    S1 --> C1[Optional LLM commentary]
+    S2 --> C2[Optional LLM commentary]
+    C1 -. cannot change score .-> S1
+    C2 -. cannot change score .-> S2
+```
 
-The implementation follows the transparent scoring patterns used by:
+## Diagnostic separation
 
-- [CVForge](https://github.com/alteixeira20/CVForge-Fork/blob/main/docs/ATS_SCORING.md),
-  which separates parsing (40), structure (20), readability (10), and optional
-  job-description keywords (30).
-- [ATS Resume Checker](https://github.com/Jahangirhussen/ats-resume-checker),
-  which calculates category scores first, then combines keyword coverage (22%),
-  structure, formatting, writing, and achievements (14% each), experience
-  (10%), and education and contact information (6% each).
-- [acenji/ats](https://github.com/acenji/ats), which keeps exact matches, soft
-  matches, and missing terms visible as separate evidence.
-
-We deliberately split parsing readiness from job fit so a clean PDF cannot
-inflate candidate-job relevance, and a relevant resume cannot hide parsing
-failures.
-
-These repositories are design references, not evidence of how a commercial
-ATS ranks applicants. Their useful common pattern is auditable category
-scoring—not the claim that any one set of weights is universal.
+Parsing readiness and job fit are independent contracts. A clean PDF cannot
+inflate candidate/job relevance, and a relevant resume cannot hide extraction,
+section, contact, entry-structure, reading-order, or date-consistency problems.
+Both diagnostics expose category-level evidence instead of presenting an
+employer-specific ranking claim.
 
 ## Resume Parsing Readiness
 
@@ -94,3 +93,21 @@ output is never accepted as a score.
 - Text-only input cannot claim PDF-layout analysis.
 - Every scored signal has source evidence.
 - Prompt-like text inside a resume or job description cannot override scoring.
+
+## Input scenarios
+
+| Input | Diagnostic behavior | User interpretation |
+|---|---|---|
+| Valid PDF with page text | all applicable parsing categories are scored | review score plus per-category evidence |
+| Pasted text | PDF reading-order category is unavailable and excluded | do not compare the raw denominator to PDF mode |
+| Job description states explicit skills/education/experience | applicable categories receive source-line evidence | use matches and gaps as preparation signals |
+| Requirement category is unstated | category is unavailable and excluded | no penalty is inferred |
+| Job description lacks enough explicit evidence | `Insufficient evidence` instead of a precise score | use a fuller JD before comparing fit |
+| Commentary provider fails | deterministic score and evidence remain | retry commentary only if qualitative advice is desired |
+
+## Verification surface
+
+`tests/test_ats.py` covers parsing-readiness and job-match formulas, evidence,
+unavailable categories, aliases, and invariants. `tests/test_ats_commentary.py`
+checks that commentary is grounded in and cannot replace the deterministic
+diagnostic. Calibration cases live in `tests/fixtures/ats_calibration_cases.json`.

@@ -1,261 +1,394 @@
-# WeCanFindIntern 技术总文档
+# WeCanFindIntern Technical Documentation
 
-本文档是当前代码的系统级说明，描述运行形态、数据边界、功能链路、并发控制、重试/断点恢复、回退策略和验证方式。模块细节见 [`docs/modules/`](modules/README.md)，故障处理见 [可靠性与恢复](RELIABILITY_AND_RECOVERY.md)。
+This document describes the system boundaries, runtime topology, data ownership,
+end-to-end flows, concurrency and recovery semantics, security model, and
+acceptance entry points of the delivered repository. Detailed algorithms and
+module operations live under [`docs/modules/`](modules/README.md). Operational
+failure handling lives in the [Reliability and Recovery Runbook](RELIABILITY_AND_RECOVERY.md).
 
-## 1. 产品和架构边界
+## 1. System scope
 
-WeCanFindIntern 是一个本地优先的求职与申请工作台，包含：
+WeCanFindIntern is a local-first, single-user career workspace. The delivered
+system includes:
 
-- JobSpy 多来源公共职位采集、规范化、分类、去重和搜索；
-- WaterlooWorks 专用 Chrome 登录态下的本地采集；
-- Profile、简历导入、ATS 诊断、求职信、模拟面试和 Application Tracker；
-- 经过审批保护的 AI Agent、推荐检索和记忆；
-- 浏览器开发运行方式，以及不依赖 Docker/独立服务器的 Electron 桌面运行方式。
+- public job collection from Indeed, LinkedIn, Glassdoor, ZipRecruiter, and
+  Google Jobs through the vendored JobSpy package, followed by normalization,
+  classification, cross-source deduplication, enrichment, and public querying;
+- collection from five WaterlooWorks boards through a dedicated local Chrome
+  session, including submitted-application status synchronization;
+- `profile.v1`, safe resume import, deterministic ATS diagnostics, cover-letter
+  generation, interview practice, and an Application Tracker;
+- an approval-gated AI Agent, hybrid job recommendations, audit records,
+  session summaries, long-term memory, and explicit preferences;
+- a FastAPI and static ES-module browser/development runtime, plus macOS and
+  Windows desktop runtimes built with Electron and embedded PostgreSQL/Python
+  sidecars.
 
-系统不把来源页面当作稳定数据库，也不让供应商 DataFrame、原始职位 JSON 或浏览器凭据越过各自边界。
+Source pages, raw provider payloads, browser authentication state, and normalized
+business data belong to separate ownership boundaries. Public jobs and
+WaterlooWorks preserve their own source identities. Cross-module relationships
+use a public UUID or WaterlooWorks Job ID instead of copying or guessing identity.
 
-## 2. 仓库地图
-
-```text
-WeCanFIndIntern/
-├── src/wecanfindintern/
-│   ├── api/                 FastAPI 应用、模型和路由组
-│   ├── agent/               Agent、工具、推荐、记忆和持久化
-│   ├── ats/                 确定性 ATS 诊断和匹配
-│   ├── cover_letter/        求职信生成和 DOCX/PDF 导出
-│   ├── db/                  PostgreSQL 连接池、读仓库和写仓库
-│   ├── desktop/             桌面路径、sidecar、迁移、安全和后台采集
-│   ├── domain/              职位、地点、薪资、分类和招聘术语
-│   ├── ingestion/           JobSpy 边界、目录、流水线和 enrichment
-│   ├── interview/           模拟面试、STT/TTS、分析和历史
-│   ├── llm/                 Provider gateway、JSON 解析和缓存
-│   ├── profile/             Profile、简历解析和安全校验
-│   ├── tracker/             Application 模型和仓库
-│   └── waterlooworks/       Chrome、采集器、提取器、SQLite 和状态
-├── desktop/                 Electron main/preload、PostgreSQL、备份和打包
-├── web/                     静态 HTML/CSS/native ES modules
-├── migrations/              有序 PostgreSQL schema migrations
-├── schemas/                 版本化公共 JSON Schema
-├── scripts/                 采集、维护、桌面构建和校验命令
-├── config/                  采集目录、launchd 和任务配置
-├── vendor/JobSpy/           审计过的本地 JobSpy 依赖
-└── tests/                   单元、路由、仓库、集成和内存测试
-```
-
-## 3. 两种运行形态
-
-### 3.1 浏览器/开发运行
+## 2. Repository and component boundaries
 
 ```text
-Browser
-  └─ HTTP ─> FastAPI/Uvicorn
-              ├─ PostgreSQL 16 async pool
-              ├─ WaterlooWorksService ─> dedicated Chrome + local SQLite
-              └─ static web/
+src/wecanfindintern/
+├── api/                 FastAPI assembly, dependencies, models, and routes
+├── ingestion/           JobSpy adapter, catalog, pipeline, and enrichment
+├── domain/              normalization, classification, salary, location, contracts
+├── db/                  PostgreSQL pool, public reads, ingestion repositories
+├── waterlooworks/       Chrome control, extraction, SQLite, sync, state machine
+├── profile/             profile.v1, resume parsing, validation, persistence
+├── ats/                 deterministic parsing and match diagnostics
+├── cover_letter/        Writer/Reviewer generation and DOCX/PDF export
+├── interview/           sessions, questions, STT, TTS, analysis, history, trends
+├── tracker/             application state, events, and source identity
+├── agent/               planning, tools, approval, recommendations, and memory
+├── llm/                 provider gateway, JSON, streaming, and cache
+└── desktop/             sidecar, paths, migrations, tokens, background collection
+
+web/                     HTML, CSS, and native ES modules
+desktop/                 Electron main/preload, PostgreSQL, backup, and packaging
+migrations/              ordered PostgreSQL migrations
+schemas/                 versioned public job JSON Schemas
+scripts/                 collection, maintenance, desktop build, verification
+config/                  collection catalog and operating-system scheduler config
+vendor/JobSpy/           pinned local JobSpy source
+tests/                   unit, route, repository, integration, and contract evidence
 ```
 
-开发运行由 `.env` 提供 `DATABASE_URL`，PostgreSQL 通常由 Docker Compose 提供。FastAPI lifespan 打开连接池、初始化服务和后台推荐索引维护；关闭时停止后台任务并关闭连接。
+Business dependencies flow from `API/scripts → service/application →
+domain/repository`. Provider DataFrames remain inside the ingestion boundary.
+Repositories and migrations own SQL. LLMs return validated content or tool plans
+and never receive a database connection.
 
-### 3.2 Electron 桌面运行
+## 3. Runtime topology
 
-```text
-Electron main process
-  ├─ sandboxed BrowserWindow + restricted preload
-  ├─ OS secure storage, tray, backup/restore, single-instance lock
-  ├─ embedded PostgreSQL 16 on random loopback port
-  └─ packaged Python/FastAPI sidecar on random loopback port
-       ├─ ordered migrations before listen
-       ├─ static web + token-protected API
-       ├─ resident four-hour public collection
-       └─ recommendation-index maintenance
+### 3.1 Browser and development runtime
+
+```mermaid
+flowchart LR
+    U[Browser] -->|HTTP / SSE| A[FastAPI + static web]
+    A --> P[(PostgreSQL 16 / pgvector)]
+    A --> W[WaterlooWorksService]
+    W --> C[Dedicated Chrome]
+    W --> S[(WaterlooWorks SQLite)]
+    A --> L[Configured LLM or local Ollama]
+    A --> T[Local STT / TTS]
 ```
 
-Electron 只暴露白名单 IPC；renderer 没有 Node.js 权限。sidecar 只监听 `127.0.0.1`/`::1`，所有 `/health`、`/api/` 和 `/desktop/` 请求要求每次启动生成的至少 32 字符 token。AI key 通过 Electron `safeStorage` 加密，浏览器开发模式才使用 localStorage 作为 fallback。桌面目录、构建、升级和备份见 [Desktop Scheme C](DESKTOP_SCHEME_C.md)。
+`.env` supplies `DATABASE_URL` and optional provider/index settings. Docker
+Compose supplies development PostgreSQL bound to `127.0.0.1:5432`. The FastAPI
+lifespan opens the asynchronous psycopg pool, Agent memory manager,
+WaterlooWorks service, and recommendation-index maintenance loop. Shutdown
+cancels background work and closes each owned resource.
 
-## 4. 数据所有权和核心边界
+### 3.2 Electron desktop runtime
 
-| 数据 | 权威存储 | 是否进入公共 API | 关键隔离 |
-|---|---|---:|---|
-| 公共职位当前规范化记录 | PostgreSQL `jobs` | 是 | 原始来源不随列表返回 |
-| 来源身份/链接 | PostgreSQL `job_sources` | 详情中以链接返回 | source fingerprint 唯一 |
-| 原始抓取快照 | PostgreSQL `raw_job_snapshots` | 否 | 分区、哈希去重和保留策略 |
-| Profile/简历导入 | PostgreSQL profile tables | 结构化结果 | 简历先 draft，Apply 才修改当前 profile |
-| Tracker | PostgreSQL tracker tables | 是 | WaterlooWorks 使用 external Job ID |
-| WaterlooWorks posting | 用户目录下 SQLite | 是（去掉 raw） | 不进入公共 `jobs` 或跨源 dedupe |
-| Chrome SSO/MFA/cookies | 专用 Chrome profile | 否 | 不写入 PostgreSQL/SQLite |
-| Agent/记忆/审批/audit | PostgreSQL Agent tables | 按 API 返回摘要 | 写操作需要审批 |
-| LLM cache | PostgreSQL `llm_cache` | 否 | key 为 provider/model/prompt hash |
-
-## 5. 公共职位端到端链路
-
-```text
-collection_plans.json
-  → expand_collection_catalog
-  → bounded concurrent JobSpy site/page queries
-  → stable DataFrame columns / NormalizedJob
-  → country scope + per-query fingerprint filtering
-  → cross-query best-record selection
-  → CanonicalJobInput
-  → PostgreSQL batch ingest + advisory-lock dedupe
-  → salary enrichment: source → regex → DeepSeek
-  → recruiting term: cache → regex → DeepSeek
-  → recommendation lexical/index queue
-  → GET /api/v1/jobs + cursor UI
+```mermaid
+sequenceDiagram
+    participant E as Electron main
+    participant P as Embedded PostgreSQL 16
+    participant B as Packaged FastAPI sidecar
+    participant R as Sandboxed renderer
+    E->>E: acquire single-instance lock and resolve user-data paths
+    E->>P: verify bundle, initialize or validate PG_VERSION, bind loopback port
+    E->>E: apply pending restore with safety backup
+    E->>B: spawn with DATABASE_URL, resource paths, and per-launch token
+    B->>B: apply checksummed migrations
+    B-->>E: JSON ready(host, port)
+    E->>R: create window and load exact sidecar origin
+    R->>B: send requests with injected desktop token
 ```
 
-### 5.1 JobSpy 边界
+The renderer enables the Chromium sandbox and context isolation and has no
+Node.js access. Preload exposes only allowlisted IPC for version information,
+collection status, backup/restore, and AI secrets. PostgreSQL and FastAPI bind
+random loopback ports. FastAPI middleware validates a per-launch token on
+`/health`, `/api/`, and `/desktop/` requests. Electron `safeStorage` encrypts AI
+keys. The [Desktop Application guide](DESKTOP.md) documents directories,
+packaging, backup, and recovery.
 
-`JobSpyQuery` 在调用上游前校验 source、结果数、分页 offset 和 provider 特有的互斥过滤器。`stabilize_jobspy_frame()` 即使遇到零行/零列 DataFrame 也补齐稳定列序；`clean_scalar()` 清理 NaN、日期和 pandas 标量。`scrape_checked()` 区分“正常空页”和“上游记录 ERROR 但返回空表”：前者是成功，后者转成可重试异常。
+## 4. Data ownership
 
-### 5.2 规范化、分类和去重
-
-规范化保留原始文本，同时生成 company/location/work mode、salary interval、classification、skill/requirement tags、description hash、URL hash 和 dedupe block。未知值保留为 unknown/NULL，不猜测国家、城市、薪资或工作方式。
-
-去重分两层：
-
-1. 同一来源由 `source_fingerprint` 和唯一约束保证幂等；
-2. 不同来源先按 direct URL/hash、company/location block 和日期窗口生成有限候选，再由标题、地点、工作方式、日期和描述 shingles 比较。
-
-去重决策写入 `dedupe_candidates`/`dedupe_decisions`，包含命中规则、分数和算法版本。自动 match 合并 source edge；不匹配则创建独立 canonical job。WaterlooWorks 不参与此流程。
-
-## 6. 并发模型
-
-| 场景 | 并发策略 | 保护对象 | 失败影响 |
+| Data | Authoritative store | Public/module identity | Boundary and retention rule |
 |---|---|---|---|
-| 公共采集查询 | `asyncio.Semaphore`，默认 4，CLI 限制 1–16；阻塞 JobSpy 放线程 | 上游压力和事件循环 | 单 query 失败，其他 query 继续 |
-| 公共采集进程 | Unix `fcntl`/Windows `msvcrt` 非阻塞文件锁 | 手动、launchd、Task Scheduler、桌面重复运行 | 新运行跳过 |
-| PostgreSQL | async pool 默认 2–20；statement timeout 默认 5s | 连接数和慢 SQL | 当前请求/批次失败，事务回滚 |
-| ingestion dedupe | fingerprint/block 内 advisory transaction lock | 同源重复和同 block 竞争 | 只串行相关候选，不阻塞无关 block |
-| 薪资 DeepSeek | semaphore=5；先完整 regex，再发模型请求 | provider rate/成本 | 单条失败不删除既有薪资 |
-| recruiting term | regex 全批先完成；batch 模式按 batch 顺序，`batch_size=0` 时并发 5 | provider rate/批处理 | 单条 generation 可失败，其他项继续 |
-| WaterlooWorks | collector 按 board 顺序，posting 写入放线程；service lock 防重复任务 | Chrome 页面/SQLite 写入 | 单 board/单 posting 隔离，run 可 partial |
-| Recommendation index | queue 分页 drain；失败项递增 attempts | poison row 阻塞全队列 | 失败项保留，其他项继续 |
-| Agent | 每个 HTTP turn 独立；单 turn 最多 4 个 plan round；approval pending 时串行决策 | 重复工具调用和未确认写入 | 当前 turn 安全降级 |
+| Current public jobs | PostgreSQL `jobs` | public UUID | API returns canonical fields and excludes raw payloads |
+| Public source edges | PostgreSQL `job_sources` | source + fingerprint/job ID | detail returns source links; unique indexes enforce idempotency |
+| Raw collection snapshots | partitioned `raw_job_snapshots` | payload hash + scrape time | written when payload changes for audit and recomputation |
+| Classification/recommendation derivatives | PostgreSQL job/recommendation tables | algorithm/document/profile version | rebuildable from canonical and source data |
+| Profile and resume imports | PostgreSQL profile/resume/import tables | profile/section/resume/import UUID | current profile and review draft are separate; confirmation is atomic |
+| Tracker | PostgreSQL tracker/event tables | application UUID + public/external identity | user stage remains separate from external source status |
+| Agent, approvals, and memory | PostgreSQL Agent tables | session/message/tool/approval UUID | original arguments, single decision, incremental summary/memory watermarks |
+| LLM cache | PostgreSQL `llm_cache` | provider/model/prompt content hash | TTL cleanup; cache errors behave as misses |
+| WaterlooWorks postings and runs | user-directory SQLite | WaterlooWorks Job ID | excluded from public jobs and public cross-source deduplication |
+| WaterlooWorks SSO/MFA/cookies | dedicated Chrome profile | browser profile | excluded from PostgreSQL, SQLite, Agent context, and logs |
+| Desktop secrets, backups, and logs | operating-system app-data directory | local files | encrypted secrets; PostgreSQL and WaterlooWorks backups remain separate |
 
-数据库连接池控制并不等于全局请求限流；如果部署多个 API worker，每个 worker 都会有自己的 pool，生产环境需按数据库容量设置 worker/pool 上限。
+## 5. Public job end-to-end flow
 
-## 7. 断点、重试、幂等和回退
-
-### 7.1 公共采集
-
-当前没有把“每个 source/page offset”持久化成 checkpoint。一个 query 的 offset 和已见 fingerprint 只在本次进程内存中存在；进程中断后，下一次运行从 query 起点重新抓取。这是有意设计：数据库 ingest 的 source fingerprint、唯一约束、dedupe block lock 和 changed-payload hash 使重跑安全，避免保存一个可能已经过期的网页 offset。
-
-因此恢复规则是：
-
-- 网络调用失败：同一页最多额外重试 `max_retries` 次，指数退避 `1.5s * 2^n + jitter`，最多 15s；
-- 某 query 重试耗尽：记录 source/query failure，其他 query 和已收集结果继续；
-- 进程在持久化期间中断：已提交 batch 保留，未提交 batch 回滚；下次全量重跑不会重复 source row；
-- enrichment 中断：结构化/已成功写入结果保留，剩余候选下次由输入 hash/缺失条件重新处理；
-- 正常空页：结束该 query，不触发重试；带 JobSpy ERROR 的空页：按上游失败重试。
-
-### 7.2 推荐索引
-
-公共职位更新由 trigger 写入 `recommendation_index_queue`。`index_pending()` 只处理 `attempts < 5` 的项；失败项递增 attempts 并保留 `last_error`，不会阻塞其他项。职位更新会把该项 attempts 重置为 0。没有 embedding provider 时，词法文档仍由 API 维护，向量阶段跳过；embedding 失败不会删除词法文档。
-
-### 7.3 LLM 功能
-
-共享 gateway 对 provider transport failure 做有限指数重试；JSON 解析、schema/业务校验失败不重试，以免重复付费。命中内容寻址 cache 时不调用 provider。求职信使用最多 5 轮 Writer/Reviewer；耗尽后返回最后一个非空草稿并标记未通过。ATS 确定性分数、Profile draft、Tracker 当前值不依赖模型回退。
-
-### 7.4 WaterlooWorks
-
-WaterlooWorks 没有网页分页 checkpoint。run 记录 board 状态，posting 按 source Job ID insert-once；重新运行会把已有 posting 计为 known，只更新 `last_seen_at`，因此浏览器关闭、单 board 失败或进程重启后直接重新运行即可恢复。应用状态同步同样按 source Job ID 幂等，已存在的用户 stage 不被外部状态覆盖。
-
-### 7.5 桌面数据库恢复
-
-Electron 启动顺序为验证内置 PostgreSQL → 初始化/启动随机 loopback 端口 → preflight backup/restore → 运行带 checksum 的 migrations → 启动 FastAPI。restore 前一定生成 safety backup；restore 失败自动回退到 safety backup。PostgreSQL major version 不可直接指向旧 data directory，必须走兼容 backup/restore 或 `pg_upgrade`；WaterlooWorks SQLite、Chrome profile、model cache 和加密 secrets 不随 PostgreSQL restore 改写。
-
-## 8. API 和客户端处理情形
-
-FastAPI 在静态文件 fallback 前注册 API routes。主要前缀：
-
-```text
-/health
-/api/v1/jobs
-/api/v1/ats
-/api/v1/interview
-/api/v1/cover-letter
-/api/v1/tracker
-/api/v1/profile
-/api/v1/waterlooworks
-/api/v1/agent
-/desktop/status
-/desktop/collection/run
+```mermaid
+flowchart TD
+    C[config/collection_plans.json] --> X[expand_collection_catalog]
+    X --> Q[bounded concurrent source/page queries]
+    Q --> J[JobSpy DataFrame stabilization]
+    J --> N[NormalizedJob]
+    N --> F[country scope + fingerprint selection]
+    F --> K[CanonicalJobInput]
+    K --> I[batch ingest transaction]
+    I --> D{source/cross-source identity}
+    D -->|same source| U[update source edge or unchanged]
+    D -->|matched candidate| M[merge source into canonical job]
+    D -->|new identity| A[create canonical job]
+    U --> E[salary + recruiting-term enrichment]
+    M --> E
+    A --> E
+    E --> R[recommendation queue and documents]
+    R --> API[Jobs API + frontend]
 ```
 
-处理原则：
+Implementation rules:
 
-- 参数、UUID、日期、薪资、cursor 不合法：422，不进入仓库；
-- 资源不存在：404，不伪造空对象；
-- 重复 bookmark/approval/同步：使用唯一约束或 pending 条件返回幂等结果/冲突；
-- 数据库/外部 provider 失败：返回可读 error，内部细节进入日志；
-- 列表使用 keyset cursor，详情单独加载 source links，避免深 OFFSET 和大 raw payload；
-- 客户端为 filter 变化重置 cursor，为异步状态轮询提供 loading/error/partial 状态。
+1. `JobSpyQuery` validates the source, offset, result count, and mutually
+   exclusive provider filters before an upstream call.
+   `stabilize_jobspy_frame()` supplies the fixed column contract for zero-row or
+   zero-column results.
+2. `NormalizedJob` retains a cleaned raw row and converts downstream fields to
+   provider-neutral types. Raw data enters only the snapshot boundary.
+3. Each query deduplicates with an in-memory fingerprint set. When concurrent
+   queries produce the same fingerprint, selection prefers stronger structured
+   salary data and then the longer description.
+4. Fingerprints and unique indexes establish source-level identity. Cross-source
+   deduplication selects at most 25 candidates by direct URL, company/location
+   block, and a ±60-day publication window, then compares title, location/work
+   mode, date, and five-token description shingles.
+5. Each ingest batch writes the canonical job, source edge, snapshot, and dedupe
+   evidence in one transaction. Related dedupe blocks use transaction-scoped
+   advisory locks.
+6. Salary precedence is provider-structured data, regex, then DeepSeek.
+   Recruiting-term precedence is content cache, regex, then DeepSeek. Invalid
+   results do not overwrite valid current values.
+7. A job trigger writes `recommendation_index_queue`. Background maintenance
+   produces lexical documents/chunks before filling the primary vector for the
+   configured embedding profile.
 
-公共职位 schema 为 `job.v3`、`job-detail.v4`、`job-page.v3`、`job-facets.v2`；WaterlooWorks detail/list 使用另一套 external ID 语义。
+## 6. Candidate and application flow
 
-## 9. 功能模块协作
+```mermaid
+flowchart LR
+    R[PDF or LaTeX resume] --> V[security validation and text extraction]
+    V --> D[profile.v1 import draft]
+    D -->|review autosave| D
+    D -->|confirm| P[(Current Profile)]
+    P --> ATS[Deterministic ATS]
+    P --> CL[Cover Letter Writer/Reviewer]
+    P --> IV[Interview sessions and analysis]
+    P --> REC[Hybrid recommendations]
+    P --> AG[Approval-gated Agent]
+    J[Public or WaterlooWorks job] --> ATS
+    J --> CL
+    J --> IV
+    J --> REC
+    J --> T[(Tracker)]
+    AG -->|approved repository mutation| T
+    AG -->|approved field diff| P
+```
 
-### Profile、ATS 和求职材料
+- PDF and LaTeX inputs pass extension, MIME/magic/structure, size, active
+  content, extraction, and English-text checks. LaTeX is parsed as text and is
+  never compiled or executed.
+- Import drafts and the current profile are persisted separately. Review
+  autosave changes only the draft. Confirmation applies the profile and updates
+  import/resume status within one transaction.
+- ATS parsing readiness and resume/job match scores are deterministic. LLM
+  commentary cannot replace or modify either score.
+- Cover Letter runs at most five Writer/Reviewer rounds, reports grounding
+  status, issues, and unsupported claims, and exports DOCX or PDF.
+- Interview questions and analyzed answers belong to a persisted session. A
+  typed answer takes precedence over a local faster-whisper transcript. TTS uses
+  local synthesis or gTTS according to configuration.
+- Tracker stores the current application snapshot and event history. Public
+  UUIDs, WaterlooWorks Job IDs, and custom records preserve distinct identities.
+  External status never overwrites the user's workflow stage.
 
-简历上传先检查扩展名/MIME、magic bytes、大小、页数、结构、active content、文本量和英文启发式；LaTeX 只解析文本，绝不编译。解析结果写 `resume_documents` 和 `profile_imports` draft；用户确认后在一个事务中应用到当前 Profile。ATS readiness/match 是证据化确定性计算；ATS commentary、求职信、面试分析才进入 LLM gateway。
+## 7. Agent and recommendation flow
 
-### Tracker
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant O as Agent orchestrator
+    participant M as LLM planner
+    participant T as Typed tool
+    participant DB as Repository
+    U->>O: message + provider configuration
+    O->>DB: persist message and load profile, window, summary, and recall
+    loop up to 4 planning rounds
+        O->>M: tool catalog + delimited context/results
+        M-->>O: validated JSON reply or one tool step
+        alt read tool
+            O->>T: validate arguments and execute bounded read
+            T->>DB: repository or service query
+            DB-->>O: bounded result for next round
+        else write tool
+            O->>DB: persist exact arguments and preview as pending approval
+            O-->>U: approval card; planning stops
+        end
+    end
+    U->>O: approve or deny
+    O->>DB: atomically decide pending approval
+    O->>T: execute persisted arguments only when approved
+    O-->>U: audited final result
+```
 
-Tracker 把用户工作流 stage 与 WaterlooWorks 的外部 status 分开。Bookmark 是幂等的；stage/field 修改和 event 写入在同一事务边界。批量操作预校验 ID 并返回逐项结果；来源职位消失时保留 Tracker snapshot。
+Recommendations rank only public or WaterlooWorks candidates retrieved from
+repositories; the model cannot create jobs. Retrieval combines lexical rank,
+skill and requirement overlap, location/work mode, recency, optional vector
+similarity, and optional LLM reranking. Lexical documents and deterministic
+scoring keep recommendations available when the embedding provider is
+unavailable. Tracked records can be removed after candidate retrieval.
 
-### WaterlooWorks
+Agent tool arguments use Pydantic models. Read tools execute immediately. Write
+tools create pending approvals. Each approval stores the original tool name,
+validated arguments, and preview; only the first `pending → approved/denied`
+decision succeeds. Duplicate calls, ambiguous job references, invalid arguments,
+malformed plans, and provider errors terminate before mutation.
 
-专用 Chrome 处理 SSO/MFA 和页面 JS，SQLite 保存本地 posting/run/board/application 观察。collector 按五个 board 独立执行，某 board 或 posting 失败不会抹掉其他 board 已导入数据。
+## 8. API, UI, and outcome handling
 
-### AI Agent 和推荐
+FastAPI registers API routes before mounting the static frontend at `/`. The
+delivered route families are:
 
-Agent 读取可立即执行；写操作先保存精确参数和 preview 到 approval，用户批准后使用原始参数执行一次。推荐先 hard filter，再 lexical/vector retrieval、RRF 和确定性评分；可选 LLM review 只能在 top 15 内提出有限调整，不能添加候选或取代主分数。
+```text
+/health                         database connectivity
+/api/v1/jobs                    public jobs, facets, geo distribution, detail
+/api/v1/ats                     deterministic diagnostics and commentary
+/api/v1/cover-letter            generation, SSE progress, export
+/api/v1/interview               sessions, SSE, questions, TTS, analysis, trends
+/api/v1/profile                 profile, resume imports, and drafts
+/api/v1/resumes                 shared PDF extraction
+/api/v1/tracker                 bookmarks, applications, events, bulk, CSV
+/api/v1/waterlooworks           Chrome status, collect, jobs, application sync
+/api/v1/agent                   sessions, stream, approvals, preferences, memory
+/desktop                        local collection status and trigger
+```
 
-## 10. 安全模型
+| Scenario | Server semantics | Client/operator action |
+|---|---|---|
+| Normal list | 200 with items/cursor or page metadata | render and retain the next cursor/page |
+| Valid empty result | 200 with empty items | show the empty state without marking failure |
+| Invalid filter, body, or file | FastAPI/Pydantic/domain validation returns 422 | preserve input and show corrective detail |
+| Missing UUID or record | 404 | refresh the list or select a stable identity again |
+| Background operation already active | 409 or current running state | wait for or reuse the active operation |
+| One source, board, or posting fails | record failure; isolated work continues; result may be partial | inspect per-source/per-board summary and rerun |
+| Request or process interruption | uncommitted transaction rolls back; committed state remains | run the module's idempotent full retry or resubmit |
+| LLM configuration, transport, or output error | no mutation; deterministic result or current draft remains | correct key/model/base URL or retry the feature |
+| Repeated approval decision | first result remains; later decision conflicts | refresh session and approval state |
+| Missing or invalid desktop token | 401 | reload through the Electron renderer and current sidecar origin |
 
-- 桌面 renderer 使用 context isolation、sandbox 和白名单 preload；sidecar loopback 请求需要 token；
-- AI keys 在桌面使用 OS secure store，provider key 不写 profile/Agent 表；
-- Chrome 凭据、cookies、MFA 只存在专用 profile；
-- raw provider payload 不进入公共 API；
-- 简历上传不会执行 LaTeX 或解包任意文件；
-- Agent 不执行任意 SQL，写操作必须显式确认并记录 audit；
-- LLM prompt 将职位描述/简历作为带分隔符的参考数据处理，防止来源文本注入工具指令；
-- 日志和 backup 目录在桌面模式下使用用户目录，Unix 权限分别收紧到 0700/0600。
+The frontend uses native ES modules, lazy section loading, `fetch`, and SSE.
+Ordinary dynamic text passes through `escapeHtml()`. Markdown and generated text
+use the shared renderer. Source URLs and IDs are validated before use. Failed
+list/detail requests do not advance cursors. SSE converges through its final
+event. After Tracker or approval writes, the client rereads authoritative server
+state.
 
-## 11. 迁移、升级和变更流程
+## 9. Concurrency, transactions, and recovery semantics
 
-`migrate.py` 按文件名顺序执行 migrations，在 `schema_migrations` 保存文件名和 checksum；已应用 migration 被修改时拒绝静默继续。派生字段/分类版本变化要提供 backfill 命令；公共响应变化同时更新 Pydantic model、`schemas/`、frontend consumer 和 contract tests。
+| Unit | Concurrency/transaction boundary | Idempotency or conflict protection |
+|---|---|---|
+| Public collection query | `asyncio.Semaphore`, default 4, CLI range 1–16; JobSpy runs in threads | per-query fingerprints and isolated source failures |
+| Collection process | nonblocking Unix `fcntl` or Windows `msvcrt` file lock | manual, scheduler, and desktop modes share the lock |
+| PostgreSQL request | async pool default 2–20; statement timeout default 5 seconds | each repository mutation/transaction rolls back independently |
+| Ingest batch | one transaction per batch | unique identity plus advisory transaction lock |
+| Enrichment | regex first; bounded model concurrency/batches | input/content hashes; empty output cannot clear valid values |
+| WaterlooWorks | service task lock; sequential boards; isolated posting failures | insert-once Job ID; repeats update only `last_seen_at` |
+| Recommendation index | paged queue; per-item errors record attempts | `attempts < 5`; a job update resets the item |
+| Agent turn | up to four planning rounds plus feedback budget | duplicate-call guard and single approval transition |
+| Tracker/Profile writes | repository transaction | unique source identity; atomic current row plus event/draft |
+| Desktop backup | one backup promise; custom-format temp file then rename | safety backup before restore and automatic rollback on failure |
 
-推荐变更顺序：
+Public collection uses restart-from-source instead of a persistent page
+checkpoint. After a process interruption, collection restarts from the catalog
+and query origin. Source fingerprints, unique constraints, payload hashes, batch
+transactions, and dedupe locks converge already committed data. WaterlooWorks
+reruns complete boards rather than restoring an old DOM offset. The
+[Reliability and Recovery Runbook](RELIABILITY_AND_RECOVERY.md) contains the
+backoff formula, partial-result rules, and failure matrices.
 
-1. 先定义数据所有权和失败语义；
-2. 修改 domain model/数据库 migration/repository；
-3. 修改 API model/route 和公共 schema；
-4. 修改前端状态、loading/error/partial 处理；
-5. 增加正常、空结果、重复、并发、失败、重试和恢复测试；
-6. 运行完整验证并检查文档链接。
+## 10. Security model
 
-## 12. 验证入口
+- The desktop renderer uses sandboxing, context isolation, and a restricted
+  preload. Network access targets only the exact sidecar origin, and the main
+  process injects a per-launch token.
+- The sidecar permits `127.0.0.1` and `::1` only. PostgreSQL uses a random
+  loopback port, a SCRAM password, and a private desktop data directory.
+- Electron `safeStorage` encrypts provider keys and the PostgreSQL password.
+  API keys, passwords, MFA data, and cookies stay out of Profile, Agent memory,
+  and ordinary logs.
+- WaterlooWorks authentication remains in the dedicated Chrome profile. The API
+  and SQLite store extracted posting/application data and never store cookies.
+- Resume uploads are checked for type, magic, structure, active content, size,
+  and text limits before parsing. LaTeX is not executed, and unsafe PDF/LaTeX
+  input is rejected.
+- Provider and job text enters prompts in delimited data blocks. Model output
+  passes JSON, schema, and domain validation. Repositories alone own SQL and
+  mutations.
+- Desktop restore, Tracker bulk deletion, and resume deletion require explicit
+  user actions and use transactions, confirmation, or safety backups to bound
+  impact.
+
+## 11. Installation, migration, runtime, and acceptance
+
+The authoritative development sequence is:
+
+```mermaid
+flowchart LR
+    V[Create Python virtual environment] --> I[Install requirements]
+    I --> P[Start loopback PostgreSQL]
+    P --> E[Create and load .env]
+    E --> M[Apply ordered migrations]
+    M --> A[Start FastAPI]
+    A --> H[Check /health]
+    H --> C[Run contract, tests, and syntax checks]
+```
+
+The [Operations and Verification guide](modules/operations.md) contains exact
+commands, macOS launchd and Windows Task Scheduler procedures, maintenance
+scripts, and result interpretation. Database migrations run through
+`scripts/maintenance/migrate.py` in filename order. The runner stores filename
+and checksum in `schema_migrations` and rejects changes to an applied file.
+
+Repository acceptance entry points:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest
 make check
+.venv/bin/ruff format --check src tests scripts
+PYTHONPATH=src .venv/bin/python scripts/dev/verify_data_api_contract.py
 git diff --check
 ```
 
-`make check` 包含 Ruff、pytest、frontend/API contract verifier 和所有 ES module 的 Node syntax check。桌面构建还需要按平台执行 `docs/DESKTOP_SCHEME_C.md` 的 PostgreSQL、backend 和 Electron make 流程；桌面发布 workflow 只构建 artifact，不自动发布服务器或 app store。
+`make check` runs Ruff, pytest, the frontend/API route contract verifier, and
+Node syntax checks for every `web/modules/*.js` file. Integration tests marked
+`db` require a migrated PostgreSQL database. Documentation records repeatable
+gates rather than expiring test counts, historical commit IDs, or one-time run
+results.
 
-## 13. 权威模块文档
+## 12. Authoritative module and reference documents
 
-- [可靠性与恢复](RELIABILITY_AND_RECOVERY.md)
-- [Job ingestion](modules/job-ingestion.md)
-- [Domain normalization](modules/domain-normalization.md)
+- [Job Ingestion](modules/job-ingestion.md)
+- [Domain and Data Normalization](modules/domain-normalization.md)
 - [Database and Data API](modules/database-and-data-api.md)
 - [WaterlooWorks](modules/waterlooworks.md)
-- [Profile](modules/profile.md)
-- [Tracker](modules/tracker.md)
-- [AI Agent and memory](modules/ai-agent.md)
-- [LLM-assisted tools](modules/llm-assisted-tools.md)
+- [Profile and Resume Import](modules/profile.md)
+- [ATS-Style Resume Diagnostics](modules/ats-review.md)
+- [LLM-Assisted Career Tools](modules/llm-assisted-tools.md)
+- [Application Tracker](modules/tracker.md)
+- [AI Agent and Memory](modules/ai-agent.md)
 - [Frontend](modules/frontend.md)
-- [Operations and verification](modules/operations.md)
-- [Desktop Scheme C](DESKTOP_SCHEME_C.md)
+- [Operations and Verification](modules/operations.md)
+- [Desktop Application](DESKTOP.md)
+- [Reliability and Recovery](RELIABILITY_AND_RECOVERY.md)
+- [Data API](DATA_API.md)
+- [Job Data Taxonomy](JOB_DATA_TAXONOMY.md)
+- [JobSpy Integration](JOBSPY_INTEGRATION.md)
+- [Database Migrations](../migrations/README.md)

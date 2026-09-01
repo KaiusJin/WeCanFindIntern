@@ -2,6 +2,17 @@
 
 This document is the stable reference for the external JobSpy boundary. For the complete ingestion lifecycle, see [Job Ingestion](modules/job-ingestion.md). For the canonical job and derived fields, see [Domain and Data Normalization](modules/domain-normalization.md).
 
+```mermaid
+flowchart LR
+    Q[Validated JobSpyQuery] --> V[Vendored jobspy.scrape_jobs]
+    V --> D[Pandas DataFrame]
+    D --> S[Stable 34-column frame]
+    S --> N[NormalizedJob list]
+    N --> C[Canonical ingestion pipeline]
+    D -->|empty + captured source error| E[Retryable RuntimeError]
+    D -->|empty without source error| Z[Successful empty result]
+```
+
 ## Version baseline
 
 - Upstream project: <https://github.com/speedyapply/JobSpy>
@@ -84,3 +95,7 @@ When upgrading JobSpy:
 4. Run adapter, normalization, and route tests.
 5. Run `inspect_jobspy_output.py` against a small real query.
 6. Verify raw CSV, normalized JSONL, PostgreSQL ingest, and public API output separately.
+
+The upgrade is complete only when the vendored source version/commit, adapter
+column contract, normalization tests, bounded live probe, database ingest, and
+public schema all describe the same provider shape.

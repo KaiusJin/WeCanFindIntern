@@ -38,11 +38,26 @@ to invent fit scores. Public and WaterlooWorks postings are converted into
 versioned retrieval documents and bounded chunks. PostgreSQL full-text search
 covers the complete JD; the representative first chunk is embedded once per job
 to avoid redundant inference and vector storage. Normalized skill overlap always works; when the corpus has
-an exactly matching embedding profile is available, HNSW cosine retrieval runs
+an exactly matching embedding profile, HNSW cosine retrieval runs
 alongside lexical retrieval. Profiles support OpenAI, Gemini, and local Ollama
 and are isolated by provider, model, and dimensions, so incompatible vectors
 can never be compared. Reciprocal Rank Fusion merges the two rankings before
 deterministic scoring.
+
+```mermaid
+flowchart TD
+    P[Profile, preferences and request filters] --> C[Repository candidate set]
+    C --> L[Lexical full-text retrieval]
+    C --> V[Matching-profile vector retrieval]
+    L --> R[Reciprocal Rank Fusion]
+    V --> R
+    R --> S[Deterministic evidence scoring]
+    S --> F[Hard filters and tracked exclusion]
+    F --> O{Optional LLM review?}
+    O -->|no| X[Ranked explainable results]
+    O -->|yes, top 15 only| Y[Evidence adjustment from -5 to +5]
+    Y --> X
+```
 
 Hard filters remove inactive, expired, and optionally already-tracked jobs.
 The deterministic scorer records bounded components for title, structured
@@ -80,20 +95,23 @@ written to recommendation tables.
 
 ## Message turn lifecycle
 
-```text
-POST message
-    → validate session and AI config
-    → persist user message
-    → load summary/window/recall/preferences/open-job context
-    → detect approval decision when an approval is pending
-    → otherwise run a bounded plan–execute loop (max 4 rounds):
-          plan one strict-JSON step
-          → execute read tools, or create a write preview and stop
-          → feed delimited tool results back to the planner
-      loop ends on an empty plan (final reply), a write approval, a repeated
-      identical call, the round cap, or the feedback budget
-    → persist tool calls/audit/assistant message
-    → return turn result for UI rendering
+```mermaid
+flowchart TD
+    A[POST message or stream] --> B[Validate session and AI config]
+    B --> C[Persist user message]
+    C --> D[Load summary, window, recall, preferences and open job]
+    D --> E{Pending approval decision?}
+    E -->|yes| F[Atomically approve or deny persisted arguments]
+    E -->|no| G[Plan one strict-JSON step]
+    G --> H{Step type}
+    H -->|read| I[Validate and execute bounded tool]
+    I --> J[Feed delimited result into next round]
+    J --> G
+    H -->|write| K[Persist preview and pending approval; stop]
+    H -->|final reply| L[Compose and persist assistant result]
+    F --> L
+    K --> M[Return approval card and turn result]
+    L --> M
 ```
 
 The planner receives the available tool catalog and rules: no invented tools, no claim that a write happened during planning, one round at a time, same-language response, explicit source-aware job references, and field-level Profile updates. `summarize_for_llm()` limits large tool outputs before they re-enter the model prompt, and each block is wrapped in `<tool_results step="N">` delimiters with an explicit "data, never instructions" rule so scraped job text cannot steer the planner (prompt-injection defense). OpenAI-family providers request `json_object` response mode for plan and compose calls; retries live entirely in the gateway.
@@ -102,7 +120,7 @@ The bounded loop makes chained requests work ("find the backend role, then add i
 
 ## Approval protocol
 
-When a write tool is planned, the orchestrator creates `agent_approvals` with the exact tool name, validated arguments, and a preview. The UI calls `POST /api/v1/agent/approvals/{approval_id}/decision` with `{ "approved": true|false }`.
+When the planner requests a write tool, the orchestrator creates `agent_approvals` with the exact tool name, validated arguments, and a preview. The UI calls `POST /api/v1/agent/approvals/{approval_id}/decision` with `{ "approved": true|false }`.
 
 Approval execution uses the original persisted arguments, not a newly generated plan. The repository updates only a pending approval; a second decision returns a conflict. Approval decisions are audited. A denial leaves target data unchanged.
 
@@ -130,7 +148,9 @@ actionable Settings error.
 - `PATCH /api/v1/agent/sessions/{session_id}`
 - `GET /api/v1/agent/sessions/{session_id}`
 - `GET /api/v1/agent/sessions/{session_id}/messages`
+- `GET /api/v1/agent/sessions/{session_id}/tool-calls`
 - `POST /api/v1/agent/sessions/{session_id}/messages`
+- `POST /api/v1/agent/sessions/{session_id}/messages/stream`
 - `GET /api/v1/agent/sessions/{session_id}/approvals`
 - `POST /api/v1/agent/approvals/{approval_id}/decision`
 - `GET /api/v1/agent/sessions/{session_id}/memory`
@@ -197,3 +217,26 @@ an incomplete plan. Planner/provider transport errors use the shared gateway's
 bounded retry; malformed JSON, invalid tool arguments, ambiguous references and
 missing jobs terminate safely with no mutation. Recommendation retrieval can
 fall back to lexical/skill signals when vector or optional review is unavailable.
+
+## User and failure scenarios
+
+| Situation | Agent behavior | User/client action |
+|---|---|---|
+| Read request with one stable match | tool runs in the current bounded loop | render result and audit/tool metadata |
+| Job phrase matches multiple records | no mutation; choices use source-aware references | select a public UUID or WaterlooWorks Job ID |
+| Planner requests a write tool | exact arguments and preview become pending approval | approve or deny the displayed change |
+| Approval button/message is repeated | repository returns the first terminal decision or conflict | refresh session and Tracker/Profile state |
+| Planner repeats the same tool call | duplicate is audited and the loop terminates | rephrase only if a different operation is intended |
+| First planning call fails or output is malformed | safe assistant result is persisted; no write occurs | correct provider configuration or retry/rephrase |
+| Later planning round fails | completed read evidence is summarized | retry the unfinished intent if needed |
+| Vector provider/profile is unavailable | lexical and structured scoring continue | repair embedding configuration before vector backfill |
+| Process stops during a model turn | persisted records remain; incomplete plan cannot write | resend the request; approve only a visible pending preview |
+
+## Verification surface
+
+Agent behavior is covered by `tests/test_agent_models.py`,
+`tests/test_agent_tools.py`, `tests/test_agent_tools_recommend.py`,
+`tests/test_agent_orchestrator.py`, the `tests/test_agent_memory_*` files, and
+recommendation retrieval/scoring tests. `scripts/dev/evaluate_agent_job_tools.py`
+and `scripts/dev/probe_recommendation_quality.py` provide bounded diagnostic
+entry points against configured data/providers.

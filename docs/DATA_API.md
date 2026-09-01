@@ -4,15 +4,20 @@ This file is the compact public API reference. The full storage/query design is 
 
 ## Data flow
 
-```text
-JobSpy DataFrame
-    → NormalizedJob
-    → CanonicalJobInput
-    → PostgreSQL idempotency/deduplication
-    → versioned REST response
+```mermaid
+flowchart LR
+    J[JobSpy DataFrame] --> N[NormalizedJob]
+    N --> C[CanonicalJobInput]
+    C --> P[(PostgreSQL identity and dedupe)]
+    P --> R[JobReadRepository]
+    R --> V[Versioned REST response]
 ```
 
-Public job contracts are `job-detail.v4`, `job-page.v3`, and `job-facets.v2`, stored in `schemas/`. Detail v4 names source-provided skills explicitly as `source_skills`; normalized filter/display values remain in `skill_tags`. `jobs` stores current canonical values; `raw_job_snapshots` stores auditable source payloads. Raw provider payloads are not returned by the API.
+Public job contracts are `job.v3`, `job-detail.v4`, `job-page.v3`, and
+`job-facets.v2`, stored in `schemas/`. Detail v4 names source-provided skills
+explicitly as `source_skills`; normalized filter/display values remain in
+`skill_tags`. `jobs` stores current canonical values; `raw_job_snapshots` stores
+auditable source payloads. Raw provider payloads are not returned by the API.
 
 ## Start the API
 
@@ -61,6 +66,12 @@ The list is active-job only and uses keyset pagination on `(published_sort_at, i
 
 Returns live counts for opportunity types, schedule types, categories, work modes, skills, locations, and companies. The frontend uses this response to build filter controls.
 
+### `GET /api/v1/jobs/geo-distribution`
+
+Returns active-job counts by Canadian province/territory and US state plus
+country and overall totals. The heatmap consumes the region codes and counts;
+the endpoint does not expose source payloads or individual job records.
+
 ## Location response
 
 Locations preserve source text while exposing structured filters:
@@ -87,3 +98,22 @@ Source-level idempotency uses the SHA-256 source fingerprint. Cross-source candi
 ## Performance contract
 
 Active partial indexes serve feed filters. Lists use cursor pagination and avoid source-payload aggregation. Details load source links separately. Raw snapshots are time-partitioned and indexed for audit/retention. The connection pool and statement timeout bound database resource usage.
+
+## Request outcomes
+
+| Request condition | Response behavior |
+|---|---|
+| Valid filters with matching jobs | 200, active items, cursor and `has_more` |
+| Valid filters with no matches | 200 with an empty `items` list |
+| Repeated multi-value filters | values are validated/normalized and combined by the repository contract |
+| Invalid date, salary, cursor, enum-like value or bounds | 422 with no query mutation |
+| Detail UUID is well formed but absent | 404 |
+| Detail path is not a UUID | FastAPI validation response |
+| Database/pool operation fails | request fails; no fabricated empty success |
+
+## Verification
+
+`scripts/dev/verify_data_api_contract.py` validates exported examples and
+schema/model alignment. `scripts/dev/verify_frontend_api_contract.py` checks
+that frontend route references exist. Route/repository behavior is covered by
+`tests/test_routes.py` and database-marked integration tests.

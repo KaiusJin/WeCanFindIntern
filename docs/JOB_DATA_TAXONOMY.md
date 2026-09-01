@@ -13,13 +13,15 @@ This is the stable vocabulary reference for public job data. Processing details 
 
 ## Data layers
 
-```text
-JobSpy raw row
-  → NormalizedJob
-  → CanonicalJobInput
-  → JobClassification and enrichment
-  → PostgreSQL jobs
-  → job.v3 list item / job-detail.v4 / job-page.v3
+```mermaid
+flowchart LR
+    R[Provider raw row] --> N[NormalizedJob]
+    N --> C[CanonicalJobInput]
+    C --> D[Deterministic classification]
+    C --> E[Salary and recruiting-term enrichment]
+    D --> J[(PostgreSQL jobs)]
+    E --> J
+    J --> A[job.v3, job-detail.v4 and job-page.v3]
 ```
 
 ## Core display fields
@@ -80,3 +82,17 @@ Structured provider compensation is preferred; description regex and cached/Deep
 ## Dates and source links
 
 `date_posted` is the provider’s date. `published_sort_at` is always populated for stable ordering and falls back to the first-seen timestamp when the provider date is absent. `first_seen_at` and `last_seen_at` describe platform visibility. Details return all source URLs and direct application URLs without raw payloads.
+
+## Field-state interpretation
+
+| State | Meaning |
+|---|---|
+| `unknown` enum | classifier had insufficient reliable evidence for that dimension |
+| `null`/absent optional value | source and deterministic enrichment did not produce a valid value |
+| empty tag list | no versioned taxonomy match was established |
+| source text plus partial hierarchy | display evidence exists while some location levels remain unresolved |
+| multiple `sources` on detail | cross-source dedupe attached provider identities to one canonical job |
+
+Consumers must render these states as unknown/unavailable evidence, not as a
+negative claim. Filters operate on normalized fields; source text remains the
+display/audit evidence.

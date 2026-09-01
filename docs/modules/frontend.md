@@ -6,6 +6,17 @@ The web UI is a static HTML/CSS/ES-module application served by FastAPI from `we
 
 The browser calls the versioned REST API directly with `fetch`. API route order is defined before the static mount so `/api/...` paths are not shadowed by the HTML fallback.
 
+```mermaid
+flowchart LR
+    H[index.html and styles.css] --> M[main.js]
+    M --> N[navigation and lazy section loaders]
+    N --> F[Feature ES modules]
+    F -->|fetch and SSE| A[FastAPI routes]
+    A -->|JSON, streams and files| F
+    F --> R[Escaped/validated DOM rendering]
+    E[Electron preload] -. desktop IPC only .-> F
+```
+
 ## Module map
 
 | Module | Main responsibility |
@@ -13,6 +24,13 @@ The browser calls the versioned REST API directly with `fetch`. API route order 
 | `main.js` | Application startup and global interactions |
 | `navigation.js` | Tab activation and scroll behavior |
 | `helpers.js` | HTML escaping, Markdown rendering, labels, dates, salary formatting, timeout fetch, drop zones |
+| `pagination.js` | Shared page controls and page-size behavior |
+| `bookmarks.js` | Shared public/WaterlooWorks bookmark state and mutations |
+| `job-context.js` | Stable open-job context shared with career tools and Agent |
+| `resume-source.js` | Shared current Profile/resume projection for career tools |
+| `sse.js` | Shared Server-Sent Events parsing and completion handling |
+| `tracker-contract.js` | Backend-owned Tracker stage/source vocabulary |
+| `heatmap.js` | Job geo-distribution map rendering |
 | `jobs.js` | Public job search/list/detail and facets |
 | `waterlooworks.js` | Local source status, collection, list, and detail |
 | `tracker.js` | Application list, bookmarks, drawer, events, bulk operations, CSV, custom jobs |
@@ -23,7 +41,7 @@ The browser calls the versioned REST API directly with `fetch`. API route order 
 | `cover-letter.js` | Profile/resume input, generation, review, DOCX/PDF export |
 | `interview.js` | Questions, TTS, camera/recording, answer analysis |
 | `agent.js` | Sessions, chat, tools, approval, memory, preferences |
-| `settings.js` | Provider/model/key/Ollama settings and localStorage |
+| `settings.js` | Provider/model/Ollama settings, browser storage, and desktop secure-key bridge |
 
 ## Public job flow
 
@@ -71,3 +89,23 @@ HTTP request. It displays the server's readable error and lets the user retry;
 server-side collection, provider, and repository layers own bounded retries and
 idempotency. In desktop mode, the preload bridge is the only path for secrets,
 backup, tray, and background-collection commands.
+
+## UI state scenarios
+
+| Situation | Frontend state transition |
+|---|---|
+| Initial section visit | lazy-load module, show loading state, then content/empty/error |
+| Filter changes | clear cursor/page continuation before requesting fresh results |
+| List/detail request fails | preserve prior usable view and do not advance pagination |
+| SSE sends progress then completion | render bounded progress and reconcile with final result event |
+| SSE ends after a persisted operation | reload authoritative session/Tracker/Profile state |
+| WaterlooWorks board is partial | keep successful board counters/items and show failed board evidence |
+| Approval is decided | disable/update approval UI and refresh affected domain state |
+| Desktop secret/backup action | call the restricted preload method; renderer never reads filesystem/Node APIs |
+
+## Verification surface
+
+`scripts/dev/verify_frontend_api_contract.py` compares frontend route references
+with FastAPI routes. `make frontend-check` runs Node syntax validation for every
+`web/modules/*.js` file. Route/service tests validate the response contracts the
+modules consume.

@@ -25,9 +25,9 @@ repository calculates completion percentage from populated profile fields.
 
 ## Resume input boundary
 
-The secure boundary is `profile/security.py` and is used by the profile upload
-route and the shared `/api/v1/resumes/extract-pdf` route. ATS retains a legacy
-compatibility alias for that shared extraction handler.
+The secure boundary is `profile/security.py` and is used by the Profile upload
+route and the shared `/api/v1/resumes/extract-pdf` route consumed by ATS,
+Cover Letter, and Interview.
 
 Only English `.pdf` and `.tex` are accepted. The validator checks safe filename and supported extension, declared MIME type, non-empty content, PDF magic bytes or valid text LaTeX content, size, structure, extracted-text limits, minimum meaningful text, and English-language heuristics.
 
@@ -43,14 +43,17 @@ The secure validator and the plain PDF extractor intentionally have different mi
 
 ## Import lifecycle
 
-```text
-upload .pdf/.tex
-    → validate and extract text
-    → store resume document
-    → parse into profile.v1 draft
-    → display field-level draft/review state
-    → user confirms
-    → merge confirmed fields into user profile
+```mermaid
+flowchart TD
+    U[Upload PDF or LaTeX] --> V{Security and text validation}
+    V -->|invalid| E[422 with actionable validation error]
+    V -->|valid| X[Extract normalized text]
+    X --> R[(Resume document)]
+    X --> P[Parse profile.v1 draft]
+    P --> D[(profile_imports draft)]
+    D -->|review autosave| D
+    D -->|confirm| T[Transaction: save profile and confirm import/resume]
+    T --> C[(Current profile)]
 ```
 
 Normal profile edits autosave the single current record. The parser creates a
@@ -79,6 +82,18 @@ The API returns summaries for the resume history rather than exposing unnecessar
 
 Invalid file type, MIME mismatch, unsafe content, extraction failure, and invalid draft data are returned as user-readable 422 errors. Missing resume/import/profile resources return 404.
 
+## User and data scenarios
+
+| Situation | Current profile | Import/resume result |
+|---|---|---|
+| Valid PDF/LaTeX upload | unchanged | resume and editable draft are created |
+| Draft field edit | unchanged | only `profile_imports.parsed_payload` is updated |
+| Confirmed draft | replaced atomically with reviewed payload | import and resume become confirmed |
+| Invalid, scanned, encrypted, active-content, oversized, or non-English input | unchanged | 422; no import is created |
+| Duplicate file content for the same profile | unchanged until confirmation | resume row is refreshed by SHA-256 identity and a new draft is created |
+| Resume deletion | unchanged | resume and dependent imports are deleted by ownership rules |
+| Direct Profile autosave | current profile updated transactionally | existing import drafts remain separate |
+
 ## Frontend editing behavior
 
 `web/modules/profile.js` renders repeated sections dynamically, preserves stable
@@ -94,3 +109,10 @@ server code and do not send resume content to an LLM. Profile data should be
 sent to external LLM providers only when the user explicitly uses cover-letter,
 interview, or Agent functionality and selects that provider. Provider keys
 remain in browser settings and are not persisted in the profile tables.
+
+## Verification surface
+
+`tests/test_profile.py` covers Pydantic models, parser/security boundaries,
+draft/confirm semantics, deletion, and routes. Shared extraction behavior is
+also exercised by ATS route tests. The source of truth for size and structure
+limits is `profile/security.py`.

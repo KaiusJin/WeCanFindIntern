@@ -26,11 +26,39 @@ PYTHONPATH=src .venv/bin/uvicorn wecanfindintern.api.app:app --reload
 
 Open `http://127.0.0.1:8000/`. `/health` performs a database connectivity check.
 
-For the packaged desktop path, use [Desktop Scheme C](../DESKTOP_SCHEME_C.md).
+For the packaged desktop path, use [Desktop Application](../DESKTOP.md).
 The Electron main process starts embedded PostgreSQL first, starts the packaged
 FastAPI sidecar on a random loopback port, waits for its `ready` marker, and then
 loads the same static frontend. It does not start Docker. User data lives under
 the OS application-data directory and survives app upgrades.
+
+```mermaid
+flowchart TD
+    A{Runtime mode} -->|browser/development| B[Start localhost PostgreSQL]
+    B --> C[Load .env and apply migrations]
+    C --> D[Start Uvicorn and open localhost UI]
+    A -->|packaged desktop| E[Launch Electron]
+    E --> F[Embedded PostgreSQL, restore check and migrations]
+    F --> G[Token-protected sidecar and renderer]
+    D --> H[Use /health and feature checks]
+    G --> H
+```
+
+## Configuration groups
+
+| Group | Configuration surface | Used by |
+|---|---|---|
+| Database | `DATABASE_URL`, `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, `DB_STATEMENT_TIMEOUT_MS` | FastAPI, scripts, migrations |
+| Recommendation vectors | `RECOMMEND_EMBEDDING_PROVIDER`, model, dimensions, key and base URL | background indexer and backfill |
+| Collection enrichment | `DEEPSEEK_*` salary/term model, enablement, timeout and API settings | salary and recruiting-term enrichment |
+| LLM provider bases | `DEEPSEEK_API_BASE`, `GLM_API_BASE`, `QWEN_API_BASE`, `OLLAMA_API_BASE` | shared gateway |
+| Interview | `INTERVIEW_STT_MODEL`, `INTERVIEW_TTS_BACKEND` | local transcription and playback |
+| WaterlooWorks | `WATERLOOWORKS_DB_PATH`, Chrome profile/binary and URL | dedicated local source |
+| Desktop service | `WCFI_*` resource/data/log/runtime paths, token and collection interval/batch/concurrency/retry values | Electron-launched sidecar |
+
+`.env.example` provides the development defaults and provider placeholders.
+Desktop-owned paths and tokens are injected by Electron rather than copied into
+a user-maintained `.env` file.
 
 ## Collection operations
 
@@ -76,6 +104,11 @@ stage is partial, not a reason to delete the database.
 ## macOS launchd
 
 The supplied plist schedules a campaign every four hours. Install it with:
+
+The checked-in plist and shell runner contain the repository's absolute project
+path. When the checkout is stored elsewhere, update `PROJECT_DIR` in
+`run_collection_campaign_launchd.sh` and the plist's program, working-directory,
+stdout, and stderr paths before installation.
 
 ```bash
 mkdir -p logs ~/Library/LaunchAgents
@@ -123,6 +156,8 @@ recruiting-term backfill after the main campaign.
 
 - `migrate.py`: apply numbered SQL migrations;
 - `backfill_job_classification.py`: recalculate classification fields and version;
+- `backfill_locations.py`: recalculate structured location fields;
+- `backfill_recommendation_index.py`: rebuild lexical documents and configured embeddings;
 - `backfill_recruiting_terms.py`: run recruiting-term enrichment over existing jobs;
 - `repair_salary_anomalies.py`: find/fix salary records violating current normalization expectations;
 - `migrate_waterlooworks_to_sqlite.py`: migrate local WaterlooWorks data;
@@ -159,6 +194,23 @@ git diff --check
 `make check` runs Ruff, pytest, front-end/API contract verification, and Node syntax checks. The tests cover domain normalization/classification, JobSpy adapter behavior, enrichment, repositories/routes, Profile security/parser, Tracker, WaterlooWorks, Agent tools/orchestrator, and Agent memory.
 
 ## Recovery runbook
+
+```mermaid
+flowchart TD
+    S[Observe error, status or log] --> C{Failure owner}
+    C -->|database or migration| D[Check /health, checksum, extensions and permissions]
+    C -->|public source| P[Inspect query retries and campaign summary]
+    C -->|WaterlooWorks| W[Inspect browser auth and per-board state]
+    C -->|LLM or embedding| L[Validate provider, model, key and base URL]
+    C -->|desktop packaging| E[Inspect bundle, PG_VERSION and sidecar logs]
+    D --> R[Repair smallest owning dependency]
+    P --> R
+    W --> R
+    L --> R
+    E --> R
+    R --> T[Retry the module's idempotent operation]
+    T --> V[Run acceptance checks]
+```
 
 1. Check `/health` and the relevant run summary/log before changing data.
 2. Classify the failure as source, database, provider, Chrome/WaterlooWorks,

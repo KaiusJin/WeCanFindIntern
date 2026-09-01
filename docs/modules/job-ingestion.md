@@ -16,7 +16,9 @@ The ingestion module turns source-specific JobSpy results into stable internal r
 | Single-query runner | `scripts/collection/ingest_jobspy_to_db.py` | Runs one JobSpy query and writes a batch |
 | Developer CLI | `src/wecanfindintern/ingestion/jobspy_cli.py` | Shared CLI parsing and query defaults |
 
-The vendored upstream implementation is in `vendor/JobSpy`. The project currently pins and audits the local source rather than importing an unconstrained latest package.
+The vendored upstream implementation is in `vendor/JobSpy`. The project pins
+and audits the local source rather than importing an unconstrained package at
+runtime.
 
 ## Input contract
 
@@ -55,20 +57,23 @@ The handler is always removed in a `finally` block so repeated collection does n
 
 `run_collection_campaign.py` separates network collection from database mutation:
 
-```text
-expand catalog
-    → concurrent source/page queries
-    → per-query fingerprint filtering
-    → cross-query best-record selection
-    → all network work complete
-    → canonical records without salary extraction
-    → PostgreSQL ingest and cross-source deduplication
-    → salary enrichment
-    → recruiting-term enrichment
-    → run statistics and final status
+```mermaid
+flowchart TD
+    A[Expand collection catalog] --> B[Concurrent source/page queries]
+    B --> C[Per-query fingerprint filtering]
+    C --> D[Cross-query best-record selection]
+    D --> E[All network work complete]
+    E --> F[CanonicalJobInput conversion]
+    F --> G[PostgreSQL batch ingest and dedupe]
+    G --> H[Salary enrichment]
+    H --> I[Recruiting-term enrichment]
+    I --> J[Run statistics and success/partial status]
 ```
 
-The catalog currently covers CA and US, the configured software/data/AI internship and co-op keyword groups, and Indeed, LinkedIn, Glassdoor, ZipRecruiter, and Google Jobs. Google receives a rendered `google_search_term` such as `software engineer intern near Toronto`.
+The catalog covers CA and US, the configured software/data/AI internship and
+co-op keyword groups, and Indeed, LinkedIn, Glassdoor, ZipRecruiter, and Google
+Jobs. Google receives a rendered `google_search_term` such as
+`software engineer intern near Toronto`.
 
 Each enabled catalog definition is executed once per source. A query is paged until the configured maximum result count is reached, JobSpy returns no jobs, no new fingerprints are found, or the query reaches terminal retry failure.
 
@@ -122,6 +127,27 @@ current command, but committed earlier batches remain valid and the next run can
 reconcile them. Enrichment is intentionally best-effort: source salary wins,
 then regex, then DeepSeek; a failed model call leaves the job without a derived
 value for a later retry.
+
+## Operator scenarios
+
+| Observed outcome | Persisted result | Supported action |
+|---|---|---|
+| Query returns zero rows without source errors | successful empty query | continue; the campaign can still finish `success` |
+| Query logs/raises a source error | bounded retries, then a recorded source failure | inspect the source failure and rerun the campaign after the source recovers |
+| One query exhausts retries | successful query results continue to persistence; run finishes `partial` | retain committed data and rerun the full catalog |
+| Process stops during network collection | no database phase for the in-memory records | restart the full campaign from the catalog |
+| Process stops during batch persistence | committed batches remain; active transaction rolls back | restart the full campaign; identity constraints reconcile records |
+| Enrichment provider fails | canonical jobs and completed enrichment remain | fix provider configuration and rerun/backfill the affected enrichment |
+| Process lock is already held | second invocation exits without collection | inspect the active manual/scheduled/desktop run and wait for it |
+
+## Verification surface
+
+- `tests/test_jobspy_adapter.py`: stable columns, conversion, query validation.
+- `tests/test_scrape_checked.py`: empty success versus logged source failure.
+- `tests/test_collection_catalog.py`: catalog expansion and source overrides.
+- `tests/test_job_ingestion_repository.py`: persistence and identity behavior.
+- `scripts/dev/inspect_jobspy_output.py`: bounded live-source inspection before
+  a full campaign.
 
 ## Safe extension procedure
 

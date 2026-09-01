@@ -4,13 +4,45 @@
 
 The application uses PostgreSQL for public jobs and all cross-feature application data. WaterlooWorks is intentionally separate and is documented in [the WaterlooWorks module](waterlooworks.md).
 
+```mermaid
+flowchart TD
+    M[Ordered SQL migrations] --> P[(PostgreSQL + pgvector)]
+    I[Ingestion repositories] --> P
+    T[Tracker/Profile/Agent repositories] --> P
+    P --> R[JobReadRepository]
+    R --> A[FastAPI job routes]
+    A --> S[Versioned JSON responses]
+    W[(WaterlooWorks SQLite)] -. separate source store .-> A
+```
+
 `src/wecanfindintern/db/pool.py` creates the async psycopg pool. `Settings` controls minimum/maximum pool size and statement timeout. `read_repository.py` is the read-facing job query layer; `db/repositories/` contains ingestion, salary, and recruiting-term writes.
 
 ## Migration sequence
 
-`scripts/maintenance/migrate.py` applies the numbered SQL files in order and records applied versions. The current schema evolves through core jobs/sources/raw snapshots/ingestion runs, collection-plan metadata, classification and location hierarchy, salary/recruiting-term enrichment, application tracking, profile storage, AI Agent persistence, and Agent memory persistence. The old persisted collection-checkpoint table was removed; the current campaign resumes by safe idempotent rerun from source.
+`scripts/maintenance/migrate.py` applies the numbered SQL files in order and
+records applied versions. The resulting schema covers jobs/sources/raw
+snapshots/ingestion runs, classification and location hierarchy,
+salary/recruiting-term enrichment, Tracker, Profile, interview sessions,
+recommendation retrieval, LLM cache, Agent persistence, and Agent memory.
+Campaign definitions are file-backed in `config/collection_plans.json`, and
+campaign recovery uses a safe idempotent rerun from source.
 
 Each migration is designed to be rerunnable through `IF EXISTS`, `IF NOT EXISTS`, guarded constraints, or controlled alteration checks. The migration directory README describes the operational command and ordering.
+
+```mermaid
+sequenceDiagram
+    participant O as Operator/Desktop sidecar
+    participant R as Migration runner
+    participant D as PostgreSQL
+    O->>R: apply migrations directory
+    R->>D: read schema_migrations
+    loop unapplied files in lexical order
+        R->>R: calculate file checksum
+        R->>D: execute SQL transaction
+        R->>D: record filename and checksum
+    end
+    R-->>O: applied list or checksum/SQL failure
+```
 
 ## Core job tables
 
@@ -36,12 +68,17 @@ Stores source payloads against an ingestion run and source record. The table is 
 
 `dedupe_candidates` records indexed candidate pairs and comparison state. `dedupe_decisions` records scores, rule hits, algorithm version, and resulting canonical job. `job_status_history` records active/possibly-closed/closed/expired changes.
 
-## Profile, tracker, and Agent tables
+## Application feature tables
 
 - Profile: `user_profiles`, repeated profile child tables, `resume_documents`, `profile_imports`.
 - Tracker: `application_tracker`, `application_tracker_events`.
 - Agent: `agent_sessions`, `agent_messages`, `agent_tool_calls`, `agent_approvals`, `agent_audit_log`.
 - Memory: `agent_conversation_summaries`, `agent_memories`, `agent_user_preferences`, and memory coverage/type columns.
+- Interview: `interview_sessions`, `interview_answers`.
+- Recommendation: `recommendation_documents`, `recommendation_chunks`,
+  `recommendation_chunk_embeddings`, `recommendation_corpus_state`, and
+  `recommendation_index_queue`.
+- Shared LLM cache: `llm_cache`.
 
 Foreign keys cascade child records with their owning entity. Public UUIDs are used by API models; internal numeric IDs remain database-only.
 
@@ -79,6 +116,11 @@ The UUID path parameter is parsed before repository access. Missing jobs produce
 
 Facets are generated from active jobs and return counts for opportunities, schedules, categories, work modes, skills, locations, and companies. The front end uses them to build filter controls; facet values are structured machine codes plus display labels where available.
 
+### `GET /api/v1/jobs/geo-distribution`
+
+Returns active-job counts per Canadian province/territory and US state, with
+country and overall totals for `web/modules/heatmap.js`.
+
 ## Query and index design
 
 - Active-feed partial indexes cover common location, company, work mode, employment, category, schedule, salary, recruiting-term, and date filters.
@@ -111,8 +153,8 @@ optimization or deployment-level worker limits.
 
 The API returns a readable error for a transaction or pool failure. It does not
 silently convert a failed write to success, and it does not delete the complete
-job corpus as a rollback. Historical recovery requires a targeted maintenance
-operation or a verified PostgreSQL backup restore.
+job corpus as a rollback. Point-in-time recovery requires a targeted
+maintenance operation or a verified PostgreSQL backup restore.
 
 ### Read/write behavior by outcome
 
@@ -127,5 +169,13 @@ operation or a verified PostgreSQL backup restore.
 | raw snapshot partition absent | safe/default partition may receive row | create future partitions and monitor default |
 
 ## Contract files and verification
+
+```mermaid
+flowchart LR
+    P[Pydantic response models] --> O[FastAPI OpenAPI]
+    P --> J[Exported JSON Schemas]
+    O --> V[Frontend/API route verifier]
+    J --> D[Data API contract verifier]
+```
 
 The public contracts are versioned as `job.v3`, `job-detail.v4`, `job-page.v3`, and `job-facets.v2` in `schemas/`. Detail responses expose verbatim adapter values as `source_skills` and normalized values as `skill_tags`. `scripts/dev/export_schemas.py` regenerates schema artifacts from Pydantic models. `scripts/dev/verify_data_api_contract.py` checks the data response contract; `scripts/dev/verify_frontend_api_contract.py` checks that front-end API references resolve to registered FastAPI routes.
