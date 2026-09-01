@@ -12,7 +12,7 @@ import {
 } from "./jobs.js?v=20260831-jobboard-parity-v3";
 
 // Settings must be applied before any AI feature runs.
-loadSettings();
+await loadSettings();
 
 // Non-default tabs load only when activated. Several modules initialize their
 // section state at import time, so speculative hover imports would otherwise

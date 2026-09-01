@@ -2,10 +2,11 @@
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -27,8 +28,17 @@ from wecanfindintern.db.pool import Database
 from wecanfindintern.llm import cache as llm_cache
 from wecanfindintern.waterlooworks import WaterlooWorksService
 
-WEB_DIR = Path(__file__).resolve().parents[3] / "web"
+WEB_DIR = Path(
+    os.getenv("WCFI_WEB_DIR", str(Path(__file__).resolve().parents[3] / "web"))
+)
 logger = logging.getLogger(__name__)
+
+DESKTOP_CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; "
+    "font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
+    "frame-ancestors 'none'"
+)
 
 
 async def _recommendation_index_loop(
@@ -86,10 +96,23 @@ def create_app() -> FastAPI:
         app.state.database = database
         app.state.agent_memory = AgentMemoryManager(AgentMemoryStore(database.pool))
         app.state.waterlooworks = WaterlooWorksService()
+        app.state.background_collection = None
+        if os.getenv("WCFI_USER_DATA_DIR") and os.getenv("WCFI_RESOURCE_DIR"):
+            from wecanfindintern.desktop.collection import BackgroundCollectionService
+            from wecanfindintern.desktop.runtime import DesktopPaths
+
+            desktop_paths = DesktopPaths.from_env()
+            app.state.background_collection = BackgroundCollectionService(
+                config_path=desktop_paths.collection_plan,
+                lock_path=desktop_paths.runtime / "collection-campaign.lock",
+            )
+            app.state.background_collection.start()
         recommendation_index_task = asyncio.create_task(
             _recommendation_index_loop(database, app.state.waterlooworks)
         )
         yield
+        if app.state.background_collection is not None:
+            await app.state.background_collection.stop()
         recommendation_index_task.cancel()
         with suppress(asyncio.CancelledError):
             await recommendation_index_task
@@ -119,12 +142,42 @@ def create_app() -> FastAPI:
             await connection.execute("SELECT 1")
         return {"status": "ok"}
 
+    @app.get("/desktop/status")
+    async def desktop_status(request: Request) -> dict:
+        service = request.app.state.background_collection
+        collection = (
+            service.status.payload()
+            if service is not None
+            else {"enabled": False, "running": False}
+        )
+        return {"status": "ready", "collection": collection}
+
+    @app.post("/desktop/collection/run", status_code=202)
+    async def run_desktop_collection(request: Request) -> dict:
+        service = request.app.state.background_collection
+        if service is None or not service.status.enabled:
+            raise HTTPException(status_code=409, detail="Background collection is disabled.")
+        if not service.trigger():
+            raise HTTPException(status_code=409, detail="Collection is already running.")
+        return {"accepted": True}
+
     # Keep the browser experience in the same deployable service as the data API.
     # API routes are declared first, so the catch-all static route does not shadow them.
     @app.middleware("http")
     async def frontend_cache_headers(request: Request, call_next):
-        response = await call_next(request)
+        desktop_token = os.getenv("WCFI_DESKTOP_TOKEN")
+        if desktop_token:
+            from wecanfindintern.desktop.security import enforce_desktop_token
+
+            response = await enforce_desktop_token(
+                request, call_next, expected_token=desktop_token
+            )
+        else:
+            response = await call_next(request)
         path = request.url.path
+        response.headers["Content-Security-Policy"] = DESKTOP_CSP
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
         if path in ("/", "/index.html"):
             # The entry document must always revalidate so new deployments are
             # picked up immediately.

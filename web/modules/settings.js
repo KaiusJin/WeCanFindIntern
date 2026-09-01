@@ -5,6 +5,7 @@ import { $, showErrorDialog } from "./helpers.js";
 // =========================================================
 
 const SETTINGS_STORAGE_KEY = "wecanfindintern_ai_settings_v3";
+const SECRET_FIELDS = ["deepseekKey", "geminiKey", "openaiKey", "glmKey", "qwenKey"];
 
 const aiSettings = {
   selectedModel: "Gemini:gemini-3.7-flash",
@@ -22,6 +23,20 @@ const aiSettings = {
 };
 
 let currentActiveProvider = "Gemini";
+
+function secureDesktopBridge() {
+  return window.weCanFindInternDesktop || null;
+}
+
+function secretValues() {
+  return Object.fromEntries(SECRET_FIELDS.map((field) => [field, aiSettings[field] || ""]));
+}
+
+function settingsWithoutSecrets() {
+  const result = { ...aiSettings };
+  SECRET_FIELDS.forEach((field) => { delete result[field]; });
+  return result;
+}
 
 const EYE_SVG_OPEN = `<svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 const EYE_SVG_OFF = `<svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
@@ -109,15 +124,37 @@ function syncKeyFieldWithModel() {
   }
 }
 
-function loadSettings() {
+async function loadSettings() {
+  let parsed = null;
   try {
     const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved);
+      parsed = JSON.parse(saved);
       Object.assign(aiSettings, parsed);
     }
   } catch (error) {
     showErrorDialog(error, { title: "Saved AI settings could not be read", guidance: "Save your AI settings again to replace the invalid browser data." });
+  }
+
+  const desktop = secureDesktopBridge();
+  if (desktop) {
+    try {
+      const secureValues = await desktop.getAiSecrets();
+      const migratedValues = Object.fromEntries(SECRET_FIELDS.map((field) => [
+        field,
+        secureValues[field] || parsed?.[field] || "",
+      ]));
+      Object.assign(aiSettings, migratedValues);
+      if (SECRET_FIELDS.some((field) => parsed?.[field])) {
+        await desktop.setAiSecrets(migratedValues);
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settingsWithoutSecrets()));
+      }
+    } catch (error) {
+      showErrorDialog(error, {
+        title: "Secure AI keys could not be read",
+        guidance: "Check that the operating-system credential store is available, then restart the app.",
+      });
+    }
   }
 
   let selectedModel = aiSettings.selectedModel || "Gemini:gemini-3.7-flash";
@@ -140,7 +177,7 @@ function loadSettings() {
   if (embeddingBaseUrl) embeddingBaseUrl.value = aiSettings.embeddingBaseUrl || "";
 }
 
-function saveSettings() {
+async function saveSettings() {
   const modelVal = $("#setting-selected-model")?.value || "";
   const [provider] = splitModelValue(modelVal);
   const currentKey = $("#setting-api-key")?.value.trim() || "";
@@ -165,15 +202,24 @@ function saveSettings() {
   aiSettings.embeddingDimensions = Number($("#setting-embedding-dimensions")?.value || 768);
   aiSettings.embeddingBaseUrl = $("#setting-embedding-base-url")?.value.trim() || "";
 
+  const desktop = secureDesktopBridge();
   try {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(aiSettings));
+    if (desktop) {
+      await desktop.setAiSecrets(secretValues());
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settingsWithoutSecrets()));
+    } else {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(aiSettings));
+    }
   } catch (error) {
-    showErrorDialog(error, { title: "AI settings could not be saved", guidance: "Allow local storage for this site, then save the settings again." });
+    showErrorDialog(error, { title: "AI settings could not be saved", guidance: "Allow local storage and make sure the operating-system credential store is available." });
     return;
   }
 
   const feedback = $("#settings-save-feedback");
   if (feedback) {
+    feedback.textContent = desktop
+      ? "✓ Saved in the operating-system secure store!"
+      : "✓ Saved in this browser!";
     feedback.hidden = false;
     setTimeout(() => { feedback.hidden = true; }, 2500);
   }
@@ -254,14 +300,14 @@ document.querySelectorAll("dialog").forEach((dlg) => {
   dlg.addEventListener("cancel", syncDialogScrollLock);
 });
 
-$("#open-settings")?.addEventListener("click", () => {
-  loadSettings();
+$("#open-settings")?.addEventListener("click", async () => {
+  await loadSettings();
   const dialog = $("#settings-dialog");
   dialog?.showModal();
   syncDialogScrollLock();
 });
 $("#close-settings")?.addEventListener("click", () => $("#settings-dialog")?.close());
-$("#btn-save-settings")?.addEventListener("click", saveSettings);
+$("#btn-save-settings")?.addEventListener("click", () => { saveSettings(); });
 $("#settings-dialog")?.addEventListener("click", (e) => {
   if (e.target === $("#settings-dialog")) $("#settings-dialog")?.close();
 });

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import random
 import signal
 import sys
@@ -38,11 +39,13 @@ def acquire_process_lock(lock_file) -> None:
     """Acquire a non-blocking process lock on Unix or Windows."""
 
     if sys.platform == "win32":
-        lock_file.seek(0)
-        lock_file.write("0")
-        lock_file.flush()
-        lock_file.seek(0)
         try:
+            lock_file.seek(0)
+            if not lock_file.read(1):
+                lock_file.seek(0)
+                lock_file.write("0")
+                lock_file.flush()
+            lock_file.seek(0)
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError as exc:
             raise BlockingIOError from exc
@@ -284,7 +287,7 @@ async def run(
             "query_stats": query_stats,
             "failures": failures,
         }
-        summary_path = Path("logs/campaign_summary_latest.json")
+        summary_path = Path(os.getenv("WCFI_LOG_DIR", "logs")) / "campaign_summary_latest.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
         log(f"Collection campaign finished in {duration:.1f}s. Summary written to {summary_path}")
@@ -308,9 +311,11 @@ async def run(
 
 
 def main() -> None:
+    resource_dir = Path(os.getenv("WCFI_RESOURCE_DIR", "."))
+    runtime_dir = Path(os.getenv("WCFI_RUNTIME_DIR", ".runtime"))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--config", type=Path, default=Path("config/collection_plans.json")
+        "--config", type=Path, default=resource_dir / "config" / "collection_plans.json"
     )
     parser.add_argument("--batch-size", type=int, default=250)
     parser.add_argument(
@@ -324,7 +329,7 @@ def main() -> None:
     parser.add_argument(
         "--lock-file",
         type=Path,
-        default=Path(".runtime/collection-campaign.lock"),
+        default=runtime_dir / "collection-campaign.lock",
         help="Process lock shared by manual and scheduled campaign runs",
     )
     args = parser.parse_args()
