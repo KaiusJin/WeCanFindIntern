@@ -92,7 +92,10 @@ def test_tracker_csv_export_route():
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     body = build_tracker_csv([])
-    assert body.startswith("Company,Role,Stage,Location,Work mode,Source,Applied at,Salary,Job URL")
+    assert body.startswith(
+        "Company,Role,Stage,Location,Work mode,Source,Applied at,"
+        "Application deadline,External status,Salary,Job URL"
+    )
 
 
 def test_openapi_contract_covers_frontend_endpoints():
@@ -107,6 +110,7 @@ def test_openapi_contract_covers_frontend_endpoints():
     assert "get" in paths["/api/v1/tracker/bookmarks/waterlooworks"]
     assert "put" in paths["/api/v1/tracker/bookmarks/waterlooworks/{source_job_id}"]
     assert "delete" in paths["/api/v1/tracker/bookmarks/waterlooworks/{source_job_id}"]
+    assert "post" in paths["/api/v1/waterlooworks/applications/sync"]
     assert "post" in paths["/api/v1/agent/sessions"]
     assert "post" in paths["/api/v1/agent/sessions/{session_id}/messages"]
     assert "get" in paths["/api/v1/agent/sessions/{session_id}/tool-calls"]

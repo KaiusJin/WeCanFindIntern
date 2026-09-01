@@ -1,9 +1,8 @@
 """Text-to-speech for interview questions, with pluggable backends.
 
 ``gtts`` (default) synthesizes through Google's public TTS endpoint and needs
-internet access. ``local`` (``INTERVIEW_TTS_BACKEND=local``) shells out to the
-macOS ``say`` synthesizer and returns WAV bytes, so question playback works
-fully offline.
+internet access. ``local`` (``INTERVIEW_TTS_BACKEND=local``) uses the native
+offline speech engine on macOS or Windows and returns WAV bytes.
 """
 
 from __future__ import annotations
@@ -52,24 +51,35 @@ def _synthesize_gtts(text: str, lang: str) -> bytes:
 
 @lru_cache(maxsize=128)
 def _synthesize_local(text: str) -> bytes:
-    if sys.platform != "darwin":
+    if sys.platform not in {"darwin", "win32"}:
         raise TTSError(
-            "The local TTS backend currently requires macOS. "
+            "The local TTS backend currently requires macOS or Windows. "
             f"Unset {TTS_BACKEND_ENV} to use the online backend."
         )
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
         path = handle.name
     try:
-        subprocess.run(
-            ["say", "-o", path, "--data-format=LEI16@22050", text],
-            check=True,
-            capture_output=True,
-            timeout=60,
-        )
+        if sys.platform == "darwin":
+            command = ["say", "-o", path, "--data-format=LEI16@22050", text]
+            environment = None
+        else:
+            command = [
+                "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                "$s.SetOutputToWaveFile($env:WECANFINDINTERN_TTS_PATH); "
+                "$s.Speak($env:WECANFINDINTERN_TTS_TEXT); $s.Dispose()",
+            ]
+            environment = os.environ.copy()
+            environment.update(
+                WECANFINDINTERN_TTS_PATH=path,
+                WECANFINDINTERN_TTS_TEXT=text,
+            )
+        subprocess.run(command, check=True, capture_output=True, timeout=60, env=environment)
         with open(path, "rb") as audio:
             data = audio.read()
     except FileNotFoundError as exc:
-        raise TTSError("The macOS 'say' command was not found.") from exc
+        executable = "say" if sys.platform == "darwin" else "powershell.exe"
+        raise TTSError(f"The local TTS command '{executable}' was not found.") from exc
     except subprocess.CalledProcessError as exc:
         raise TTSError(
             f"Local TTS failed: {exc.stderr.decode(errors='replace')[:200]}"

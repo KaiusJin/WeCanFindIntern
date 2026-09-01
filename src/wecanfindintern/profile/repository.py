@@ -89,50 +89,71 @@ class ProfileRepository:
             updated_at=row["updated_at"],
         )
 
-    async def save_profile(
-        self, payload: ProfilePayload, *, source_import_id: int | None = None
-    ) -> UserProfile:
+    async def _save_profile_on_connection(
+        self, connection: Any, payload: ProfilePayload
+    ) -> None:
+        """Replace the current profile while preserving stable section UUIDs."""
+
+        row = await self._profile_row(connection)
+        basics = payload.basics
+        await connection.execute(
+            """UPDATE user_profiles SET full_name=%s,preferred_name=%s,
+            email=%s,phone=%s,city=%s,region=%s,country=%s,
+            linkedin_url=%s,github_url=%s,portfolio_url=%s,schema_version=%s,
+            updated_at=now() WHERE id=%s;""",
+            (
+                basics.full_name,
+                basics.preferred_name,
+                basics.email,
+                basics.phone,
+                basics.city,
+                basics.region,
+                basics.country,
+                basics.linkedin_url,
+                basics.github_url,
+                basics.portfolio_url,
+                payload.schema_version,
+                row["id"],
+            ),
+        )
+        for name, (table, _) in SECTION_TABLES.items():
+            retained_ids: list[UUID] = []
+            for position, item in enumerate(getattr(payload, name)):
+                item_data = item.model_dump(mode="json", exclude={"id"})
+                item_id = getattr(item, "id", None)
+                updated = None
+                if item_id is not None:
+                    updated = await (
+                        await connection.execute(
+                            f"""UPDATE {table}
+                            SET position=%s,payload=%s,updated_at=now()
+                            WHERE profile_id=%s AND public_id=%s
+                            RETURNING public_id;""",
+                            (position, Jsonb(item_data), row["id"], item_id),
+                        )
+                    ).fetchone()
+                if updated is None:
+                    updated = await (
+                        await connection.execute(
+                            f"""INSERT INTO {table} (profile_id,position,payload)
+                            VALUES (%s,%s,%s) RETURNING public_id;""",
+                            (row["id"], position, Jsonb(item_data)),
+                        )
+                    ).fetchone()
+                retained_ids.append(updated["public_id"])
+            if retained_ids:
+                await connection.execute(
+                    f"DELETE FROM {table} WHERE profile_id=%s AND NOT (public_id=ANY(%s));",
+                    (row["id"], retained_ids),
+                )
+            else:
+                await connection.execute(
+                    f"DELETE FROM {table} WHERE profile_id=%s;", (row["id"],)
+                )
+
+    async def save_profile(self, payload: ProfilePayload) -> UserProfile:
         async with self.pool.connection() as connection, connection.transaction():
-            row = await self._profile_row(connection)
-            basics = payload.basics
-            await connection.execute(
-                """UPDATE user_profiles SET full_name=%s,preferred_name=%s,
-                email=%s,phone=%s,city=%s,region=%s,country=%s,
-                linkedin_url=%s,github_url=%s,portfolio_url=%s,schema_version=%s,
-                updated_at=now() WHERE id=%s;""",
-                (
-                    basics.full_name,
-                    basics.preferred_name,
-                    basics.email,
-                    basics.phone,
-                    basics.city,
-                    basics.region,
-                    basics.country,
-                    basics.linkedin_url,
-                    basics.github_url,
-                    basics.portfolio_url,
-                    payload.schema_version,
-                    row["id"],
-                ),
-            )
-            for name, (table, _) in SECTION_TABLES.items():
-                await connection.execute(f"DELETE FROM {table} WHERE profile_id=%s;", (row["id"],))
-                for position, item in enumerate(getattr(payload, name)):
-                    item_data = item.model_dump(mode="json", exclude={"id"})
-                    await connection.execute(
-                        f"INSERT INTO {table} (profile_id,position,payload) VALUES (%s,%s,%s);",
-                        (row["id"], position, Jsonb(item_data)),
-                    )
-            await connection.execute(
-                """INSERT INTO profile_versions
-                (profile_id,source_import_id,schema_version,snapshot) VALUES (%s,%s,%s,%s);""",
-                (
-                    row["id"],
-                    source_import_id,
-                    payload.schema_version,
-                    Jsonb(payload.model_dump(mode="json")),
-                ),
-            )
+            await self._save_profile_on_connection(connection, payload)
         return await self.get_profile()
 
     async def create_resume_import(
@@ -205,25 +226,38 @@ class ProfileRepository:
             )
             return [ResumeDocumentSummary.model_validate(row) for row in await result.fetchall()]
 
-    async def get_import(self, import_id: UUID) -> tuple[int, ProfilePayload] | None:
-        async with self.pool.connection() as connection:
+    async def update_import_draft(
+        self, import_id: UUID, payload: ProfilePayload
+    ) -> ProfilePayload | None:
+        """Autosave an import review without applying it to the live profile."""
+
+        async with self.pool.connection() as connection, connection.transaction():
             result = await connection.execute(
-                "SELECT id,parsed_payload FROM profile_imports "
-                "WHERE public_id=%s AND status='draft';",
-                (import_id,),
+                """UPDATE profile_imports SET parsed_payload=%s
+                WHERE public_id=%s AND status='draft'
+                RETURNING public_id;""",
+                (Jsonb(payload.model_dump(mode="json")), import_id),
             )
-            row = await result.fetchone()
-        return (row["id"], ProfilePayload.model_validate(row["parsed_payload"])) if row else None
+            return payload if await result.fetchone() else None
 
     async def confirm_import(
         self, import_id: UUID, payload: ProfilePayload | None
     ) -> UserProfile | None:
-        imported = await self.get_import(import_id)
-        if not imported:
-            return None
-        internal_id, parsed = imported
-        profile = await self.save_profile(payload or parsed, source_import_id=internal_id)
         async with self.pool.connection() as connection, connection.transaction():
+            imported = await (
+                await connection.execute(
+                    """SELECT id,parsed_payload FROM profile_imports
+                    WHERE public_id=%s AND status='draft' FOR UPDATE;""",
+                    (import_id,),
+                )
+            ).fetchone()
+            if not imported:
+                return None
+            internal_id = imported["id"]
+            final_payload = payload or ProfilePayload.model_validate(
+                imported["parsed_payload"]
+            )
+            await self._save_profile_on_connection(connection, final_payload)
             await connection.execute(
                 "UPDATE profile_imports SET status='confirmed',confirmed_at=now() WHERE id=%s;",
                 (internal_id,),
@@ -233,7 +267,7 @@ class ProfileRepository:
                 WHERE id=(SELECT resume_id FROM profile_imports WHERE id=%s);""",
                 (internal_id,),
             )
-        return profile
+        return await self.get_profile()
 
     async def delete_resume(self, resume_id: UUID) -> bool:
         async with self.pool.connection() as connection, connection.transaction():

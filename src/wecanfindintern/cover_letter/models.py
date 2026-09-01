@@ -6,8 +6,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from wecanfindintern.llm.providers import ProviderName
 
-class UserProfile(BaseModel):
+
+class CoverLetterContact(BaseModel):
     full_name: str = ""
     email: str = ""
     phone: str = ""
@@ -24,8 +26,8 @@ class CoverLetterRequest(BaseModel):
     hiring_manager: str = ""
     company_information: str = ""
     date_str: str = "[Date]"
-    user_info: UserProfile = Field(default_factory=UserProfile)
-    provider: Literal["Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"] = "Gemini"
+    user_info: CoverLetterContact = Field(default_factory=CoverLetterContact)
+    provider: ProviderName = "Gemini"
     model_name: str | None = None
     api_key: str | None = None
     api_base: str | None = None
@@ -46,5 +48,10 @@ class CoverLetterResponse(BaseModel):
 
 class CoverLetterExportRequest(BaseModel):
     body: str
-    user_info: UserProfile = Field(default_factory=UserProfile)
+    user_info: CoverLetterContact = Field(default_factory=CoverLetterContact)
     format: Literal["docx", "pdf"] = "docx"
+
+
+# Compatibility alias for callers that imported this DTO before it was given
+# a domain-specific name. New code should use CoverLetterContact.
+UserProfile = CoverLetterContact

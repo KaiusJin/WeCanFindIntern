@@ -67,6 +67,7 @@ class ProjectEntry(ParsedEntry):
 
 
 class SkillEntry(BaseModel):
+    id: UUID | None = None
     name: str = Field(..., min_length=1, max_length=120)
 
     @field_validator("name")

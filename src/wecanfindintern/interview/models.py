@@ -6,15 +6,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
-
-class InterviewQuestionsRequest(BaseModel):
-    job_description: str
-    provider: Literal["Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"] = "Gemini"
-    model_name: str | None = None
-    api_key: str | None = None
-    api_base: str | None = None
+from wecanfindintern.llm.providers import ProviderName
 
 
 class InterviewSessionCreateRequest(BaseModel):
@@ -22,10 +16,15 @@ class InterviewSessionCreateRequest(BaseModel):
 
     job_description: str = Field(..., min_length=1, max_length=20000)
     resume_text: str = Field(default="", max_length=30000)
-    provider: Literal["Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"] = "Gemini"
+    provider: ProviderName = "Gemini"
     model_name: str | None = None
     api_key: str | None = None
     api_base: str | None = None
+
+
+# The non-persisting questions endpoint accepts the same request contract.
+# Keep the old public name as an alias rather than maintaining a second model.
+InterviewQuestionsRequest = InterviewSessionCreateRequest
 
 
 class InterviewSessionSummary(BaseModel):
@@ -55,7 +54,16 @@ class InterviewQuestionItem(BaseModel):
     category: str
     category_label: str
     question: str
-    eval_criteria: list[str] = Field(default_factory=list)
+    evaluation_criteria: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("evaluation_criteria", "eval_criteria"),
+    )
+
+    @property
+    def eval_criteria(self) -> list[str]:
+        """Compatibility accessor for previously generated question consumers."""
+
+        return self.evaluation_criteria
 
 
 class InterviewQuestionsResponse(BaseModel):

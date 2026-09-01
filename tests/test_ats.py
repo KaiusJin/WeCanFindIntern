@@ -7,7 +7,7 @@ import pytest
 
 from wecanfindintern.ats.match_scoring import score_job_match
 from wecanfindintern.ats.parsing_readiness import score_parsing_readiness
-from wecanfindintern.ats.service import generate_ats_review, match_level
+from wecanfindintern.ats.service import generate_ats_match, generate_resume_ats_score
 
 RESUME = """
 Alex Chen
@@ -46,12 +46,6 @@ Five years of hospital experience required.
 CALIBRATION_CASES = json.loads(
     (Path(__file__).parent / "fixtures" / "ats_calibration_cases.json").read_text()
 )
-
-
-def test_match_level():
-    assert "High" in match_level(85)
-    assert "Medium" in match_level(65)
-    assert "Low" in match_level(40)
 
 
 def test_pdf_readiness_reports_evidence_and_full_mode():
@@ -94,18 +88,14 @@ def test_matching_job_scores_above_unrelated_job():
     assert matching.breakdown
 
 
-def test_job_match_is_deterministic_and_provider_independent():
-    first = generate_ats_review(
-        RESUME, MATCHING_JD, provider="Gemini", model_name=None, api_key=None
-    )
-    second = generate_ats_review(
-        RESUME, MATCHING_JD, provider="OpenAI", model_name="anything", api_key="x"
-    )
+def test_separate_ats_scores_are_deterministic():
+    first_match = generate_ats_match(RESUME, MATCHING_JD)
+    second_match = generate_ats_match(RESUME, MATCHING_JD)
+    first_score = generate_resume_ats_score(RESUME)
+    second_score = generate_resume_ats_score(RESUME)
 
-    assert first.ok and second.ok
-    assert first.job_match == second.job_match
-    assert first.parsing_readiness == second.parsing_readiness
-    assert first.usage["scoring"] == "deterministic"
+    assert first_match == second_match
+    assert first_score == second_score
 
 
 def test_missing_requirements_are_unknown_or_unavailable_not_invented():

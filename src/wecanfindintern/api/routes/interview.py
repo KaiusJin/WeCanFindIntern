@@ -192,7 +192,7 @@ async def create_interview_session_stream(
                 event = await queue.get()
                 if event is None:
                     break
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                yield event
 
             if errors and not questions:
                 yield {
@@ -283,10 +283,26 @@ async def analyze_answer(
     audio_file: Annotated[UploadFile | None, File()] = None,
     session_id: Annotated[UUID | None, Form()] = None,
     question_index: Annotated[int | None, Form()] = None,
+    evaluation_criteria: Annotated[str, Form()] = "",
     question_criteria: Annotated[str, Form()] = "",
 ):
     """Analyze a mock interview answer; persists the report when a practice
     session and question index are supplied."""
+    if (session_id is None) != (question_index is None):
+        raise HTTPException(
+            status_code=422,
+            detail="session_id and question_index must be supplied together",
+        )
+    if session_id is not None and question_index is not None:
+        try:
+            await _repo(request).validate_session_question(
+                session_id=session_id,
+                question_index=question_index,
+                question_text=question_context,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
     audio_bytes = None
     audio_mime = "audio/webm"
     if audio_file:
@@ -303,7 +319,7 @@ async def analyze_answer(
         answer_text=answer_text,
         audio_bytes=audio_bytes,
         audio_mime=audio_mime,
-        evaluation_criteria=question_criteria,
+        evaluation_criteria=evaluation_criteria or question_criteria,
         provider=provider,
         model_name=model_name,
         api_key=api_key,
@@ -321,6 +337,9 @@ async def analyze_answer(
             score=response.score,
             summary=response.summary,
             star_feedback=response.star_feedback,
+            criteria_results=[
+                item.model_dump(mode="json") for item in response.criteria_results
+            ],
             timeline=[event.model_dump(mode="json") for event in response.timeline],
             advice=list(response.advice),
             provider=provider,

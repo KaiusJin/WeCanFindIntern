@@ -2,49 +2,62 @@
 
 from __future__ import annotations
 
-import io
-from typing import Annotated
+from fastapi import APIRouter
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
-from pypdf import PdfReader
-
-from wecanfindintern.ats.models import AtsReviewRequest, AtsReviewResponse
-from wecanfindintern.ats.parsing_readiness import score_parsing_readiness
-from wecanfindintern.ats.service import generate_ats_review
-from wecanfindintern.profile.security import extract_text_pdf_plain
+from wecanfindintern.ats.commentary import (
+    generate_ats_score_commentary,
+    generate_job_match_commentary,
+)
+from wecanfindintern.ats.models import (
+    AtsMatchRequest,
+    AtsScoreCommentaryRequest,
+    AtsScoreCommentaryResponse,
+    JobMatchCommentaryRequest,
+    JobMatchCommentaryResponse,
+    JobMatchResult,
+    ParsingReadinessResult,
+    ResumeAtsScoreRequest,
+)
+from wecanfindintern.ats.service import (
+    generate_ats_match,
+    generate_resume_ats_score,
+)
 
 ats_router = APIRouter(prefix="/api/v1/ats", tags=["ATS Resume Review"])
 
 
-@ats_router.post("/extract-pdf")
-async def extract_pdf(file: Annotated[UploadFile, File()]):
-    """Extract plain text from uploaded PDF resume."""
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-    try:
-        content = await file.read()
-        text = extract_text_pdf_plain(file.filename, file.content_type, content)
-        reader = PdfReader(io.BytesIO(content), strict=True)
-        page_texts = [(page.extract_text() or "") for page in reader.pages]
-        readiness = score_parsing_readiness(text, page_texts=page_texts)
-        return {
-            "ok": True,
-            "text": text,
-            "filename": file.filename,
-            "parsing_readiness": readiness.model_dump(mode="json"),
-        }
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="PDF extraction failed.") from exc
+@ats_router.post("/score", response_model=ParsingReadinessResult)
+def run_resume_ats_score(payload: ResumeAtsScoreRequest):
+    """Evaluate whether a resume can be parsed reliably by an ATS."""
+    return generate_resume_ats_score(payload.resume_text)
 
 
-@ats_router.post("/review", response_model=AtsReviewResponse)
-def run_ats_review(payload: AtsReviewRequest):
-    """Run ATS keyword and qualifications match review."""
-    return generate_ats_review(
+@ats_router.post("/score/commentary", response_model=AtsScoreCommentaryResponse)
+def run_resume_ats_score_commentary(payload: AtsScoreCommentaryRequest):
+    """Generate qualitative feedback without changing the deterministic score."""
+    return generate_ats_score_commentary(
+        resume_text=payload.resume_text,
+        diagnostic=payload.diagnostic,
+        provider=payload.provider,
+        model_name=payload.model_name,
+        api_key=payload.api_key,
+        api_base=payload.api_base,
+    )
+
+
+@ats_router.post("/match", response_model=JobMatchResult)
+def run_ats_match(payload: AtsMatchRequest):
+    """Evaluate resume evidence against one target job description."""
+    return generate_ats_match(payload.resume_text, payload.job_description)
+
+
+@ats_router.post("/match/commentary", response_model=JobMatchCommentaryResponse)
+def run_job_match_commentary(payload: JobMatchCommentaryRequest):
+    """Generate qualitative job-match feedback without changing the score."""
+    return generate_job_match_commentary(
         resume_text=payload.resume_text,
         job_description=payload.job_description,
+        diagnostic=payload.diagnostic,
         provider=payload.provider,
         model_name=payload.model_name,
         api_key=payload.api_key,

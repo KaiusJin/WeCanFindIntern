@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from wecanfindintern.llm import cache as llm_cache
+from wecanfindintern.llm.providers import JSON_RESPONSE_PROVIDERS, SUPPORTED_LLM_PROVIDERS
 
 
 class LLMError(RuntimeError):
@@ -126,9 +127,6 @@ def _find_last_json(text: str) -> Any:
     return None
 
 
-JSON_RESPONSE_PROVIDERS = frozenset({"OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"})
-
-
 def json_response_format(provider: str) -> dict[str, str] | None:
     """``json_object`` mode for providers that support it; ``None`` otherwise."""
 
@@ -181,14 +179,14 @@ def complete_json(
             f"Missing {provider} API key. Please enter your API key in Settings.",
         )
     model = model_name.strip().replace("models/", "")
-    if provider not in ("Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"):
+    if provider not in SUPPORTED_LLM_PROVIDERS:
         raise LLMError(provider, f"Unsupported provider: {provider}", model=model)
 
     delay = 1.0
     last_error: Exception | None = None
     for attempt in range(max_retries + 1):
         try:
-            if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"):
+            if provider in JSON_RESPONSE_PROVIDERS:
                 result = _openai_compatible(
                     provider=provider,
                     api_key=key,
@@ -316,7 +314,7 @@ def stream_text(
             provider, f"Missing {provider} API key. Please enter your API key in Settings."
         )
     model = model_name.strip().replace("models/", "")
-    if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"):
+    if provider in JSON_RESPONSE_PROVIDERS:
         yield from _openai_stream(
             provider=provider,
             api_key=key,

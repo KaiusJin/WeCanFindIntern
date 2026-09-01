@@ -3,36 +3,20 @@
 from __future__ import annotations
 
 from wecanfindintern.ats.match_scoring import score_job_match
-from wecanfindintern.ats.models import AtsReviewResponse
+from wecanfindintern.ats.models import JobMatchResult, ParsingReadinessResult
 from wecanfindintern.ats.parsing_readiness import score_parsing_readiness
 
 
-def match_level(score: int) -> str:
-    if score >= 80:
-        return "High Match"
-    if score >= 55:
-        return "Medium Match"
-    return "Low Match"
+def generate_resume_ats_score(resume_text: str) -> ParsingReadinessResult:
+    """Score resume parsing readiness independently from any job target."""
+
+    return score_parsing_readiness(resume_text)
 
 
-def generate_ats_review(
+def generate_ats_match(
     resume_text: str,
     job_description: str,
-    provider: str = "Gemini",
-    model_name: str | None = None,
-    api_key: str | None = None,
-    api_base: str | None = None,
-) -> AtsReviewResponse:
-    """Compute both scores in code; model settings cannot influence results."""
+) -> JobMatchResult:
+    """Score resume evidence against a specific job description."""
 
-    del provider, model_name, api_key, api_base
-    if not resume_text.strip():
-        return AtsReviewResponse(ok=False, error="Resume text cannot be empty.")
-    if not job_description.strip():
-        return AtsReviewResponse(ok=False, error="Job description cannot be empty.")
-    return AtsReviewResponse(
-        ok=True,
-        parsing_readiness=score_parsing_readiness(resume_text),
-        job_match=score_job_match(resume_text, job_description),
-        usage={"scoring": "deterministic", "version": "ats-match.v1"},
-    )
+    return score_job_match(resume_text, job_description)

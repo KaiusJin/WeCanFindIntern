@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from wecanfindintern.cover_letter.models import CoverLetterResponse, UserProfile
-from wecanfindintern.llm.gateway import LLMError, complete_json, resolve_api_key
+from wecanfindintern.cover_letter.models import CoverLetterContact, CoverLetterResponse
+from wecanfindintern.llm.gateway import (
+    LLMError,
+    complete_json,
+    json_response_format,
+    resolve_api_key,
+)
 from wecanfindintern.llm.prompts.cover_letter import (
     build_cover_letter_prompt,
     build_review_prompt,
@@ -15,7 +20,7 @@ from wecanfindintern.llm.prompts.cover_letter import (
 def generate_cover_letter(
     resume_text: str,
     job_description: str,
-    user_info: UserProfile,
+    user_info: CoverLetterContact,
     job_title: str = "",
     company_name: str = "",
     company_location: str = "",
@@ -202,11 +207,7 @@ def _call_json_model(
         api_base=api_base,
         system_prompt=system_prompt,
         user_prompt=prompt,
-        response_format=(
-            {"type": "json_object"}
-            if provider in ("OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama")
-            else None
-        ),
+        response_format=json_response_format(provider),
     )
     if not isinstance(result.data, dict):
         raise ValueError("AI response was not a JSON object.")

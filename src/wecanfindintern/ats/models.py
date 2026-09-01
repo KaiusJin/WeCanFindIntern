@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from wecanfindintern.llm.providers import ProviderName
 
 DiagnosticStatus = Literal["pass", "warning", "fail", "unavailable"]
 MatchStatus = Literal["matched", "partial", "missing", "unknown"]
@@ -70,22 +72,59 @@ class JobMatchResult(BaseModel):
     scoring_version: str = "ats-match.v1"
 
 
-class AtsReviewRequest(BaseModel):
+class ResumeAtsScoreRequest(BaseModel):
     resume_text: str = Field(min_length=1, max_length=120_000)
-    job_description: str = Field(min_length=1, max_length=120_000)
-    # Retained for request compatibility. Deterministic scoring never asks the
-    # selected model to invent or adjust the score.
-    provider: Literal["Gemini", "OpenAI", "DeepSeek", "GLM", "Qwen", "Ollama"] = (
-        "Gemini"
-    )
+
+
+class AtsScoreCommentary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1, max_length=1200)
+    strengths: list[str] = Field(default_factory=list, max_length=3)
+    improvements: list[str] = Field(default_factory=list, min_length=1, max_length=4)
+
+
+class AtsScoreCommentaryRequest(BaseModel):
+    resume_text: str = Field(min_length=1, max_length=120_000)
+    diagnostic: ParsingReadinessResult
+    provider: ProviderName = "Gemini"
     model_name: str | None = None
     api_key: str | None = None
     api_base: str | None = None
 
 
-class AtsReviewResponse(BaseModel):
+class AtsScoreCommentaryResponse(BaseModel):
     ok: bool
-    parsing_readiness: ParsingReadinessResult | None = None
-    job_match: JobMatchResult | None = None
+    commentary: AtsScoreCommentary | None = None
     error: str | None = None
-    usage: dict[str, Any] = Field(default_factory=dict)
+    usage: dict[str, object] = Field(default_factory=dict)
+
+
+class AtsMatchRequest(BaseModel):
+    resume_text: str = Field(min_length=1, max_length=120_000)
+    job_description: str = Field(min_length=1, max_length=120_000)
+
+
+class JobMatchCommentary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1, max_length=1200)
+    strengths: list[str] = Field(default_factory=list, max_length=3)
+    improvements: list[str] = Field(default_factory=list, min_length=1, max_length=4)
+
+
+class JobMatchCommentaryRequest(BaseModel):
+    resume_text: str = Field(min_length=1, max_length=120_000)
+    job_description: str = Field(min_length=1, max_length=120_000)
+    diagnostic: JobMatchResult
+    provider: ProviderName = "Gemini"
+    model_name: str | None = None
+    api_key: str | None = None
+    api_base: str | None = None
+
+
+class JobMatchCommentaryResponse(BaseModel):
+    ok: bool
+    commentary: JobMatchCommentary | None = None
+    error: str | None = None
+    usage: dict[str, object] = Field(default_factory=dict)

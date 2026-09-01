@@ -1,18 +1,39 @@
 """ATS resume review module."""
 
+from wecanfindintern.ats.commentary import (
+    generate_ats_score_commentary,
+    generate_job_match_commentary,
+)
 from wecanfindintern.ats.models import (
-    AtsReviewRequest,
-    AtsReviewResponse,
+    AtsMatchRequest,
+    AtsScoreCommentary,
+    AtsScoreCommentaryRequest,
+    AtsScoreCommentaryResponse,
+    JobMatchCommentary,
+    JobMatchCommentaryRequest,
+    JobMatchCommentaryResponse,
     JobMatchResult,
     ParsingReadinessResult,
+    ResumeAtsScoreRequest,
 )
-from wecanfindintern.ats.service import generate_ats_review, match_level
+from wecanfindintern.ats.service import (
+    generate_ats_match,
+    generate_resume_ats_score,
+)
 
 __all__ = [
-    "AtsReviewRequest",
-    "AtsReviewResponse",
+    "AtsMatchRequest",
+    "AtsScoreCommentary",
+    "AtsScoreCommentaryRequest",
+    "AtsScoreCommentaryResponse",
+    "JobMatchCommentary",
+    "JobMatchCommentaryRequest",
+    "JobMatchCommentaryResponse",
     "JobMatchResult",
     "ParsingReadinessResult",
-    "generate_ats_review",
-    "match_level",
+    "ResumeAtsScoreRequest",
+    "generate_ats_match",
+    "generate_ats_score_commentary",
+    "generate_job_match_commentary",
+    "generate_resume_ats_score",
 ]

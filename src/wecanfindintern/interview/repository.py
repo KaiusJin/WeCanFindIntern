@@ -62,7 +62,8 @@ class InterviewRepository:
                 """
                 SELECT id, question_index, question_text, answer_text, transcript,
                        transcript_language, duration_seconds, score, summary,
-                       star_feedback, timeline, advice, provider, model_name, created_at
+                       star_feedback, criteria_results, timeline, advice,
+                       provider, model_name, created_at
                 FROM interview_answers
                 WHERE session_id = %s
                 ORDER BY question_index
@@ -114,6 +115,7 @@ class InterviewRepository:
         score: int,
         summary: str,
         star_feedback: str,
+        criteria_results: list[dict[str, Any]],
         timeline: list[dict[str, Any]],
         advice: list[str],
         provider: str,
@@ -125,9 +127,12 @@ class InterviewRepository:
                 INSERT INTO interview_answers (
                     session_id, question_index, question_text, answer_text, transcript,
                     transcript_language, duration_seconds, score, summary, star_feedback,
-                    timeline, advice, provider, model_name
+                    criteria_results, timeline, advice, provider, model_name
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s
+                )
                 ON CONFLICT (session_id, question_index) DO UPDATE SET
                     question_text = EXCLUDED.question_text,
                     answer_text = EXCLUDED.answer_text,
@@ -137,6 +142,7 @@ class InterviewRepository:
                     score = EXCLUDED.score,
                     summary = EXCLUDED.summary,
                     star_feedback = EXCLUDED.star_feedback,
+                    criteria_results = EXCLUDED.criteria_results,
                     timeline = EXCLUDED.timeline,
                     advice = EXCLUDED.advice,
                     provider = EXCLUDED.provider,
@@ -154,6 +160,7 @@ class InterviewRepository:
                     score,
                     summary,
                     star_feedback,
+                    json.dumps(criteria_results, ensure_ascii=False),
                     json.dumps(timeline, ensure_ascii=False),
                     json.dumps(advice, ensure_ascii=False),
                     provider,
@@ -164,6 +171,29 @@ class InterviewRepository:
                 "UPDATE interview_sessions SET updated_at = now() WHERE id = %s",
                 (session_id,),
             )
+
+    async def validate_session_question(
+        self, *, session_id: UUID, question_index: int, question_text: str
+    ) -> None:
+        """Validate the client reference against the immutable session question set."""
+
+        if question_index < 0:
+            raise ValueError("question_index must be non-negative")
+        async with self.pool.connection() as connection:
+            row = await (
+                await connection.execute(
+                    "SELECT questions FROM interview_sessions WHERE id=%s;",
+                    (session_id,),
+                )
+            ).fetchone()
+        if row is None:
+            raise ValueError("Interview session not found")
+        questions = row["questions"] or []
+        if question_index >= len(questions):
+            raise ValueError("question_index is outside the session question set")
+        stored_text = str(questions[question_index].get("question") or "").strip()
+        if stored_text != question_text.strip():
+            raise ValueError("question_context does not match the session question")
 
     async def practice_trend(self) -> dict[str, Any]:
         """Score trend across sessions for the progress panel."""

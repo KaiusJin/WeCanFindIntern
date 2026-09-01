@@ -37,6 +37,12 @@ class ValidatedResume:
     warnings: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class ExtractedPdfText:
+    text: str
+    page_texts: tuple[str, ...]
+
+
 def _safe_filename(filename: str | None) -> str:
     if not filename:
         raise ValueError("A filename is required.")
@@ -136,9 +142,9 @@ def _extract_pdf(content: bytes) -> ValidatedResume:
     return ValidatedResume("pdf", "application/pdf", text)
 
 
-def extract_text_pdf_plain(
+def extract_pdf_text(
     filename: str | None, declared_content_type: str | None, content: bytes
-) -> str:
+) -> ExtractedPdfText:
     """Extract text from a safe text PDF and append ordinary web links."""
     safe_name = _safe_filename(filename)
     if Path(safe_name).suffix.lower() != ".pdf":
@@ -162,7 +168,8 @@ def extract_text_pdf_plain(
         raise ValueError(f"PDF files must contain between 1 and {MAX_PDF_PAGES} pages.")
     _reject_pdf_active_content(reader)
     try:
-        text = "\n\n".join((page.extract_text() or "") for page in reader.pages).strip()
+        page_texts = tuple((page.extract_text() or "") for page in reader.pages)
+        text = "\n\n".join(page_texts).strip()
     except Exception as exc:
         raise ValueError("Text extraction from the PDF failed.") from exc
     if len(text) > MAX_EXTRACTED_CHARS:
@@ -185,7 +192,15 @@ def extract_text_pdf_plain(
     missing_links = list(dict.fromkeys(link for link in links if link not in text))
     if missing_links:
         text += "\n\nLinks:\n" + "\n".join(missing_links)
-    return text
+    return ExtractedPdfText(text=text, page_texts=page_texts)
+
+
+def extract_text_pdf_plain(
+    filename: str | None, declared_content_type: str | None, content: bytes
+) -> str:
+    """Compatibility wrapper for callers that only need flattened text."""
+
+    return extract_pdf_text(filename, declared_content_type, content).text
 
 
 def _strip_latex(source: str) -> str:

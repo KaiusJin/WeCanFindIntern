@@ -10,10 +10,10 @@ from docx.shared import Inches, Pt, RGBColor
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
-from wecanfindintern.cover_letter.models import UserProfile
+from wecanfindintern.cover_letter.models import CoverLetterContact
 
 
-def export_docx(body_text: str, user_info: UserProfile) -> bytes:
+def export_docx(body_text: str, user_info: CoverLetterContact) -> bytes:
     """Create a styled Word (.docx) document."""
     doc = Document()
 
@@ -70,7 +70,7 @@ def export_docx(body_text: str, user_info: UserProfile) -> bytes:
 
 
 class StyledPDF(FPDF):
-    def __init__(self, user_info: UserProfile):
+    def __init__(self, user_info: CoverLetterContact):
         super().__init__()
         self.user_info = user_info
         self.set_auto_page_break(auto=True, margin=20)
@@ -96,7 +96,7 @@ class StyledPDF(FPDF):
                 self.ln(6)
 
 
-def export_pdf(body_text: str, user_info: UserProfile) -> bytes:
+def export_pdf(body_text: str, user_info: CoverLetterContact) -> bytes:
     """Create a styled PDF document."""
     pdf = StyledPDF(user_info)
     pdf.set_font("Helvetica", "", 11)

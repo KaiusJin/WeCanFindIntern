@@ -50,7 +50,7 @@ Job Description:
 
 Return a VALID JSON array of exactly 7 objects ONLY. Every object has exactly
 these keys: "id" (int), "category" (str), "category_label" (str),
-"question" (str), "eval_criteria" (list of short strings). Use these values
+"question" (str), "evaluation_criteria" (list of short strings). Use these values
 in order:
 
   id | category             | category_label

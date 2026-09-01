@@ -1,7 +1,8 @@
 # ATS-Style Resume Diagnostics
 
-The ATS Review workspace exposes two separate, deterministic diagnostics. It
-does not claim to reproduce Workday, Greenhouse, Taleo, or an employer's
+The UI exposes two independent sections—Resume ATS Score and ATS Match—backed
+by separate deterministic API routes. It does not claim to reproduce Workday,
+Greenhouse, Taleo, or an employer's
 ranking model, and neither score is an admission probability.
 
 ## Design references
@@ -28,6 +29,17 @@ scoring—not the claim that any one set of weights is universal.
 
 ## Resume Parsing Readiness
 
+The Resume ATS Score section calls `POST /api/v1/ats/score` for pasted text.
+PDF uploads use the shared `POST /api/v1/resumes/extract-pdf` boundary so the
+score can include page-layout evidence.
+
+After the deterministic score is available, the section calls
+`POST /api/v1/ats/score/commentary` with that diagnostic and the resume text.
+The selected AI provider returns a short assessment, supported strengths, and
+prioritized improvements. This qualitative layer cannot alter or replace the
+numeric score. If AI generation is unavailable, the score remains visible and
+the section shows an inline feedback message.
+
 `score_parsing_readiness` is a pure function. The PDF endpoint provides page
 text so page-level extraction and reading-order heuristics can be assessed.
 Pasted text runs in `text_only` mode and marks PDF reading order unavailable.
@@ -45,6 +57,9 @@ Unavailable categories are excluded from the denominator rather than silently
 awarding or deducting points. Every category includes evidence and a status.
 
 ## Resume-Job Match
+
+The ATS Match section calls `POST /api/v1/ats/match` with resume text and one
+target job description.
 
 `score_job_match` extracts source-backed signals with deterministic rules. A
 skill is only scored when an alias from the versioned skill taxonomy appears

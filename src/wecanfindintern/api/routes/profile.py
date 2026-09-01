@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 
+from wecanfindintern.api.dependencies import get_profile_repository
+from wecanfindintern.application.profile_context import profile_resume_text
 from wecanfindintern.profile.models import (
     ProfilePayload,
     ResumeDocumentSummary,
@@ -20,11 +22,7 @@ from wecanfindintern.profile.security import MAX_PDF_BYTES, validate_and_extract
 profile_router = APIRouter(prefix="/api/v1/profile", tags=["Profile"])
 
 
-def get_profile_repo(request: Request) -> ProfileRepository:
-    return ProfileRepository(request.app.state.database.pool)
-
-
-ProfileRepoDep = Annotated[ProfileRepository, Depends(get_profile_repo)]
+ProfileRepoDep = Annotated[ProfileRepository, Depends(get_profile_repository)]
 
 
 @profile_router.get("", response_model=UserProfile)
@@ -40,6 +38,15 @@ async def update_profile(payload: ProfilePayload, repo: ProfileRepoDep) -> UserP
 @profile_router.get("/export", response_model=UserProfile)
 async def export_profile(repo: ProfileRepoDep) -> UserProfile:
     return await repo.get_profile()
+
+
+@profile_router.get("/context")
+async def get_profile_context(repo: ProfileRepoDep) -> dict:
+    profile = await repo.get_profile()
+    return {
+        "profile": profile.model_dump(mode="json"),
+        "resume_text": profile_resume_text(profile),
+    }
 
 
 @profile_router.post("/resumes", response_model=ResumeImportResult, status_code=201)
@@ -93,3 +100,15 @@ async def confirm_import(
     if not profile:
         raise HTTPException(status_code=404, detail="Resume import draft not found")
     return profile
+
+
+@profile_router.put("/imports/{import_id}", response_model=ProfilePayload)
+async def autosave_import_draft(
+    import_id: UUID,
+    payload: ProfilePayload,
+    repo: ProfileRepoDep,
+) -> ProfilePayload:
+    saved = await repo.update_import_draft(import_id, payload)
+    if saved is None:
+        raise HTTPException(status_code=404, detail="Resume import draft not found")
+    return saved

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from wecanfindintern.application.profile_context import profile_resume_text
 from wecanfindintern.interview.models import (
     CriterionResult,
     InterviewAnalyzeResponse,
@@ -30,101 +31,9 @@ from wecanfindintern.llm.prompts.interview import (
 
 
 def build_resume_text(profile: Any) -> str:
-    """Flatten a profile.v1 payload into resume-style text.
+    """Compatibility wrapper around the shared profile context projection."""
 
-    Mirrors the frontend's Profile preview so server-side callers (the Agent
-    tool) ground questions in the same context as the UI.
-    """
-
-    basics = getattr(profile, "basics", None)
-    lines: list[str] = []
-    if basics is not None and getattr(basics, "full_name", ""):
-        lines.append(basics.full_name)
-    if basics is not None:
-        lines.extend(
-            value
-            for value in (
-                getattr(basics, "email", None),
-                getattr(basics, "phone", None),
-                getattr(basics, "linkedin_url", None),
-                getattr(basics, "github_url", None),
-                getattr(basics, "portfolio_url", None),
-            )
-            if value
-        )
-
-    def append(title: str, entries: list[Any], formatter: Any) -> None:
-        if not entries:
-            return
-        lines.append("")
-        lines.append(title)
-        for entry in entries:
-            row = formatter(entry)
-            if row:
-                lines.append(row)
-
-    append(
-        "Education",
-        getattr(profile, "education", []) or [],
-        lambda entry: " | ".join(
-            str(part)
-            for part in (
-                entry.institution,
-                entry.degree,
-                entry.major,
-                getattr(entry, "graduation_date_text", None)
-                or getattr(entry, "expected_graduation", None),
-            )
-            if part
-        ),
-    )
-    append(
-        "Work Experience",
-        getattr(profile, "work_experience", []) or [],
-        lambda entry: " | ".join(
-            str(part)
-            for part in (
-                entry.title,
-                entry.company,
-                getattr(entry, "start_date_text", None),
-                getattr(entry, "end_date_text", None),
-                entry.description,
-                *(entry.skills or []),
-            )
-            if part
-        ),
-    )
-    append(
-        "Projects",
-        getattr(profile, "projects", []) or [],
-        lambda entry: " | ".join(
-            str(part)
-            for part in (
-                entry.name,
-                entry.description,
-                getattr(entry, "project_url", None),
-                getattr(entry, "github_url", None),
-                *(entry.skills or []),
-            )
-            if part
-        ),
-    )
-    append(
-        "Skills",
-        getattr(profile, "skills", []) or [],
-        lambda entry: entry.name,
-    )
-    append(
-        "Certifications",
-        getattr(profile, "certifications", []) or [],
-        lambda entry: entry.name,
-    )
-    append(
-        "Awards",
-        getattr(profile, "awards", []) or [],
-        lambda entry: entry.title,
-    )
-    return "\n".join(line for line in lines if line is not None).strip()
+    return profile_resume_text(profile)
 
 
 def generate_interview_questions(

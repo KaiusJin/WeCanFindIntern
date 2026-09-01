@@ -2,6 +2,7 @@
 
 from wecanfindintern.cover_letter.export import export_docx, export_pdf
 from wecanfindintern.cover_letter.models import (
+    CoverLetterContact,
     CoverLetterExportRequest,
     CoverLetterRequest,
     CoverLetterResponse,
@@ -11,6 +12,7 @@ from wecanfindintern.cover_letter.service import generate_cover_letter
 
 __all__ = [
     "CoverLetterExportRequest",
+    "CoverLetterContact",
     "CoverLetterRequest",
     "CoverLetterResponse",
     "UserProfile",

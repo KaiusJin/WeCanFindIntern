@@ -15,7 +15,10 @@ The saved profile has `schema_version=profile.v1` and these sections:
 - `languages`;
 - `awards`.
 
-The persistence layer stores the profile root and repeated sections in PostgreSQL child tables. The repository returns a structured profile and completion percentage for the UI and career tools.
+The persistence layer stores one current profile root and repeated sections in
+PostgreSQL child tables; it does not retain profile versions. Repeated entries
+keep stable public UUIDs across autosaves. The repository returns a structured
+profile and completion percentage for the UI and career tools.
 
 ## Accepted resume inputs
 
@@ -48,16 +51,21 @@ Only English text-based `.pdf` and `.tex` resumes are accepted.
 upload → validate → extract text → parse profile draft → review → confirm → save profile
 ```
 
-An import creates a draft and does not silently overwrite the saved profile. Confirmation applies the accepted field values. Users can discard drafts and delete resume documents/import records.
+Normal editor changes autosave the current profile. An import creates a separate
+draft; edits during review autosave only that draft and do not overwrite the
+current profile. Confirmation applies the accepted field values atomically.
+Users can discard drafts and delete resume documents/import records.
 
 ## HTTP routes
 
 - `GET /api/v1/profile`
 - `PUT /api/v1/profile`
 - `GET /api/v1/profile/export`
+- `GET /api/v1/profile/context`
 - `POST /api/v1/profile/resumes`
 - `GET /api/v1/profile/resumes`
 - `DELETE /api/v1/profile/resumes/{resume_id}`
+- `PUT /api/v1/profile/imports/{import_id}`
 - `POST /api/v1/profile/imports/{import_id}/confirm`
 
 Invalid extension, MIME mismatch, magic bytes, structure, language, active-content, or extraction checks produce user-readable 422 errors. Missing resources produce 404.

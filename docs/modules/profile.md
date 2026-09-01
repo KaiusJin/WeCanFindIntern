@@ -17,11 +17,17 @@ The profile contains:
 - `languages`;
 - `awards`.
 
-Pydantic models in `profile/models.py` enforce field lengths, list shapes, URL/contact formats where defined, and the `schema_version`. Repeated sections are stored in child tables under `user_profiles` so each entry can be edited or removed independently. The repository calculates completion percentage from populated profile fields.
+Pydantic models in `profile/models.py` enforce field lengths, list shapes,
+URL/contact formats where defined, and the `schema_version`. The database stores
+one current profile and no version history. Repeated sections are stored in child
+tables under `user_profiles`; their public UUIDs remain stable across edits. The
+repository calculates completion percentage from populated profile fields.
 
 ## Resume input boundary
 
-The secure boundary is `profile/security.py` and is used by the profile upload route as well as the ATS PDF extraction route where applicable.
+The secure boundary is `profile/security.py` and is used by the profile upload
+route and the shared `/api/v1/resumes/extract-pdf` route. ATS retains a legacy
+compatibility alias for that shared extraction handler.
 
 Only English `.pdf` and `.tex` are accepted. The validator checks safe filename and supported extension, declared MIME type, non-empty content, PDF magic bytes or valid text LaTeX content, size, structure, extracted-text limits, minimum meaningful text, and English-language heuristics.
 
@@ -47,7 +53,11 @@ upload .pdf/.tex
     → merge confirmed fields into user profile
 ```
 
-The parser creates a draft rather than mutating the saved profile. Existing profile data is retained unless the user confirms a replacement/update. The UI exposes discard/review behavior, so a resume is evidence for a change and not an implicit overwrite.
+Normal profile edits autosave the single current record. The parser creates a
+draft rather than mutating that record. Review edits autosave only the draft in
+`profile_imports`; existing profile data is retained unless the user explicitly
+applies the import. Apply updates the profile and confirms the import/resume in
+one transaction.
 
 ## Repository behavior
 
@@ -60,16 +70,22 @@ The API returns summaries for the resume history rather than exposing unnecessar
 - `GET /api/v1/profile`: current profile.
 - `PUT /api/v1/profile`: save the current profile payload.
 - `GET /api/v1/profile/export`: profile export payload.
+- `GET /api/v1/profile/context`: profile plus the canonical resume-text projection used by AI sections.
 - `POST /api/v1/profile/resumes`: upload, validate, extract, and create an import draft (201).
 - `GET /api/v1/profile/resumes`: list resume summaries.
 - `DELETE /api/v1/profile/resumes/{resume_id}`: delete resume and related draft.
+- `PUT /api/v1/profile/imports/{import_id}`: autosave an import review draft without applying it.
 - `POST /api/v1/profile/imports/{import_id}/confirm`: apply a draft to the saved profile.
 
 Invalid file type, MIME mismatch, unsafe content, extraction failure, and invalid draft data are returned as user-readable 422 errors. Missing resume/import/profile resources return 404.
 
 ## Frontend editing behavior
 
-`web/modules/profile.js` renders repeated sections dynamically, preserves the saved profile, merges partial form values, shows an import draft banner, supports discard, refreshes resume history, and asks for confirmation before deleting a resume. Empty repeated rows are edited locally until save.
+`web/modules/profile.js` renders repeated sections dynamically, preserves stable
+entry IDs, autosaves normal edits, autosaves import reviews to the draft route,
+and reserves the current-profile mutation for explicit Apply. It also supports
+discard, refreshes resume history, and asks for confirmation before deleting a
+resume.
 
 ## Data handling rules
 
