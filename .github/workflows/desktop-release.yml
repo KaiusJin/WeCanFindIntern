@@ -1,7 +1,10 @@
-name: Desktop release artifacts
+name: Desktop release
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
@@ -13,9 +16,11 @@ jobs:
       matrix:
         include:
           - os: macos-14
-            artifact: macos
+            artifact: macos-arm64
+          - os: macos-15-intel
+            artifact: macos-x64
           - os: windows-2022
-            artifact: windows
+            artifact: windows-x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
 
@@ -34,6 +39,15 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+
+      - name: Verify release tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: >-
+          node -e "const expected = 'v' + require('./desktop/package.json').version;
+          if (process.env.GITHUB_REF_NAME !== expected) {
+            throw new Error('Release tag ' + process.env.GITHUB_REF_NAME +
+            ' does not match desktop/package.json (' + expected + ')');
+          }"
 
       - name: Install Python dependencies
         run: python -m pip install -r requirements-desktop.txt
@@ -78,3 +92,70 @@ jobs:
           path: desktop/out/make/**
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: WeCanFindIntern-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          duplicate_names="$(find . -type f -printf '%f\n' | sort | uniq -d)"
+          if [[ -n "$duplicate_names" ]]; then
+            echo "Release assets have duplicate filenames:" >&2
+            echo "$duplicate_names" >&2
+            exit 1
+          fi
+          while IFS= read -r -d '' asset; do
+            hash="$(sha256sum "$asset" | cut -d ' ' -f 1)"
+            printf '%s  %s\n' "$hash" "$(basename "$asset")"
+          done < <(find . -type f -print0 | sort -z) > SHA256SUMS.txt
+          test -s SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create and publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+          if (( ${#assets[@]} == 0 )); then
+            echo "No release assets were downloaded." >&2
+            exit 1
+          fi
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Release $GITHUB_REF_NAME is already published; refusing to overwrite it." >&2
+              exit 1
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "WeCanFindIntern $GITHUB_REF_NAME" \
+              --generate-notes \
+              --notes "Self-contained desktop builds for macOS and Windows. These artifacts are currently unsigned, so Gatekeeper or SmartScreen may show a warning." \
+              --draft
+          fi
+
+          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" --draft=false --latest
