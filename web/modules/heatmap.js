@@ -1,6 +1,6 @@
-import { $, escapeHtml, showErrorDialog } from "./helpers.js";
+import { $, escapeHtml, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { switchTab } from "./navigation.js";
-import { applyRegionFilter } from "./jobs.js?v=20260831-jobboard-parity-v3";
+import { applyRegionFilter } from "./jobs.js?v=20260901-app-shell-v1";
 
 // =========================================================
 // JOB DISTRIBUTION HEATMAP — real choropleth (d3-geo).
@@ -9,8 +9,9 @@ import { applyRegionFilter } from "./jobs.js?v=20260831-jobboard-parity-v3";
 // Jobs tab filtered to it.
 // =========================================================
 
-const COLOR_LOW = [238, 245, 238];
-const COLOR_HIGH = [30, 75, 56];
+// Keep the map on the same blue scale as the rest of the product.
+const COLOR_LOW = [237, 246, 249];
+const COLOR_HIGH = [22, 66, 91];
 
 const US_NAME_TO_CODE = {
   Alabama: "AL", Alaska: "AK", Arizona: "AZ", Arkansas: "AR",
@@ -29,7 +30,7 @@ const US_NAME_TO_CODE = {
 };
 
 function heatColor(count, maxCount) {
-  if (!count) return "#f4f8f4";
+  if (!count) return "#f1f5f6";
   const t = Math.sqrt(count) / Math.sqrt(maxCount || 1);
   const channel = (index) =>
     Math.round(COLOR_LOW[index] + (COLOR_HIGH[index] - COLOR_LOW[index]) * t);
@@ -192,11 +193,9 @@ async function loadHeatmap() {
 
     const counts = {};
     const nameLookup = { US: {}, CA: {} };
-    const regionCount = { US: 0, CA: 0 };
     for (const region of data.regions) {
       counts[`${region.country}:${region.region_code}`] = region.count;
       nameLookup[region.country][region.region_code] = region.region_name;
-      regionCount[region.country] += 1;
     }
     const maxCount = data.regions.length ? data.regions[0].count : 0;
 
@@ -208,7 +207,6 @@ async function loadHeatmap() {
       "Color intensity follows a square-root scale of active postings. Click any state or province to open the Jobs tab filtered to that region.";
 
     renderTopList(data.regions, data.total);
-    renderCountrySummary(data.by_country ?? {}, regionCount);
 
     await ensureD3();
     const usTopo = await (await fetch("/vendor/us-states-10m.json")).json();
@@ -237,14 +235,6 @@ function renderTopList(regions, total) {
       </div>`;
     })
     .join("");
-}
-
-function renderCountrySummary(byCountry, countryRegionCounts) {
-  const wrap = $("#heatmap-country-summary");
-  if (!wrap) return;
-  wrap.innerHTML = `
-    <p><strong>Canada</strong> — ${byCountry.CA ?? 0} jobs across ${countryRegionCounts.CA} provinces/territories</p>
-    <p><strong>United States</strong> — ${byCountry.US ?? 0} jobs across ${countryRegionCounts.US} states/districts</p>`;
 }
 
 loadHeatmap();

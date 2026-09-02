@@ -41,8 +41,6 @@ function ensureAppMessageDialog() {
     <dialog id="app-message-dialog" class="app-message-dialog" aria-labelledby="app-message-title" aria-describedby="app-message-detail">
       <div class="app-message-card">
         <button id="app-message-close" class="app-message-close" type="button" aria-label="Close">×</button>
-        <div id="app-message-icon" class="app-message-icon" aria-hidden="true">!</div>
-        <p id="app-message-eyebrow" class="app-message-eyebrow">ACTION NEEDED</p>
         <h2 id="app-message-title">Unable to complete this action</h2>
         <div class="app-message-reason">
           <strong>Reason</strong>
@@ -70,8 +68,6 @@ function showAppMessage(message, {
 } = {}) {
   const dialog = ensureAppMessageDialog();
   dialog.dataset.variant = variant;
-  $("#app-message-icon").textContent = variant === "success" ? "✓" : "!";
-  $("#app-message-eyebrow").textContent = variant === "success" ? "COMPLETED" : "ACTION NEEDED";
   $("#app-message-title").textContent = title;
   $("#app-message-detail").textContent = errorMessage(message);
   $("#app-message-guidance").textContent = guidance;
@@ -316,15 +312,18 @@ function renderJobDetail(job, {
     <div${fact.full ? ' class="detail-grid-full"' : ""}>
       <span>${escapeHtml(fact.label)}</span><strong>${escapeHtml(fact.value)}</strong>
     </div>`).join("");
-  const aiActions = showAiActions ? `<div class="job-ai-actions">
+  const aiActionButtons = showAiActions ? `
     <button class="btn-ai-action" type="button" data-ai-target="tab-ats-match">Job Match ↗</button>
     <button class="btn-ai-action" type="button" data-ai-target="tab-interview">Mock Interview ↗</button>
     <button class="btn-ai-action" type="button" data-ai-target="tab-cover-letter">Cover Letter ↗</button>
     <button class="btn-ai-action" type="button" data-ai-target="tab-agent">Ask AI Agent ↗</button>
-  </div>` : "";
+  ` : "";
   const linkMarkup = links.filter(Boolean).map((url) =>
-    `<a class="primary-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">View Application Link ↗</a>`,
+    `<a class="primary-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Apply ↗</a>`,
   ).join("");
+  const actionMarkup = aiActionButtons || linkMarkup
+    ? `<div class="job-ai-actions">${aiActionButtons}${linkMarkup}</div>`
+    : "";
 
   return `<p class="eyebrow">${escapeHtml(eyebrow)}</p>
     <h2>${escapeHtml(job.title)}</h2>
@@ -335,8 +334,7 @@ function renderJobDetail(job, {
       <div class="detail-grid-full"><span>Skills</span><strong>${escapeHtml(skillsText)}</strong></div>
     </div>
     <div class="detail-description">${description ? renderMarkdown(description) : "<p>No detailed description is available for this job.</p>"}</div>
-    ${aiActions}
-    ${linkMarkup ? `<div class="detail-actions" style="margin-top: 16px;">${linkMarkup}</div>` : ""}`;
+    ${actionMarkup}`;
 }
 
 function formatDate(value) {

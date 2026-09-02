@@ -1,5 +1,5 @@
-import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, setupDropzone, showErrorDialog } from "./helpers.js";
-import { validateAiConfig } from "./settings.js";
+import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, setupDropzone, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
+import { validateAiConfig } from "./settings.js?v=20260901-settings-v1";
 import { extractResumePdf, loadProfileContext } from "./resume-source.js";
 import { readSseEvents } from "./sse.js";
 

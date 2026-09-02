@@ -5,7 +5,7 @@ import {
   responseErrorMessage,
   setupDropzone,
   showErrorDialog,
-} from "./helpers.js";
+} from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { extractResumePdf } from "./resume-source.js";
 
 const DEFAULT_FILE_LABEL = "Click or drag & drop resume PDF";

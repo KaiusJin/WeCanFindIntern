@@ -1,4 +1,4 @@
-import { $ } from "./helpers.js";
+import { $ } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 
 function setupInfiniteScroll({
   sentinelSelector = "#infinite-scroll-sentinel",

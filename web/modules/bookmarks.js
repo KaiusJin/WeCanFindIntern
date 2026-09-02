@@ -1,4 +1,4 @@
-import { $, $$, responseErrorMessage, showErrorDialog } from "./helpers.js";
+import { $, $$, responseErrorMessage, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { trackerStageLabel } from "./tracker-contract.js";
 
 const bookmarkState = {

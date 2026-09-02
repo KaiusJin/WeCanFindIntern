@@ -1,4 +1,4 @@
-import { buildJobContextText } from "./helpers.js";
+import { buildJobContextText } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 
 const jobContextState = { activeJobContext: null };
 

@@ -1,6 +1,6 @@
-import { $, showErrorDialog } from "./helpers.js";
-import { loadSettings } from "./settings.js";
-import { setTabActivators, switchTab } from "./navigation.js";
+import { $, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
+import { loadSettings } from "./settings.js?v=20260901-settings-v1";
+import { initializeNavigation, setTabActivators, switchTab } from "./navigation.js?v=20260901-app-shell-v2";
 import { jobContextState } from "./job-context.js?v=20260831-jobboard-parity-v3";
 import { setupInfiniteScroll } from "./pagination.js?v=20260831-jobboard-parity-v3";
 import { startDesktopCollectionMonitor } from "./desktop-collection.js?v=20260901-job-sync-v1";
@@ -10,7 +10,7 @@ import {
   loadFacets,
   updateSliderFill,
   setupBackToTop,
-} from "./jobs.js?v=20260831-jobboard-parity-v3";
+} from "./jobs.js?v=20260901-error-dialog-minimal-v1";
 
 // Settings must be applied before any AI feature runs.
 await loadSettings();
@@ -19,15 +19,15 @@ await loadSettings();
 // section state at import time, so speculative hover imports would otherwise
 // issue API requests for sections the user never opened.
 const tabModules = {
-  "tab-tracker": () => import("./tracker.js"),
-  "tab-profile": () => import("./profile.js"),
-  "tab-waterlooworks": () => import("./waterlooworks.js?v=20260831-jobboard-parity-v3"),
-  "tab-agent": () => import("./agent.js?v=20260901-approval-result-v1"),
-  "tab-heatmap": () => import("./heatmap.js"),
-  "tab-ats-score": () => import("./ats-score.js?v=20260901-ai-commentary-v2"),
-  "tab-ats-match": () => import("./ats-match.js?v=20260901-ai-commentary-v1"),
-  "tab-interview": () => import("./interview.js"),
-  "tab-cover-letter": () => import("./cover-letter.js"),
+  "tab-tracker": () => import("./tracker.js?v=20260901-error-dialog-minimal-v1"),
+  "tab-profile": () => import("./profile.js?v=20260901-error-dialog-minimal-v1"),
+  "tab-waterlooworks": () => import("./waterlooworks.js?v=20260901-error-dialog-minimal-v1"),
+  "tab-agent": () => import("./agent.js?v=20260901-error-dialog-minimal-v1"),
+  "tab-heatmap": () => import("./heatmap.js?v=20260901-coverage-removed-v1"),
+  "tab-ats-score": () => import("./ats-score.js?v=20260901-error-dialog-minimal-v1"),
+  "tab-ats-match": () => import("./ats-match.js?v=20260901-error-dialog-minimal-v1"),
+  "tab-interview": () => import("./interview.js?v=20260901-error-dialog-minimal-v1"),
+  "tab-cover-letter": () => import("./cover-letter.js?v=20260901-error-dialog-minimal-v1"),
 };
 
 const moduleLoads = {};
@@ -65,6 +65,7 @@ setTabActivators({
   "tab-interview": () => ensureTabModule("tab-interview"),
   "tab-cover-letter": () => ensureTabModule("tab-cover-letter"),
 });
+initializeNavigation();
 
 document.addEventListener("tracker:data-invalidated", () => {
   if (!moduleLoads["tab-tracker"]) return;
@@ -107,13 +108,15 @@ document.addEventListener("click", (event) => {
       $("#cl-resume-text").focus();
     } else if (targetTab === "tab-agent") {
       switchTab("tab-agent");
-      import("./agent.js?v=20260901-approval-result-v1").then((m) => {
+      import("./agent.js?v=20260901-error-dialog-minimal-v1").then((m) => {
         m.attachActiveJobContext();
         m.updateContextChip();
       });
       $("#agent-input")?.focus();
     }
     $("#job-dialog")?.close();
+    $("#public-job-detail-pane")?.classList.remove("open");
+    $("#ww-job-detail-pane")?.classList.remove("open");
   }
 });
 

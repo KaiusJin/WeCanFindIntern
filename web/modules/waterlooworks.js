@@ -7,7 +7,7 @@ import {
   renderJobDetail,
   showErrorDialog,
   workModeLabel,
-} from "./helpers.js";
+} from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import {
   BOOKMARK_FILLED,
   BOOKMARK_OUTLINE,
@@ -21,7 +21,6 @@ import {
   waterlooWorksJobContext,
 } from "./job-context.js?v=20260831-jobboard-parity-v3";
 import { setupInfiniteScroll } from "./pagination.js?v=20260831-jobboard-parity-v3";
-import { syncDialogScrollLock } from "./settings.js";
 
 let wwBusy = false;
 let wwStatus = "idle";
@@ -253,11 +252,14 @@ document.addEventListener("click", (event) => {
 });
 
 async function openWaterlooWorksJob(sourceJobId) {
-  const dialog = $("#job-dialog");
-  const detail = $("#job-detail");
+  const pane = $("#ww-job-detail-pane");
+  const detail = $("#ww-job-detail");
   detail.innerHTML = `<p class="loading-detail">Loading job details…</p>`;
-  dialog.showModal();
-  syncDialogScrollLock();
+  pane.classList.add("open", "has-selection");
+  pane.setAttribute("aria-hidden", "false");
+  document.querySelectorAll("#ww-job-list .ww-job-card").forEach((card) => {
+    card.classList.toggle("selected", card.dataset.sourceJobId === String(sourceJobId));
+  });
   try {
     const response = await fetch(`/api/v1/waterlooworks/jobs/${encodeURIComponent(sourceJobId)}`);
     if (!response.ok) throw new Error("Could not load job details");
@@ -285,11 +287,20 @@ async function openWaterlooWorksJob(sourceJobId) {
       links: [job.application_url || job.source_url],
     });
   } catch (error) {
-    if (dialog.open) dialog.close();
-    syncDialogScrollLock();
+    pane.classList.remove("open", "has-selection");
+    pane.setAttribute("aria-hidden", "true");
     showErrorDialog(error, { title: "WaterlooWorks job details unavailable" });
   }
 }
+
+function closeWaterlooWorksJobDetail() {
+  const pane = $("#ww-job-detail-pane");
+  pane?.classList.remove("open");
+  pane?.setAttribute("aria-hidden", "true");
+  document.querySelectorAll("#ww-job-list .ww-job-card.selected").forEach((card) => card.classList.remove("selected"));
+}
+
+$("#close-ww-job-detail")?.addEventListener("click", closeWaterlooWorksJobDetail);
 let wwPollTimer = null;
 function startWaterlooWorksPolling() {
   if (wwPollTimer !== null) return;

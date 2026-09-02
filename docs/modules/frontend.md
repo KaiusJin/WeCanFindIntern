@@ -2,7 +2,9 @@
 
 ## Architecture
 
-The web UI is a static HTML/CSS/ES-module application served by FastAPI from `web/`. There is no build step in the repository. `index.html` provides the DOM and feature sections; `styles.css` provides the visual system; `modules/main.js` wires feature initialization and shared navigation.
+The web UI is a static HTML/CSS/ES-module application served by FastAPI from `web/`. There is no build step in the repository. `index.html` provides the DOM and feature sections; `styles.css` preserves the feature-level visual system; `app-shell.css` defines the desktop shell, bounded workspaces, and narrow-screen overlays; `modules/main.js` wires feature initialization and shared navigation.
+
+The primary navigation is grouped by user task: Discover contains Public Jobs and a separate WaterlooWorks workspace, Manage contains Applications, Career Tools exposes Resume ATS Score, Job Match, Cover Letter, and Interview Coach, and Workspace contains Assistant and Profile. Settings remains persistently available at the bottom of the sidebar. Opportunity Map is a List/Map view inside Public Jobs rather than a separate global destination.
 
 The browser calls the versioned REST API directly with `fetch`. API route order is defined before the static mount so `/api/...` paths are not shadowed by the HTML fallback.
 
@@ -22,7 +24,7 @@ flowchart LR
 | Module | Main responsibility |
 |---|---|
 | `main.js` | Application startup and global interactions |
-| `navigation.js` | Tab activation and scroll behavior |
+| `navigation.js` | Sidebar/tab activation, URL hashes, Public Jobs List/Map state, and mobile drawer behavior |
 | `helpers.js` | HTML escaping, Markdown rendering, labels, dates, salary formatting, timeout fetch, drop zones |
 | `pagination.js` | Shared page controls and page-size behavior |
 | `bookmarks.js` | Shared public/WaterlooWorks bookmark state and mutations |
@@ -47,15 +49,15 @@ flowchart LR
 
 `jobs.js` loads `/api/v1/jobs/facets`, maps structured facet codes into select options, reads search/filter controls, and builds query parameters. Any new filter resets the keyset cursor. `loadJobs({append})` shows loading/error state, requests a page, appends or replaces cards, saves `next_cursor`, and disables further loading when `has_more=false`.
 
-Opening a card requests `/api/v1/jobs/{uuid}` and renders canonical title/company/location, salary, tags, description, source links, and Tracker action. Infinite scroll uses an observer; a back-to-top button appears after the configured scroll threshold.
+Opening a card requests `/api/v1/jobs/{uuid}` and renders canonical title/company/location, salary, tags, description, source links, and Tracker action in an adjacent detail pane. Filters use a temporary sheet instead of consuming a permanent column. Infinite scroll is scoped to the results pane; Opportunity Map is selected with the local List/Map switch while Public Jobs remains the active global destination.
 
 ## WaterlooWorks flow
 
-`waterlooworks.js` polls `/status` while connecting/collecting, calls `/launch` or `/collect`, displays per-board progress and errors, and loads local postings with board/query controls. Details are fetched separately. A local job reference always remains distinguishable from a public UUID in Tracker and Agent actions.
+`waterlooworks.js` polls `/status` while connecting/collecting, calls `/launch` or `/collect`, displays per-board progress and errors, and loads local postings with board/query controls. On desktop, sync controls, the posting list, and posting detail are sibling panes; on narrow screens the detail pane becomes an overlay. Details are fetched separately. A local job reference always remains distinguishable from a public UUID in Tracker and Agent actions, and WaterlooWorks postings are never merged into the Public Jobs list.
 
 ## Tracker flow
 
-The Tracker module keeps filters in the URL, fetches applications and both bookmark lists in parallel, and updates cards/buttons after mutations. The drawer loads the application, live/read-only JD content, source link actions, and event timeline. Bulk actions operate on selected application IDs; custom-job creation calls the full tracker create endpoint.
+The Tracker module keeps filters in the URL, fetches applications and both bookmark lists in parallel, and updates cards/buttons after mutations. The desktop layout presents the application list and selected application as sibling panes; the existing drawer becomes a narrow-screen detail overlay. Bulk actions operate on selected application IDs; custom-job creation calls the full tracker create endpoint.
 
 ## Profile and generated-content flow
 
@@ -84,6 +86,8 @@ task is active, and the displayed board counters remain usable when one board
 fails. Agent approval buttons are disabled/updated from the returned approval
 state so a browser retry cannot assume that a write occurred.
 
+Desktop sections use a fixed application shell. Long content scrolls within sibling result, detail, editor, or chat panes instead of creating nested page scroll. At `900px` and below, the sidebar becomes a drawer, master/detail panes become list plus full-screen detail, and form/result tools return to a natural single-column document flow.
+
 The frontend does not implement an independent automatic retry loop for every
 HTTP request. It displays the server's readable error and lets the user retry;
 server-side collection, provider, and repository layers own bounded retries and
@@ -107,5 +111,6 @@ backup, tray, and background-collection commands.
 
 `scripts/dev/verify_frontend_api_contract.py` compares frontend route references
 with FastAPI routes. `make frontend-check` runs Node syntax validation for every
-`web/modules/*.js` file. Route/service tests validate the response contracts the
-modules consume.
+`web/modules/*.js` file and checks the navigation/layout contract in
+`tests/frontend/navigation.test.mjs`. Route/service tests validate the response
+contracts the modules consume.

@@ -5,9 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260901-responsive-topbar-v1" />
+    <link rel="stylesheet" href="/styles.css?v=20260901-error-dialog-minimal-v1" />
+    <link rel="stylesheet" href="/app-shell.css?v=20260901-error-dialog-minimal-v1" />
   </head>
   <body>
+    <div class="app-shell">
+      <aside id="app-sidebar" class="app-sidebar" aria-label="Application navigation">
+        <div class="app-sidebar-header">
+          <a class="brand" href="#public-jobs" aria-label="WeCanFindIntern home">WeCanFindIntern<span>_</span></a>
+          <button id="close-app-sidebar" class="sidebar-close" type="button" aria-label="Close navigation">×</button>
+        </div>
+
+        <nav class="app-nav" aria-label="Main navigation">
+          <div class="nav-group">
+            <p class="nav-group-label">Discover</p>
+            <button class="nav-tab active" data-tab="tab-jobs" type="button"><span class="nav-icon" aria-hidden="true">⌕</span><span>Public Jobs</span></button>
+            <button class="nav-tab" data-tab="tab-waterlooworks" type="button"><span class="nav-icon nav-icon-letter" aria-hidden="true">W</span><span>WaterlooWorks</span></button>
+          </div>
+
+          <div class="nav-group">
+            <p class="nav-group-label">Manage</p>
+            <button class="nav-tab" data-tab="tab-tracker" type="button"><span class="nav-icon" aria-hidden="true">✓</span><span>Applications</span></button>
+          </div>
+
+          <div class="nav-group">
+            <p class="nav-group-label">Career tools</p>
+            <button class="nav-tab" data-tab="tab-ats-score" type="button"><span class="nav-icon nav-icon-letter" aria-hidden="true">A</span><span>Resume ATS Score</span></button>
+            <button class="nav-tab" data-tab="tab-ats-match" type="button"><span class="nav-icon" aria-hidden="true">◎</span><span>Job Match</span></button>
+            <button class="nav-tab" data-tab="tab-cover-letter" type="button"><span class="nav-icon" aria-hidden="true">✎</span><span>Cover Letter</span></button>
+            <button class="nav-tab" data-tab="tab-interview" type="button"><span class="nav-icon" aria-hidden="true">◉</span><span>Interview Coach</span></button>
+          </div>
+
+          <div class="nav-group">
+            <p class="nav-group-label">Workspace</p>
+            <button class="nav-tab" data-tab="tab-agent" type="button"><span class="nav-icon" aria-hidden="true">✦</span><span>AI Assistant</span></button>
+            <button class="nav-tab" data-tab="tab-profile" type="button"><span class="nav-icon" aria-hidden="true">○</span><span>Profile</span></button>
+          </div>
+        </nav>
+
+        <div class="app-sidebar-footer">
+          <button id="sidebar-open-settings" class="sidebar-settings" type="button"><span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span></button>
+        </div>
+      </aside>
+
+      <button id="app-sidebar-backdrop" class="app-sidebar-backdrop" type="button" aria-label="Close navigation" hidden></button>
+
+      <div class="app-stage">
+        <header class="mobile-topbar">
+          <button id="open-app-sidebar" class="mobile-menu-button" type="button" aria-label="Open navigation">☰</button>
+          <span class="mobile-brand">WeCanFindIntern<span>_</span></span>
+        </header>
+
     <header class="topbar">
       <div class="topbar-row">
         <a class="brand" href="/">WeCanFindIntern<span>_</span></a>
@@ -62,12 +110,20 @@
       </div>
     </header>
 
-    <main>
+    <main id="app-main">
       <!-- TAB 1: JOBS SEARCH -->
       <div id="tab-jobs" class="tab-pane active">
-        <section class="hero">
-          <h1>Find work worth starting.</h1>
-          <p class="hero-copy">Search jobs, skills, and locations to find your next move.</p>
+        <section class="hero section-heading public-jobs-heading">
+          <div class="section-heading-row">
+            <div class="section-heading-copy">
+              <h1>Public Jobs</h1>
+              <p class="hero-copy">Search public job sources and compare the roles worth your time.</p>
+            </div>
+            <div class="section-view-switcher" aria-label="Public jobs view">
+              <button class="section-view-button active" data-public-jobs-view="list" type="button">List</button>
+              <button class="section-view-button" data-public-jobs-view="map" type="button">Map</button>
+            </div>
+          </div>
           <form id="search-form" class="searchbar">
             <label class="search-input">
               <span aria-hidden="true">⌕</span>
@@ -77,23 +133,20 @@
               <span aria-hidden="true">⌖</span>
               <input id="location" type="text" placeholder="Location, e.g. Toronto" autocomplete="off" />
             </label>
+            <button id="open-job-filters" class="secondary-button search-filter-button" type="button">Filters</button>
             <button class="primary-button" type="submit">Search jobs</button>
           </form>
-          <div class="quick-searches" aria-label="Popular searches">
-            <span>Popular:</span>
-            <button type="button" data-term="Summer 2027">Summer 2027</button>
-            <button type="button" data-term="Fall 2026">Fall 2026</button>
-            <button type="button" data-term="Winter 2027">Winter 2027</button>
-            <button type="button" data-query="Software Engineer Intern">Software Engineer Intern</button>
-            <button type="button" data-query="Data Analyst">Data Analyst</button>
-          </div>
         </section>
 
-        <section class="workspace">
-          <aside class="filters-panel">
+        <button id="job-filters-backdrop" class="filter-sheet-backdrop" type="button" aria-label="Close filters" hidden></button>
+        <section class="workspace public-jobs-workspace">
+          <aside id="job-filters-sheet" class="filters-panel filter-sheet" aria-label="Public job filters" aria-hidden="true">
             <div class="filter-heading">
               <h2>Filter jobs</h2>
-              <button id="clear-filters" class="text-button" type="button">Clear</button>
+              <div class="filter-heading-actions">
+                <button id="clear-filters" class="text-button" type="button">Clear</button>
+                <button id="close-job-filters" class="filter-sheet-close" type="button" aria-label="Close filters">×</button>
+              </div>
             </div>
 
             <label class="field-label">Recruiting season / term</label>
@@ -191,14 +244,37 @@
               </div>
             </div>
           </section>
+
+          <aside id="public-job-detail-pane" class="job-detail-pane" aria-label="Selected public job" aria-hidden="false">
+            <div class="job-detail-pane-toolbar">
+              <span>Job details</span>
+              <button id="close-public-job-detail" class="job-detail-pane-close" type="button" aria-label="Close job details">×</button>
+            </div>
+            <div id="public-job-detail" class="job-detail-content">
+              <div class="detail-empty-state">
+                <span aria-hidden="true">⌕</span>
+                <h2>Select a job</h2>
+                <p>Choose a role from the list to review its description, requirements, and next actions.</p>
+              </div>
+            </div>
+          </aside>
         </section>
       </div>
 
       <!-- WATERLOOWORKS LOCAL IMPORT -->
       <div id="tab-heatmap" class="tab-pane" hidden>
-        <section class="hero">
-          <h1>Where the jobs are.</h1>
-          <p class="hero-copy">Active postings across U.S. states and Canadian provinces, colored by volume. Hover any tile for the exact count; the side panel ranks the hottest regions.</p>
+        <section class="hero section-heading">
+          <div class="section-heading-row">
+            <div class="section-heading-copy">
+              <p class="section-kicker">Public Jobs</p>
+              <h1>Opportunity Map</h1>
+              <p class="hero-copy">Explore public postings across U.S. states and Canadian provinces.</p>
+            </div>
+            <div class="section-view-switcher" aria-label="Public jobs view">
+              <button class="section-view-button" data-public-jobs-view="list" type="button">List</button>
+              <button class="section-view-button active" data-public-jobs-view="map" type="button">Map</button>
+            </div>
+          </div>
         </section>
         <section class="heatmap-workspace">
           <div class="heatmap-map-card">
@@ -233,21 +309,20 @@
               <h3>Hottest regions</h3>
               <div id="heatmap-top-list" class="heatmap-top-list"></div>
             </div>
-            <div class="heatmap-card">
-              <h3>Coverage</h3>
-              <div id="heatmap-country-summary"></div>
-            </div>
           </aside>
         </section>
       </div>
 
       <div id="tab-waterlooworks" class="tab-pane" hidden>
-        <section class="hero ww-hero">
-          <h1>Bring your WaterlooWorks jobs home.</h1>
-          <p class="hero-copy">Explore all five WaterlooWorks job boards in one place, keep promising opportunities organized, and move the roles you want directly into your application Tracker.</p>
+        <section class="hero ww-hero section-heading">
+          <div class="section-heading-copy">
+            <h1>WaterlooWorks</h1>
+            <p class="hero-copy">Keep WaterlooWorks jobs, board sync, and submitted applications in their own workspace.</p>
+          </div>
         </section>
 
         <section class="ww-workspace">
+          <div class="ww-control-rail">
           <article class="ww-connection-card">
             <div class="ww-card-heading">
               <div>
@@ -282,6 +357,7 @@
               <div data-ww-board="campus"><strong>campus</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
             </div>
           </aside>
+          </div>
 
           <div id="ww-jobs-card" class="ww-jobs-card">
             <div class="ww-card-heading">
@@ -307,14 +383,30 @@
               </div>
             </div>
           </div>
+
+          <aside id="ww-job-detail-pane" class="job-detail-pane ww-job-detail-pane" aria-label="Selected WaterlooWorks job" aria-hidden="false">
+            <div class="job-detail-pane-toolbar">
+              <span>WaterlooWorks details</span>
+              <button id="close-ww-job-detail" class="job-detail-pane-close" type="button" aria-label="Close WaterlooWorks job details">×</button>
+            </div>
+            <div id="ww-job-detail" class="job-detail-content">
+              <div class="detail-empty-state">
+                <span class="ww-detail-mark" aria-hidden="true">W</span>
+                <h2>Select a WaterlooWorks job</h2>
+                <p>Choose a posting to review its board, deadline, full description, and application actions.</p>
+              </div>
+            </div>
+          </aside>
         </section>
       </div>
 
       <!-- TAB 2: RESUME ATS SCORE -->
       <div id="tab-ats-score" class="tab-pane" hidden>
-        <section class="hero">
-          <h1>Make your resume ATS-readable.</h1>
-          <p class="hero-copy">Score text extraction, section recognition, contact fields, dates, and reading order without using a job description.</p>
+        <section class="hero section-heading">
+          <div class="section-heading-copy">
+            <h1>Make your resume ATS-readable.</h1>
+            <p class="hero-copy">Score text extraction, section recognition, contact fields, dates, and reading order without using a job description.</p>
+          </div>
         </section>
 
         <section class="career-workspace">
@@ -397,9 +489,11 @@
 
       <!-- TAB 3: JOB MATCH -->
       <div id="tab-ats-match" class="tab-pane" hidden>
-        <section class="hero">
-          <h1>Measure your job match.</h1>
-          <p class="hero-copy">Compare evidence in your resume with the required skills, experience, education, and role alignment in one job description.</p>
+        <section class="hero section-heading">
+          <div class="section-heading-copy">
+            <h1>Measure your job match.</h1>
+            <p class="hero-copy">Compare evidence in your resume with the required skills, experience, education, and role alignment in one job description.</p>
+          </div>
         </section>
 
         <section class="career-workspace">
@@ -490,9 +584,11 @@
 
       <!-- TAB 4: INTERVIEW COACH -->
       <div id="tab-interview" class="tab-pane" hidden>
-        <section class="hero">
-          <h1>Master your interview.</h1>
-          <p class="hero-copy">Dynamic question generation, voice interviewer, audio answer recording with local transcription, and STAR performance feedback.</p>
+        <section class="hero section-heading">
+          <div class="section-heading-copy">
+            <h1>Master your interview.</h1>
+            <p class="hero-copy">Dynamic question generation, voice interviewer, audio answer recording with local transcription, and STAR performance feedback.</p>
+          </div>
         </section>
 
         <section class="career-workspace">
@@ -654,9 +750,11 @@
 
       <!-- TAB 4: COVER LETTER GENERATOR -->
       <div id="tab-cover-letter" class="tab-pane" hidden>
-        <section class="hero">
-          <h1>Stand out from the crowd.</h1>
-          <p class="hero-copy">Hyper-personalized cover letters that weave your actual achievements into company requirements.</p>
+        <section class="hero section-heading">
+          <div class="section-heading-copy">
+            <h1>Stand out from the crowd.</h1>
+            <p class="hero-copy">Hyper-personalized cover letters that weave your actual achievements into company requirements.</p>
+          </div>
         </section>
 
         <section class="career-workspace">
@@ -758,29 +856,31 @@
 
       <!-- TAB 5: PROFILE -->
       <div id="tab-profile" class="tab-pane" hidden>
-        <section class="hero profile-hero">
-          <h1>Turn your resume into reusable career data.</h1>
-          <p class="hero-copy">Import an English text-based PDF or LaTeX source, review every field, and keep one profile for matching and applications.</p>
+        <section class="hero profile-hero section-heading">
+          <div class="section-heading-copy">
+            <h1>Turn your resume into reusable career data.</h1>
+            <p class="hero-copy">Import an English text-based PDF or LaTeX source, review every field, and keep one profile for matching and applications.</p>
+          </div>
         </section>
         <section class="profile-workspace">
-          <aside class="profile-import-panel">
-            <div class="profile-panel-head"><div><h2>Import your resume</h2></div></div>
-            <p class="profile-help">Upload your resume to quickly fill your Profile. Review and edit the imported details before using them across WeCanFindIntern.</p>
-            <label class="profile-dropzone" for="profile-resume-file"><input id="profile-resume-file" type="file" accept=".pdf,.tex,application/pdf,application/x-tex,text/x-tex" hidden /><strong>Choose PDF or .tex</strong><span>Maximum 8 MB PDF / 1 MB LaTeX</span></label>
-            <button id="profile-upload-file" class="primary-button profile-wide-button" type="button">Parse selected resume</button>
-            <div class="profile-divider"><span>or paste LaTeX source</span></div>
-            <textarea id="profile-latex-source" class="career-textarea profile-code-input" rows="8" spellcheck="false" placeholder="\\documentclass{article}&#10;\\begin{document}&#10;...&#10;\\end{document}"></textarea>
-            <button id="profile-parse-latex" class="secondary-button profile-wide-button" type="button">Parse LaTeX source</button>
-            <div id="profile-import-status" class="profile-status" hidden></div>
-            <div class="profile-resume-list-head"><h3>Resume history</h3><button id="profile-refresh-resumes" class="text-button" type="button">Refresh</button></div>
-            <div id="profile-resume-list" class="profile-resume-list"><p class="muted-copy">No resumes uploaded yet.</p></div>
-          </aside>
           <div class="profile-editor-panel">
-            <div class="profile-editor-toolbar"><div><h2 id="profile-editor-title">Your profile</h2><p id="profile-completion-label" class="muted-copy">0% complete</p></div><div class="profile-toolbar-actions"><a class="secondary-button" href="/api/v1/profile/export" target="_blank" rel="noreferrer">Export JSON</a></div></div>
-            <div class="profile-progress"><span id="profile-progress-fill"></span></div>
-            <div id="profile-draft-banner" class="profile-draft-banner" hidden><div><strong>Resume draft ready for review</strong><span>Editing a field applies the import automatically, or use the actions here.</span></div><div class="profile-draft-actions"><button id="profile-apply-draft" class="primary-button compact-button" type="button">Apply import</button><button id="profile-discard-draft" class="secondary-button compact-button" type="button">Discard</button></div></div>
+            <div class="profile-editor-toolbar">
+              <div class="profile-editor-heading">
+                <h2 id="profile-editor-title">Your profile</h2>
+                <div class="profile-completion">
+                  <p id="profile-completion-label" class="muted-copy">0% complete</p>
+                  <div class="profile-progress" role="progressbar" aria-label="Profile completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="profile-progress-fill"></span></div>
+                </div>
+              </div>
+              <div class="profile-toolbar-actions">
+                <button id="profile-autofill-resume" class="secondary-button compact-button" type="button">Autofill From resume</button>
+                <button id="profile-autofill-latex" class="secondary-button compact-button" type="button">Autofill From LaTeX</button>
+              </div>
+            </div>
+            <div id="profile-import-status" class="profile-status" hidden></div>
+            <div id="profile-draft-banner" class="profile-draft-banner" hidden><div><strong>Imported profile ready</strong><span>Review and apply when ready.</span></div><div class="profile-draft-actions"><button id="profile-apply-draft" class="primary-button compact-button" type="button">Apply import</button><button id="profile-discard-draft" class="secondary-button compact-button" type="button">Discard</button></div></div>
             <section class="profile-section-card">
-              <div class="profile-section-heading"><div><span>01</span><h3>Basic information</h3></div></div>
+              <div class="profile-section-heading"><div><h3>Basic information</h3></div></div>
               <div class="profile-basic-grid">
                 <label><span>Full name</span><input id="profile-full-name" class="career-input" type="text" /></label><label><span>Preferred name</span><input id="profile-preferred-name" class="career-input" type="text" /></label>
                 <label><span>Email</span><input id="profile-email" class="career-input" type="email" /></label><label><span>Phone</span><input id="profile-phone" class="career-input" type="text" /></label>
@@ -791,14 +891,34 @@
             <div id="profile-repeat-sections"></div>
           </div>
         </section>
+        <dialog id="profile-autofill-dialog" class="profile-autofill-dialog" aria-labelledby="profile-autofill-title">
+          <div class="profile-autofill-dialog-card">
+            <div class="profile-autofill-dialog-head">
+              <div><p class="eyebrow">PROFILE AUTOFILL</p><h2 id="profile-autofill-title">Autofill From resume</h2></div>
+              <button id="profile-autofill-close" class="profile-autofill-close" type="button" aria-label="Close autofill guidance">×</button>
+            </div>
+            <p id="profile-autofill-guidance" class="profile-help">Choose a text-based PDF resume. We’ll prepare a draft for review; your saved profile will not change until you apply the import.</p>
+            <div id="profile-autofill-resume-panel" class="profile-autofill-panel">
+              <input id="profile-resume-file" type="file" accept=".pdf,application/pdf" hidden />
+              <button id="profile-resume-file-picker" class="secondary-button" type="button">Choose PDF resume</button>
+              <span id="profile-resume-file-name" class="profile-autofill-file-name">No file selected</span>
+            </div>
+            <div id="profile-autofill-latex-panel" class="profile-autofill-panel" hidden>
+              <textarea id="profile-latex-source" class="career-textarea profile-code-input" rows="10" spellcheck="false" placeholder="\\documentclass{article}&#10;\\begin{document}&#10;...&#10;\\end{document}"></textarea>
+            </div>
+            <div class="profile-autofill-dialog-actions">
+              <button id="profile-autofill-submit" class="primary-button" type="button">Autofill From resume</button>
+            </div>
+          </div>
+        </dialog>
       </div>
 
       <!-- TAB 6: APPLICATION TRACKER -->
       <div id="tab-tracker" class="tab-pane" hidden>
-        <section class="hero tracker-hero">
-          <div>
-              <h1>Your search, under control.</h1>
-            <p class="hero-copy">Find what needs attention, move applications forward, and learn from every search.</p>
+        <section class="hero tracker-hero section-heading">
+          <div class="section-heading-copy">
+            <h1>Applications</h1>
+            <p class="hero-copy">Review every opportunity, update its stage, and keep the next action visible.</p>
           </div>
           <div class="tracker-hero-actions">
             <a id="tracker-export" class="secondary-button" href="/api/v1/tracker/export.csv">Export CSV</a>
@@ -852,9 +972,11 @@
 
       <!-- TAB 8: AI AGENT -->
       <div id="tab-agent" class="tab-pane" hidden>
-        <section class="hero">
-          <h1>Your job-search copilot.</h1>
-          <p class="hero-copy">Ask in plain language — organize jobs, manage your Tracker, fill your Profile, or get recommendations.</p>
+        <section class="hero section-heading">
+          <div class="section-heading-copy">
+            <h1>AI Assistant</h1>
+            <p class="hero-copy">Ask in plain language — organize jobs, manage your Tracker, fill your Profile, or get recommendations.</p>
+          </div>
         </section>
         <section class="agent-workspace">
           <div id="agent-layout" class="agent-layout">
@@ -908,7 +1030,12 @@
                     <span aria-hidden="true">＋</span><span>Attach job</span>
                   </button>
                   <textarea id="agent-input" class="career-input" rows="1" maxlength="4000" placeholder="Ask about roles, job descriptions, or your application tracker…"></textarea>
-                  <button class="primary-button agent-send-button" type="submit" aria-label="Send message">Send</button>
+                  <button class="primary-button agent-send-button" type="submit" aria-label="Send message" title="Send message">
+                    <svg class="agent-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M12 19V5"></path>
+                      <path d="m6 11 6-6 6 6"></path>
+                    </svg>
+                  </button>
                 </form>
               </div>
             </div>
@@ -916,6 +1043,8 @@
         </section>
       </div>
     </main>
+      </div>
+    </div>
 
     <!-- CUSTOM JOB ENTRY DIALOG -->
     <dialog id="custom-job-dialog" class="settings-dialog">
@@ -1090,11 +1219,10 @@
           <label class="field-label" for="setting-api-key" id="setting-key-label">Gemini API Key</label>
           <div class="password-input-wrap">
             <input type="password" id="setting-api-key" class="career-input" placeholder="Enter your Gemini API key (AIzaSy...)" autocomplete="off" />
-            <button type="button" class="toggle-password-btn" id="toggle-key-visibility" title="Toggle visibility">
+            <button type="button" class="toggle-password-btn" id="toggle-key-visibility" title="Show API key" aria-label="Show API key" aria-pressed="false">
               <svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
             </button>
           </div>
-          <p class="field-hint" id="setting-key-hint">Enter your API key. Keys are stored locally in your browser.</p>
         </div>
 
         <div class="field-group" id="ollama-config-group" style="margin-top: 18px; display: none;">
@@ -1156,9 +1284,26 @@
       </div>
     </dialog>
 
-    <dialog id="job-dialog" class="job-dialog">
-      <button id="close-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
-      <div id="job-detail"></div>
+    <dialog id="agent-delete-session-dialog" class="settings-dialog agent-delete-session-dialog" aria-labelledby="agent-delete-session-title" aria-describedby="agent-delete-session-copy">
+      <div class="settings-dialog-header">
+        <div class="settings-title-wrap">
+          <div class="settings-icon-badge agent-delete-session-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 7h17"></path><path d="M8.5 7V5.25c0-.69.56-1.25 1.25-1.25h4.5c.69 0 1.25.56 1.25 1.25V7"></path><path d="M6 7l1 13h10l1-13"></path><path d="M10 11v5M14 11v5"></path></svg>
+          </div>
+          <div>
+            <h3 id="agent-delete-session-title">Delete conversation?</h3>
+            <p class="settings-subtitle">This action cannot be undone.</p>
+          </div>
+        </div>
+        <button id="close-agent-delete-session-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="settings-body">
+        <p id="agent-delete-session-copy" class="agent-delete-session-copy">Delete <strong id="agent-delete-session-name"></strong> and all of its messages?</p>
+      </div>
+      <div class="settings-dialog-footer">
+        <button id="cancel-agent-delete-session" class="secondary-button" type="button">Cancel</button>
+        <button id="confirm-agent-delete-session" class="primary-button agent-delete-session-confirm" type="button">Delete</button>
+      </div>
     </dialog>
 
     <button id="back-to-top" class="back-to-top" type="button" aria-label="Back to top" title="Back to top" hidden>
@@ -1166,6 +1311,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script type="module" src="/modules/main.js?v=20260901-empty-state-v1"></script>
+    <script type="module" src="/modules/main.js?v=20260901-coverage-removed-v1"></script>
   </body>
 </html>

@@ -5,9 +5,9 @@ import {
   fetchWithTimeout,
   showErrorDialog,
   workModeLabel,
-} from "./helpers.js";
+} from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { readSseEvents } from "./sse.js";
-import { syncDialogScrollLock, validateAiConfig } from "./settings.js";
+import { syncDialogScrollLock, validateAiConfig } from "./settings.js?v=20260901-settings-v1";
 import {
   jobContextState,
   publicJobContext,
@@ -28,11 +28,15 @@ import {
 let currentSessionId = null;
 let sessionList = [];
 let attachedJobContext = null;
+let pendingDeleteSessionId = null;
 const renderedAgentJobs = new Map();
 const attachSearchJobs = new Map();
 
 const SESSION_STORAGE_KEY = "wecanfindintern_agent_session_v1";
 const SIDEBAR_STORAGE_KEY = "wecanfindintern_agent_sidebar_collapsed_v1";
+const AGENT_TRASH_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 7h17"></path><path d="M8.5 7V5.25c0-.69.56-1.25 1.25-1.25h4.5c.69 0 1.25.56 1.25 1.25V7"></path><path d="M6 7l1 13h10l1-13"></path><path d="M10 11v5M14 11v5"></path></svg>`;
+const AGENT_SEND_ICON = `<svg class="agent-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5"></path><path d="m6 11 6-6 6 6"></path></svg>`;
+const AGENT_STOP_ICON = `<svg class="agent-send-icon agent-stop-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="7" y="7" width="10" height="10" rx="1"></rect></svg>`;
 
 function persistSession() {
   try {
@@ -99,6 +103,24 @@ function sessionLabel(session) {
   return title.length > 34 ? `${title.slice(0, 34)}…` : title;
 }
 
+function renderAgentWelcome() {
+  const chat = $("#agent-chat");
+  if (!chat) return;
+  chat.innerHTML = `
+    <div class="agent-message agent-assistant">
+      <div class="agent-bubble agent-welcome">
+        <span class="agent-welcome-kicker">AI JOB-SEARCH COPILOT</span>
+        <h3>What can I help you move forward?</h3>
+        <p class="md-p">I can find matching roles, explain job descriptions, and keep your application pipeline organized.</p>
+        <div class="agent-suggestion-list">
+          <button type="button" data-agent-prompt="Recommend internships that match my profile">Recommend jobs for me</button>
+          <button type="button" data-agent-prompt="Show me the jobs currently in my Tracker">Review my Tracker</button>
+          <button type="button" data-agent-prompt="Find software engineering internships in Toronto">Find Toronto internships</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 async function renderSessionList() {
   try {
     const res = await fetch("/api/v1/agent/sessions");
@@ -113,14 +135,78 @@ async function renderSessionList() {
   list.innerHTML = sessionList
     .map((session) => {
       const active = session.id === currentSessionId ? " active" : "";
-      return `<button type="button" class="agent-session-chip${active}" data-session-id="${escapeHtml(session.id)}" title="${escapeHtml(session.title || "Untitled conversation")}">${escapeHtml(sessionLabel(session))}</button>`;
+      const title = session.title || "Untitled conversation";
+      return `<div class="agent-session-chip-row">
+        <button type="button" class="agent-session-chip${active}" data-session-id="${escapeHtml(session.id)}" title="${escapeHtml(title)}">${escapeHtml(sessionLabel(session))}</button>
+        <button type="button" class="agent-session-delete" data-delete-session-id="${escapeHtml(session.id)}" aria-label="Delete conversation: ${escapeHtml(title)}" title="Delete conversation">${AGENT_TRASH_ICON}</button>
+      </div>`;
     })
     .join("");
-  list.querySelectorAll("[data-session-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      switchSession(button.dataset.sessionId);
+}
+
+function closeDeleteSessionDialog() {
+  const dialog = $("#agent-delete-session-dialog");
+  pendingDeleteSessionId = null;
+  if (dialog?.open) dialog.close();
+  syncDialogScrollLock();
+}
+
+function openDeleteSessionDialog(sessionId) {
+  const session = sessionList.find((item) => item.id === sessionId);
+  const dialog = $("#agent-delete-session-dialog");
+  if (!session || !dialog) return;
+  pendingDeleteSessionId = sessionId;
+  $("#agent-delete-session-name").textContent = session.title || "Untitled conversation";
+  dialog.showModal();
+  syncDialogScrollLock();
+  $("#cancel-agent-delete-session")?.focus();
+}
+
+async function confirmDeleteSession() {
+  const sessionId = pendingDeleteSessionId;
+  const dialog = $("#agent-delete-session-dialog");
+  const confirmButton = $("#confirm-agent-delete-session");
+  if (!sessionId || !confirmButton) return;
+  confirmButton.disabled = true;
+  confirmButton.textContent = "Deleting…";
+  try {
+    const res = await fetch(`/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
     });
-  });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Could not delete conversation");
+
+    const wasCurrent = sessionId === currentSessionId;
+    sessionList = sessionList.filter((session) => session.id !== sessionId);
+    closeDeleteSessionDialog();
+    if (!wasCurrent) {
+      persistSession();
+      await renderSessionList();
+      return;
+    }
+
+    const nextSessionId = sessionList[0]?.id || null;
+    currentSessionId = nextSessionId;
+    persistSession();
+    clearAttachedJob();
+    clearChat();
+    await renderSessionList();
+    if (nextSessionId) {
+      await switchSession(nextSessionId);
+    } else {
+      renderAgentWelcome();
+      loadMemoryStatus();
+    }
+  } catch (err) {
+    closeDeleteSessionDialog();
+    showErrorDialog(err, { title: "Conversation could not be deleted" });
+  } finally {
+    if (dialog?.open) dialog.close();
+    syncDialogScrollLock();
+    pendingDeleteSessionId = null;
+    confirmButton.disabled = false;
+    confirmButton.textContent = "Delete";
+  }
 }
 
 async function switchSession(sessionId) {
@@ -419,7 +505,9 @@ let activeStream = null;
 function setStreamActive(active) {
   const button = $(".agent-send-button");
   if (button) {
-    button.textContent = active ? "⏹ Stop" : "Send";
+    button.innerHTML = active ? AGENT_STOP_ICON : AGENT_SEND_ICON;
+    button.setAttribute("aria-label", active ? "Stop generating" : "Send message");
+    button.title = active ? "Stop generating" : "Send message";
     button.classList.toggle("streaming-stop", active);
   }
 }
@@ -602,10 +690,10 @@ async function viewAgentJob(key) {
   if (!job) return;
   try {
     if (job.source === "waterloo_work") {
-      const module = await import("./waterlooworks.js?v=20260831-jobboard-parity-v3");
+      const module = await import("./waterlooworks.js?v=20260901-app-shell-v1");
       await module.openWaterlooWorksJob(String(job.job_id));
     } else {
-      const module = await import("./jobs.js?v=20260831-jobboard-parity-v3");
+      const module = await import("./jobs.js?v=20260901-error-dialog-minimal-v1");
       await module.openJob(String(job.job_id));
     }
   } catch (error) {
@@ -852,6 +940,22 @@ $("#agent-attach-results")?.addEventListener("click", (event) => {
 });
 $("#agent-sidebar-toggle")?.addEventListener("click", () => {
   setSidebarCollapsed(!$("#agent-layout")?.classList.contains("sidebar-collapsed"));
+});
+$("#agent-session-list")?.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest("[data-delete-session-id]");
+  if (deleteButton) {
+    event.stopPropagation();
+    openDeleteSessionDialog(deleteButton.dataset.deleteSessionId);
+    return;
+  }
+  const sessionButton = event.target.closest("[data-session-id]");
+  if (sessionButton) switchSession(sessionButton.dataset.sessionId);
+});
+$("#close-agent-delete-session-dialog")?.addEventListener("click", closeDeleteSessionDialog);
+$("#cancel-agent-delete-session")?.addEventListener("click", closeDeleteSessionDialog);
+$("#confirm-agent-delete-session")?.addEventListener("click", confirmDeleteSession);
+$("#agent-delete-session-dialog")?.addEventListener("click", (event) => {
+  if (event.target === $("#agent-delete-session-dialog")) closeDeleteSessionDialog();
 });
 $("#agent-input")?.addEventListener("input", resizeAgentInput);
 $("#agent-input")?.addEventListener("keydown", (event) => {

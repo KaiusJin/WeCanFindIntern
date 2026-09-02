@@ -10,7 +10,7 @@ import {
   skillLabel,
   showErrorDialog,
   workModeLabel,
-} from "./helpers.js";
+} from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import {
   bookmarkState,
   loadPublicBookmarks,
@@ -21,7 +21,6 @@ import {
   publicJobContext,
   setActiveJobContext,
 } from "./job-context.js?v=20260831-jobboard-parity-v3";
-import { syncDialogScrollLock } from "./settings.js";
 
 const state = {
   cursor: null,
@@ -169,7 +168,7 @@ function applyRegionFilter(countryCode, regionCode) {
   setFilterSelections("country", [countryCode]);
   setFilterSelections("region", [`${regionCode},${countryCode}`]);
   loadJobs();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  $("#tab-jobs .results-panel")?.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 async function loadJobs({ append = false } = {}) {
@@ -184,6 +183,7 @@ async function loadJobs({ append = false } = {}) {
   if (!append) {
     state.cursor = null;
     list.innerHTML = "";
+    $("#tab-jobs .results-panel")?.scrollTo({ top: 0, behavior: "instant" });
     $("#empty-state").hidden = true;
     if (loadingIndicator) loadingIndicator.hidden = true;
     if (endOfResults) endOfResults.hidden = true;
@@ -271,11 +271,14 @@ async function loadFacets() {
 }
 
 async function openJob(jobId) {
-  const dialog = $("#job-dialog");
-  const detail = $("#job-detail");
+  const pane = $("#public-job-detail-pane");
+  const detail = $("#public-job-detail");
   detail.innerHTML = `<p class="loading-detail">Loading job details…</p>`;
-  dialog.showModal();
-  syncDialogScrollLock();
+  pane.classList.add("open", "has-selection");
+  pane.setAttribute("aria-hidden", "false");
+  document.querySelectorAll("#job-list .job-card").forEach((card) => {
+    card.classList.toggle("selected", card.dataset.id === String(jobId));
+  });
   try {
     const response = await fetch(`/api/v1/jobs/${jobId}`);
     if (!response.ok) throw new Error("Could not load job details");
@@ -295,10 +298,27 @@ async function openJob(jobId) {
       links: (job.sources || []).map((source) => source.direct_url || source.url),
     });
   } catch (requestError) {
-    if (dialog.open) dialog.close();
-    syncDialogScrollLock();
+    pane.classList.remove("open", "has-selection");
+    pane.setAttribute("aria-hidden", "true");
     showErrorDialog(requestError, { title: "Job details unavailable" });
   }
+}
+
+function setFilterSheetOpen(open) {
+  const sheet = $("#job-filters-sheet");
+  const backdrop = $("#job-filters-backdrop");
+  if (!sheet || !backdrop) return;
+  sheet.classList.toggle("open", open);
+  sheet.setAttribute("aria-hidden", String(!open));
+  backdrop.hidden = !open;
+  document.body.classList.toggle("filter-sheet-open", open);
+}
+
+function closePublicJobDetail() {
+  const pane = $("#public-job-detail-pane");
+  pane?.classList.remove("open");
+  pane?.setAttribute("aria-hidden", "true");
+  document.querySelectorAll("#job-list .job-card.selected").forEach((card) => card.classList.remove("selected"));
 }
 
 function updateSliderFill() {
@@ -317,15 +337,16 @@ function updateSliderFill() {
 function setupBackToTop() {
   const backToTopBtn = $("#back-to-top");
   if (!backToTopBtn) return;
-  window.addEventListener(
+  const scrollRoot = $("#tab-jobs .results-panel");
+  scrollRoot?.addEventListener(
     "scroll",
     () => {
-      backToTopBtn.hidden = window.scrollY < 300;
+      backToTopBtn.hidden = scrollRoot.scrollTop < 500;
     },
     { passive: true },
   );
   backToTopBtn.addEventListener("click", () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollRoot?.scrollTo({ top: 0, behavior: "smooth" });
   });
 }
 
@@ -333,9 +354,9 @@ function setupBackToTop() {
 // SEARCH AND FILTER EVENT LISTENERS
 // =========================================================
 
-$("#search-form").addEventListener("submit", (event) => { event.preventDefault(); loadJobs(); });
-$("#refresh").addEventListener("click", () => loadJobs());
-$(".filters-panel").addEventListener("click", (event) => {
+$("#search-form")?.addEventListener("submit", (event) => { event.preventDefault(); loadJobs(); });
+$("#refresh")?.addEventListener("click", () => loadJobs());
+$(".filters-panel")?.addEventListener("click", (event) => {
   const trigger = event.target.closest(".multi-filter-trigger");
   if (trigger) {
     const root = trigger.closest(".multi-filter");
@@ -361,7 +382,7 @@ $(".filters-panel").addEventListener("click", (event) => {
     debouncedLoadJobs(100);
   }
 });
-$(".filters-panel").addEventListener("change", (event) => {
+$(".filters-panel")?.addEventListener("change", (event) => {
   const multiFilter = event.target.closest(".multi-filter");
   if (multiFilter) updateMultiFilterSummary(multiFilter);
   if (event.target.id !== "hourly-min" && event.target.id !== "hourly-max" && !event.target.classList.contains("dual-range-slider")) {
@@ -376,7 +397,7 @@ document.addEventListener("click", (event) => {
     root.querySelector(".multi-filter-trigger").setAttribute("aria-expanded", "false");
   });
 });
-$("#hourly-slider-min").addEventListener("input", (event) => {
+$("#hourly-slider-min")?.addEventListener("input", (event) => {
   let minVal = Number(event.target.value);
   const maxVal = Number($("#hourly-slider-max").value);
   if (minVal > maxVal) {
@@ -387,7 +408,7 @@ $("#hourly-slider-min").addEventListener("input", (event) => {
   updateSliderFill();
   debouncedLoadJobs(200);
 });
-$("#hourly-slider-max").addEventListener("input", (event) => {
+$("#hourly-slider-max")?.addEventListener("input", (event) => {
   let maxVal = Number(event.target.value);
   const minVal = Number($("#hourly-slider-min").value);
   if (maxVal < minVal) {
@@ -398,7 +419,7 @@ $("#hourly-slider-max").addEventListener("input", (event) => {
   updateSliderFill();
   debouncedLoadJobs(200);
 });
-$("#hourly-min").addEventListener("input", (event) => {
+$("#hourly-min")?.addEventListener("input", (event) => {
   const val = Number(event.target.value);
   const maxSliderVal = Number($("#hourly-slider-max").value);
   if (!isNaN(val) && val >= 0) {
@@ -410,7 +431,7 @@ $("#hourly-min").addEventListener("input", (event) => {
   updateSliderFill();
   debouncedLoadJobs(300);
 });
-$("#hourly-max").addEventListener("input", (event) => {
+$("#hourly-max")?.addEventListener("input", (event) => {
   const val = Number(event.target.value);
   const minSliderVal = Number($("#hourly-slider-min").value);
   if (!isNaN(val) && val > 0) {
@@ -422,7 +443,7 @@ $("#hourly-max").addEventListener("input", (event) => {
   updateSliderFill();
   debouncedLoadJobs(300);
 });
-$("#clear-filters").addEventListener("click", () => {
+$("#clear-filters")?.addEventListener("click", () => {
   $("#search-form").reset(); $("#location").value = "";
   Object.keys(filterParamMap).forEach((id) => setFilterSelections(id, []));
   $("#has-salary").checked = false;
@@ -454,8 +475,15 @@ document.addEventListener("click", (event) => {
     loadJobs();
   }
 });
-$("#close-dialog").addEventListener("click", () => $("#job-dialog").close());
-$("#job-dialog").addEventListener("click", (event) => { if (event.target === $("#job-dialog")) $("#job-dialog").close(); });
+$("#open-job-filters")?.addEventListener("click", () => setFilterSheetOpen(true));
+$("#close-job-filters")?.addEventListener("click", () => setFilterSheetOpen(false));
+$("#job-filters-backdrop")?.addEventListener("click", () => setFilterSheetOpen(false));
+$("#close-public-job-detail")?.addEventListener("click", closePublicJobDetail);
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  setFilterSheetOpen(false);
+  if (window.matchMedia("(max-width: 900px)").matches) closePublicJobDetail();
+});
 
 export {
   state,

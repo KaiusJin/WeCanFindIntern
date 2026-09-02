@@ -1,4 +1,4 @@
-import { $, escapeHtml, showErrorDialog } from "./helpers.js";
+import { $, escapeHtml, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 
 // =========================================================
 // PROFILE WORKSPACE
@@ -12,22 +12,23 @@ let profileSaveInFlight = false;
 let profileSaveQueued = false;
 let profileForceSaveQueued = false;
 let profileDirty = false;
+let autofillMode = "resume";
 
 const profileConfigs = [
-  ["education", "02", "Education", "education", [["institution", "School"], ["degree", "Degree"], ["major", "Major"], ["specialization", "Specialization"], ["minor", "Minor"], ["start_date_text", "Start date"], ["graduation_date_text", "Graduation date"], ["gpa", "GPA"], ["coursework", "Coursework", "list"]]],
-  ["work_experience", "03", "Work experience", "experience", [["company", "Company"], ["title", "Role"], ["location", "Location"], ["employment_type", "Type"], ["start_date_text", "Start date"], ["end_date_text", "End date"], ["description", "Description", "textarea"], ["skills", "Skills", "list"]]],
-  ["projects", "04", "Projects", "project", [["name", "Project name"], ["start_date_text", "Start date"], ["end_date_text", "End date"], ["project_url", "Project URL"], ["github_url", "GitHub URL"], ["skills", "Skills", "list"], ["description", "Description", "textarea"]]],
-  ["skills", "05", "Skills", "skill", [["name", "Skill name"]]],
-  ["certifications", "06", "Certifications", "certification", [["name", "Certification"], ["issuer", "Issuer"], ["issue_date_text", "Issue date"], ["expiry_date_text", "Expiry date"], ["credential_id", "Credential ID"], ["credential_url", "Credential URL"]]],
-  ["languages", "07", "Languages", "language", [["name", "Language"], ["proficiency", "Proficiency", "language-level"]]],
-  ["awards", "08", "Awards", "award", [["title", "Award"], ["issuer", "Issuer"], ["date_text", "Date"], ["description", "Description", "textarea"]]],
+  ["education", "Education", "education", [["institution", "School"], ["degree", "Degree"], ["major", "Major"], ["specialization", "Specialization"], ["minor", "Minor"], ["start_date_text", "Start date"], ["graduation_date_text", "Graduation date"], ["gpa", "GPA"], ["coursework", "Coursework", "list"]]],
+  ["work_experience", "Work experience", "experience", [["company", "Company"], ["title", "Role"], ["location", "Location"], ["employment_type", "Type"], ["start_date_text", "Start date"], ["end_date_text", "End date"], ["description", "Description", "textarea"], ["skills", "Skills", "list"]]],
+  ["projects", "Projects", "project", [["name", "Project name"], ["start_date_text", "Start date"], ["end_date_text", "End date"], ["project_url", "Project URL"], ["github_url", "GitHub URL"], ["skills", "Skills", "list"], ["description", "Description", "textarea"]]],
+  ["skills", "Skills", "skill", [["name", "Skill name"]]],
+  ["certifications", "Certifications", "certification", [["name", "Certification"], ["issuer", "Issuer"], ["issue_date_text", "Issue date"], ["expiry_date_text", "Expiry date"], ["credential_id", "Credential ID"], ["credential_url", "Credential URL"]]],
+  ["languages", "Languages", "language", [["name", "Language"], ["proficiency", "Proficiency", "language-level"]]],
+  ["awards", "Awards", "award", [["title", "Award"], ["issuer", "Issuer"], ["date_text", "Date"], ["description", "Description", "textarea"]]],
 ];
 
 function emptyProfile() { return { schema_version: "profile.v1", basics: {}, education: [], work_experience: [], projects: [], skills: [], certifications: [], languages: [], awards: [] }; }
 function fieldValue(item, field, type) { const value = item?.[field]; if (type === "list") return Array.isArray(value) ? value.join(", ") : value || ""; if (type === "lines") return Array.isArray(value) ? value.join("\n") : value || ""; return value ?? ""; }
 
 function renderProfileSections() {
-  $("#profile-repeat-sections").innerHTML = profileConfigs.map(([key, number, title, singular, fields]) => {
+  $("#profile-repeat-sections").innerHTML = profileConfigs.map(([key, title, singular, fields]) => {
     const items = profileData[key] || [];
     const cards = items.map((item, index) => {
       const controls = fields.map(([field, label, type = "text"]) => {
@@ -37,10 +38,10 @@ function renderProfileSections() {
         const input = type === "language-level" ? `<select class="career-input" data-profile-field="${field}" data-profile-type="${type}"><option value="">Select proficiency</option>${levels.map((level) => `<option value="${level}"${value === level ? " selected" : ""}>${level}</option>`).join("")}</select>` : ["textarea", "lines"].includes(type) ? `<textarea class="career-textarea" rows="3" data-profile-field="${field}" data-profile-type="${type}">${value}</textarea>` : `<input class="career-input" type="text" data-profile-field="${field}" data-profile-type="${type}" value="${value}" />`;
         return `<label class="${wide}"><span>${label}</span>${input}</label>`;
       }).join("");
-      if (key === "skills") return `<article class="profile-item-card profile-skill-card" data-profile-section="${key}" data-profile-index="${index}"><div class="profile-item-grid">${controls}</div><button class="profile-remove-item profile-skill-remove" type="button" aria-label="Remove ${escapeHtml(item.name || "skill")}">×</button></article>`;
-      return `<article class="profile-item-card" data-profile-section="${key}" data-profile-index="${index}"><div class="profile-item-head"><strong>${title} ${index + 1}</strong><button class="profile-remove-item text-button danger-text" type="button">Remove</button></div><div class="profile-item-grid">${controls}</div></article>`;
+      if (key === "skills") return `<article class="profile-item-card profile-skill-card" data-profile-section="${key}" data-profile-index="${index}"><div class="profile-item-grid">${controls}</div><button class="profile-remove-item profile-skill-remove" type="button" aria-label="Remove ${escapeHtml(item.name || "skill")}" title="Remove ${escapeHtml(item.name || "skill")}">−</button></article>`;
+      return `<article class="profile-item-card" data-profile-section="${key}" data-profile-index="${index}"><div class="profile-item-head"><strong>${title} ${index + 1}</strong><button class="profile-remove-item profile-remove-item-button" type="button" aria-label="Remove ${title} ${index + 1}" title="Remove ${title} ${index + 1}">−</button></div><div class="profile-item-grid">${controls}</div></article>`;
     }).join("") || `<div class="profile-section-empty">No ${title.toLowerCase()} added yet.</div>`;
-    return `<section class="profile-section-card profile-section-${key}"><div class="profile-section-heading"><div><span>${number}</span><h3>${title}</h3><small>${items.length}</small></div><button class="secondary-button compact-button" data-profile-add="${key}" type="button">+ Add ${singular}</button></div><div class="profile-items">${cards}</div></section>`;
+    return `<section class="profile-section-card profile-section-${key}"><div class="profile-section-heading"><div><h3>${title}</h3><small>${items.length}</small></div><button class="profile-add-item" data-profile-add="${key}" type="button" aria-label="Add ${singular}" title="Add ${singular}">+</button></div><div class="profile-items">${cards}</div></section>`;
   }).join("");
 }
 
@@ -57,7 +58,10 @@ function renderProfile(payload, completion = null) {
 
 function updateProfileCompletion(percent) {
   $("#profile-completion-label").textContent = `${percent}% complete`;
-  $("#profile-progress-fill").style.width = `${percent}%`;
+  const fill = $("#profile-progress-fill");
+  fill.style.width = `${percent}%`;
+  fill.classList.toggle("profile-progress-has-value", percent > 0);
+  $(".profile-progress")?.setAttribute("aria-valuenow", String(percent));
 }
 
 function collectProfile() {
@@ -81,21 +85,48 @@ function collectProfile() {
 }
 
 function showProfileStatus(message) { const box = $("#profile-import-status"); box.hidden = false; box.textContent = message; }
-function renderResumeHistory(items) { $("#profile-resume-list").innerHTML = items.length ? items.map((item) => `<article class="profile-resume-row"><div><strong>${escapeHtml(item.filename)}</strong><span>${item.source_type.toUpperCase()} · ${(item.size_bytes / 1024).toFixed(0)} KB</span></div><button class="text-button danger-text profile-delete-resume" data-resume-id="${item.id}" type="button">Delete</button></article>`).join("") : `<p class="muted-copy">No resumes uploaded yet.</p>`; }
 
 async function loadProfileWorkspace() {
-  try { const [p, r] = await Promise.all([fetch("/api/v1/profile"), fetch("/api/v1/profile/resumes")]); if (!p.ok) throw new Error("Could not load profile."); const loaded = await p.json(); profileSavedData = loaded; if (!profileImportId) renderProfile(loaded, loaded.completion_percent); renderResumeHistory(r.ok ? await r.json() : []); } catch (error) { showErrorDialog(error, { title: "Profile unavailable" }); }
+  try { const response = await fetch("/api/v1/profile"); if (!response.ok) throw new Error("Could not load profile."); const loaded = await response.json(); profileSavedData = loaded; if (!profileImportId) renderProfile(loaded, loaded.completion_percent); } catch (error) { showErrorDialog(error, { title: "Profile unavailable" }); }
 }
 
 function mergeProfileDraft(saved, draft) { const merged = JSON.parse(JSON.stringify(saved || emptyProfile())); merged.basics = { ...(saved?.basics || {}), ...Object.fromEntries(Object.entries(draft.basics || {}).filter(([, value]) => value != null && value !== "")) }; profileConfigs.forEach(([key]) => { if (draft[key]?.length) merged[key] = draft[key]; }); merged.schema_version = "profile.v1"; return merged; }
 
-async function parseProfileFile(file) {
-  if (!file) return showErrorDialog("No resume file was selected.", { title: "Resume required", guidance: "Choose a PDF or .tex resume file, then try again." });
-  const uploadButton = $("#profile-upload-file");
-  const latexButton = $("#profile-parse-latex");
-  uploadButton.disabled = true; latexButton.disabled = true;
-  uploadButton.textContent = "Parsing resume…";
-  showProfileStatus(`Uploading and validating ${file.name}…`);
+function openAutofillDialog(mode) {
+  autofillMode = mode;
+  const dialog = $("#profile-autofill-dialog");
+  const resumePanel = $("#profile-autofill-resume-panel");
+  const latexPanel = $("#profile-autofill-latex-panel");
+  const title = $("#profile-autofill-title");
+  const guidance = $("#profile-autofill-guidance");
+  const submit = $("#profile-autofill-submit");
+  if (!dialog || !resumePanel || !latexPanel || !title || !guidance || !submit) return;
+  const isResume = mode === "resume";
+  title.textContent = `Autofill From ${isResume ? "resume" : "LaTeX"}`;
+  guidance.textContent = isResume
+    ? "Choose a text-based PDF resume. We’ll prepare a draft for review; your saved profile will not change until you apply the import."
+    : "Paste your LaTeX source below. It will be parsed as text only; no commands are compiled or executed. Review the draft before applying it.";
+  submit.textContent = `Autofill From ${isResume ? "resume" : "LaTeX"}`;
+  resumePanel.hidden = !isResume;
+  latexPanel.hidden = isResume;
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+}
+
+function closeAutofillDialog() {
+  const dialog = $("#profile-autofill-dialog");
+  if (!dialog) return;
+  if (typeof dialog.close === "function") dialog.close();
+  else dialog.removeAttribute("open");
+}
+
+async function parseProfileFile(file, sourceType = autofillMode) {
+  if (!file) return showErrorDialog("No resume file was selected.", { title: "Resume required", guidance: "Choose a PDF resume, then try again." });
+  const submitButton = $("#profile-autofill-submit");
+  const triggerButtons = [$("#profile-autofill-resume"), $("#profile-autofill-latex"), submitButton].filter(Boolean);
+  triggerButtons.forEach((button) => { button.disabled = true; });
+  if (submitButton) submitButton.textContent = "Autofilling…";
+  showProfileStatus(`Importing and validating ${file.name}…`);
   try {
     const form = new FormData(); form.append("file", file, file.name);
     const response = await fetch("/api/v1/profile/resumes", { method: "POST", body: form });
@@ -103,13 +134,13 @@ async function parseProfileFile(file) {
     if (!response.ok) { showErrorDialog(result.detail || "Resume import failed.", { title: "Resume import failed" }); return; }
     profileImportId = result.import_id; profileDirty = false; renderProfile(mergeProfileDraft(profileSavedData, result.draft));
     $("#profile-draft-banner").hidden = false; $("#profile-editor-title").textContent = "Review imported profile";
-    showProfileStatus(`Parsed ${result.resume.filename}. Review the extracted fields before applying the import.`);
-    const resumes = await fetch("/api/v1/profile/resumes"); if (resumes.ok) renderResumeHistory(await resumes.json());
+    $("#profile-import-status").hidden = true;
+    closeAutofillDialog();
   } catch (error) {
-    showErrorDialog(error, { title: "Resume upload failed" });
+    showErrorDialog(error, { title: "Resume import failed" });
   } finally {
-    uploadButton.disabled = false; latexButton.disabled = false;
-    uploadButton.textContent = "Parse selected resume";
+    triggerButtons.forEach((button) => { button.disabled = false; });
+    if (submitButton) submitButton.textContent = `Autofill From ${sourceType === "latex" ? "LaTeX" : "resume"}`;
   }
 }
 
@@ -194,15 +225,24 @@ $(".profile-editor-panel")?.addEventListener("change", (event) => {
 $(".profile-editor-panel")?.addEventListener("focusout", (event) => {
   if (event.target.matches("input, textarea, select") && profileDirty) scheduleProfileAutosave({ immediate: true });
 });
-$("#profile-upload-file")?.addEventListener("click", () => parseProfileFile($("#profile-resume-file").files?.[0]));
+$("#profile-autofill-resume")?.addEventListener("click", () => openAutofillDialog("resume"));
+$("#profile-autofill-latex")?.addEventListener("click", () => openAutofillDialog("latex"));
+$("#profile-resume-file-picker")?.addEventListener("click", () => $("#profile-resume-file")?.click());
 $("#profile-resume-file")?.addEventListener("change", (event) => {
-  const file = event.target.files?.[0];
-  if (file) parseProfileFile(file);
+  $("#profile-resume-file-name").textContent = event.target.files?.[0]?.name || "No file selected";
 });
-$("#profile-parse-latex")?.addEventListener("click", () => parseProfileFile(new File([$("#profile-latex-source").value], "pasted-resume.tex", { type: "application/x-tex" })));
-$("#profile-refresh-resumes")?.addEventListener("click", loadProfileWorkspace);
+$("#profile-autofill-submit")?.addEventListener("click", () => {
+  if (autofillMode === "resume") {
+    parseProfileFile($("#profile-resume-file").files?.[0], "resume");
+    return;
+  }
+  parseProfileFile(new File([$("#profile-latex-source").value], "pasted-resume.tex", { type: "application/x-tex" }), "latex");
+});
+$("#profile-autofill-close")?.addEventListener("click", closeAutofillDialog);
+$("#profile-autofill-dialog")?.addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) closeAutofillDialog();
+});
 $("#profile-apply-draft")?.addEventListener("click", () => { profileDirty = true; void saveProfileWorkspace({ force: true }); });
 $("#profile-discard-draft")?.addEventListener("click", () => { clearTimeout(profileSaveTimer); profileDirty = false; profileImportId = null; $("#profile-draft-banner").hidden = true; $("#profile-editor-title").textContent = "Your profile"; renderProfile(profileSavedData || emptyProfile(), profileSavedData?.completion_percent); });
-$("#profile-resume-list")?.addEventListener("click", async (event) => { const button = event.target.closest(".profile-delete-resume"); if (!button || !window.confirm("Delete this resume and its import draft?")) return; const response = await fetch(`/api/v1/profile/resumes/${button.dataset.resumeId}`, { method: "DELETE" }); if (response.ok) loadProfileWorkspace(); else showErrorDialog("The selected resume and import draft could not be deleted.", { title: "Delete failed" }); });
 
 export { loadProfileWorkspace };

@@ -1,4 +1,4 @@
-import { $, showErrorDialog } from "./helpers.js";
+import { $, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 
 // =========================================================
 // GLOBAL AI SETTINGS & LOCALSTORAGE
@@ -23,6 +23,7 @@ const aiSettings = {
 };
 
 let currentActiveProvider = "Gemini";
+let keyVisible = false;
 
 function secureDesktopBridge() {
   return window.weCanFindInternDesktop || null;
@@ -41,6 +42,18 @@ function settingsWithoutSecrets() {
 const EYE_SVG_OPEN = `<svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 const EYE_SVG_OFF = `<svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 
+function setKeyVisibility(visible) {
+  const input = $("#setting-api-key");
+  const btn = $("#toggle-key-visibility");
+  if (!input || !btn) return;
+  keyVisible = Boolean(visible);
+  input.type = keyVisible ? "text" : "password";
+  btn.innerHTML = keyVisible ? EYE_SVG_OFF : EYE_SVG_OPEN;
+  btn.setAttribute("aria-pressed", String(keyVisible));
+  btn.setAttribute("aria-label", keyVisible ? "Hide API key" : "Show API key");
+  btn.title = keyVisible ? "Hide API key" : "Show API key";
+}
+
 function splitModelValue(value) {
   const idx = value.indexOf(":");
   return idx === -1 ? [value, ""] : [value.slice(0, idx), value.slice(idx + 1)];
@@ -58,7 +71,6 @@ function syncKeyFieldWithModel() {
   const [newProvider] = splitModelValue(modelVal);
   const keyInput = $("#setting-api-key");
   const keyLabel = $("#setting-key-label");
-  const keyHint = $("#setting-key-hint");
 
   if (!keyInput || !keyLabel) return;
 
@@ -81,28 +93,23 @@ function syncKeyFieldWithModel() {
     keyLabel.textContent = "DeepSeek API Key";
     keyInput.placeholder = "Enter your DeepSeek API key (sk-...)";
     keyInput.value = aiSettings.deepseekKey || "";
-    if (keyHint) keyHint.textContent = "API key is required to use DeepSeek.";
   } else if (newProvider === "OpenAI") {
     keyLabel.textContent = "OpenAI API Key";
     keyInput.placeholder = "Enter your OpenAI API key (sk-...)";
     keyInput.value = aiSettings.openaiKey || "";
-    if (keyHint) keyHint.textContent = "API key is required to use OpenAI.";
   } else if (newProvider === "GLM") {
     keyLabel.textContent = "GLM API Key";
     keyInput.placeholder = "Enter your GLM API key";
     keyInput.value = aiSettings.glmKey || "";
-    if (keyHint) keyHint.textContent = "API key is required to use GLM.";
   } else if (newProvider === "Qwen") {
     keyLabel.textContent = "Qwen API Key";
     keyInput.placeholder = "Enter your Qwen API key (sk-...)";
     keyInput.value = aiSettings.qwenKey || "";
-    if (keyHint) keyHint.textContent = "API key is required to use Qwen.";
   } else if (newProvider === "Ollama") {
     keyLabel.textContent = "No API Key Needed";
     keyInput.placeholder = "Local Ollama — no API key";
     keyInput.value = "";
     keyInput.disabled = true;
-    if (keyHint) keyHint.textContent = "Local Ollama server — no API key needed. Make sure Ollama is running.";
     const ollamaModelInput = $("#setting-ollama-model");
     const ollamaBaseUrlInput = $("#setting-ollama-base-url");
     if (ollamaModelInput) ollamaModelInput.value = aiSettings.ollamaModel || "";
@@ -112,12 +119,10 @@ function syncKeyFieldWithModel() {
     keyLabel.textContent = "Gemini API Key";
     keyInput.placeholder = "Enter your Gemini API key (AIzaSy...)";
     keyInput.value = aiSettings.geminiKey || "";
-    if (keyHint) keyHint.textContent = "API key is required to use Gemini.";
   } else {
     keyLabel.textContent = "API Key";
     keyInput.placeholder = "Enter your API key";
     keyInput.value = "";
-    if (keyHint) keyHint.textContent = "Please select an AI model.";
   }
   if (newProvider !== "Ollama") {
     setSettingsGroups(false);
@@ -125,6 +130,7 @@ function syncKeyFieldWithModel() {
 }
 
 async function loadSettings() {
+  setKeyVisibility(false);
   let parsed = null;
   try {
     const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
@@ -300,12 +306,15 @@ document.querySelectorAll("dialog").forEach((dlg) => {
   dlg.addEventListener("cancel", syncDialogScrollLock);
 });
 
-$("#open-settings")?.addEventListener("click", async () => {
+async function openSettingsDialog() {
   await loadSettings();
   const dialog = $("#settings-dialog");
   dialog?.showModal();
   syncDialogScrollLock();
-});
+}
+
+$("#open-settings")?.addEventListener("click", openSettingsDialog);
+$("#sidebar-open-settings")?.addEventListener("click", openSettingsDialog);
 $("#close-settings")?.addEventListener("click", () => $("#settings-dialog")?.close());
 $("#btn-save-settings")?.addEventListener("click", () => { saveSettings(); });
 $("#settings-dialog")?.addEventListener("click", (e) => {
@@ -353,13 +362,7 @@ $("#toggle-key-visibility")?.addEventListener("click", () => {
   const input = $("#setting-api-key");
   const btn = $("#toggle-key-visibility");
   if (!input || !btn) return;
-  if (input.type === "password") {
-    input.type = "text";
-    btn.innerHTML = EYE_SVG_OFF;
-  } else {
-    input.type = "password";
-    btn.innerHTML = EYE_SVG_OPEN;
-  }
+  setKeyVisibility(!keyVisible);
 });
 
 export {

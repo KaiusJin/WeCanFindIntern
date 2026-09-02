@@ -1,4 +1,4 @@
-import { $, $$, escapeHtml, formatRelativeTime, renderMarkdown, responseErrorMessage, showErrorDialog } from "./helpers.js";
+import { $, $$, escapeHtml, formatRelativeTime, renderMarkdown, responseErrorMessage, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import {
   loadWaterlooWorksBookmarks,
   setPublicBookmarks,
@@ -26,6 +26,25 @@ const trackerState = {
   totalPages: 0,
   requestVersion: 0,
 };
+
+function mountApplicationsWorkspace() {
+  const dashboard = $("#tab-tracker .tracker-dashboard");
+  const drawer = $("#tracker-detail-drawer");
+  if (!dashboard || !drawer || dashboard.querySelector(".applications-list-pane")) return;
+
+  const listPane = document.createElement("div");
+  listPane.className = "applications-list-pane";
+  Array.from(dashboard.children).forEach((child) => listPane.appendChild(child));
+
+  const emptyDetail = document.createElement("div");
+  emptyDetail.className = "applications-detail-empty";
+  emptyDetail.innerHTML = `<span aria-hidden="true">✓</span><h2>Select an application</h2><p>Choose an opportunity to review its status, job information, and timeline.</p>`;
+
+  drawer.classList.add("applications-detail-pane");
+  dashboard.append(listPane, drawer, emptyDetail);
+}
+
+mountApplicationsWorkspace();
 
 // =========================================================
 // SCALABLE APPLICATION TRACKER WORKSPACE
