@@ -20,6 +20,7 @@ def initial_board_states() -> list[dict[str, Any]]:
             "posting_inserted_count": 0,
             "posting_known_count": 0,
             "posting_failed_count": 0,
+            "display_mode": None,
             "error": None,
         }
         for name, url in WATERLOOWORKS_BOARDS

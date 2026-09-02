@@ -18,6 +18,19 @@ from wecanfindintern.waterlooworks.extractor import (
 from wecanfindintern.waterlooworks.repository import WaterlooWorksRepository
 from wecanfindintern.waterlooworks.state import WaterlooWorksSnapshot
 
+BOARD_SHELL_ATTEMPTS = 40
+BOARD_SHELL_POLL_SECONDS = 0.25
+ALL_JOBS_ATTEMPTS = 12
+ALL_JOBS_POLL_SECONDS = 0.25
+RESULT_ACTIVATION_ATTEMPTS = 20
+RESULT_ACTIVATION_POLL_SECONDS = 0.15
+API_READINESS_ATTEMPTS = 24
+API_READINESS_POLL_SECONDS = 0.25
+
+
+class WaterlooWorksBoardUnavailable(RuntimeError):
+    """The current account cannot search this WaterlooWorks board."""
+
 
 class WaterlooWorksCollector:
     """Drive one full import across all boards, updating the shared snapshot."""
@@ -42,6 +55,7 @@ class WaterlooWorksCollector:
             )
             self.snapshot.run_id = run_id
             board_errors: list[str] = []
+            skipped_boards: list[str] = []
             for index, (board_name, board_url) in enumerate(WATERLOOWORKS_BOARDS, start=1):
                 board_state = self._board_state(board_name)
                 board_state.update(
@@ -69,15 +83,15 @@ class WaterlooWorksCollector:
                         f"Opening All Jobs on board {index}/{len(WATERLOOWORKS_BOARDS)}: "
                         f"{board_name.replace('_', ' ').title()}…"
                     )
-                    await self._click_all_jobs(target, board_name)
+                    display_mode = await self._click_all_jobs(target, board_name)
+                    board_state["display_mode"] = display_mode
                     self.snapshot.message = (
-                        f"Reading the job API for board {index}/{len(WATERLOOWORKS_BOARDS)}: "
+                        f"Reading the {display_mode} results API for board "
+                        f"{index}/{len(WATERLOOWORKS_BOARDS)}: "
                         f"{board_name.replace('_', ' ').title()}…"
                     )
                     await self._wait_for_board_ready(target, board_name, board_url)
-                    result = await self.session.evaluate(
-                        target, EXTRACT_JOBS_SCRIPT, timeout=1800
-                    )
+                    result = await self.session.evaluate(target, EXTRACT_JOBS_SCRIPT, timeout=1800)
                     raw_board_jobs = result.get("jobs") if isinstance(result, dict) else None
                     if not isinstance(raw_board_jobs, list):
                         raise RuntimeError("invalid collection result")
@@ -99,6 +113,16 @@ class WaterlooWorksCollector:
                         posting_failed_count=outcomes["posting_failed"],
                         error="; ".join(posting_errors[:3])[:500] or None,
                     )
+                except WaterlooWorksBoardUnavailable as error:
+                    reason = str(error).splitlines()[0][:240]
+                    board_state.update(status="skipped", error=reason)
+                    await asyncio.to_thread(
+                        self.repository.mark_board_skipped,
+                        run_id,
+                        board_name,
+                        reason,
+                    )
+                    skipped_boards.append(board_name)
                 except Exception as error:
                     error_text = str(error).splitlines()[0][:240]
                     board_state.update(status="failed", error=error_text)
@@ -126,17 +150,21 @@ class WaterlooWorksCollector:
                 self.repository.latest_job_update_at
             )
             self.snapshot.status = totals["status"]
-            self.snapshot.message = (
-                f"{totals['posting_failed_count']} posting failures across "
-                f"{totals['board_failed_count']} boards."
-                if totals["posting_failed_count"] or totals["board_failed_count"]
-                else ""
-            )
+            if totals["posting_failed_count"] or totals["board_failed_count"]:
+                self.snapshot.message = (
+                    f"{totals['posting_failed_count']} posting failures across "
+                    f"{totals['board_failed_count']} boards."
+                )
+            elif skipped_boards:
+                suffix = "s" if len(skipped_boards) != 1 else ""
+                self.snapshot.message = (
+                    f"Skipped {len(skipped_boards)} unavailable WaterlooWorks board{suffix}."
+                )
+            else:
+                self.snapshot.message = ""
         except asyncio.CancelledError:
             if run_id is not None:
-                await asyncio.to_thread(
-                    self.repository.fail_run, run_id, "Collection cancelled"
-                )
+                await asyncio.to_thread(self.repository.fail_run, run_id, "Collection cancelled")
             raise
         except Exception as error:
             if run_id is not None:
@@ -156,7 +184,7 @@ class WaterlooWorksCollector:
     ) -> None:
         expected_path = urlsplit(board_url).path
         last_path = ""
-        for _ in range(60):
+        for _ in range(BOARD_SHELL_ATTEMPTS):
             try:
                 readiness = await self.session.evaluate(
                     target,
@@ -168,7 +196,7 @@ class WaterlooWorksCollector:
                     return
             except Exception:
                 pass
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(BOARD_SHELL_POLL_SECONDS)
         if last_path and last_path != expected_path:
             raise RuntimeError(f"redirected to {last_path}; expected {expected_path}")
         raise RuntimeError(f"{board_name} page did not finish loading")
@@ -177,10 +205,10 @@ class WaterlooWorksCollector:
         self,
         target: dict[str, Any],
         board_name: str,
-    ) -> None:
+    ) -> str:
         """Initialize the board's complete result set before API extraction."""
 
-        for _ in range(30):
+        for _ in range(ALL_JOBS_ATTEMPTS):
             result = await self.session.evaluate(
                 target,
                 r"""
@@ -190,6 +218,7 @@ class WaterlooWorksCollector:
                     .trim()
                     .toLowerCase();
                   const visible = (element) => {
+                    if (!element) return false;
                     const style = getComputedStyle(element);
                     const rect = element.getBoundingClientRect();
                     return style.display !== "none" && style.visibility !== "hidden" &&
@@ -199,31 +228,52 @@ class WaterlooWorksCollector:
                     element.innerText || element.textContent || element.value ||
                     element.getAttribute("aria-label")
                   );
-                  const allJobs = document.querySelector(
-                    '.tag-rail > button.btn__default.pill'
-                  );
-                  if (!allJobs || label(allJobs) !== "all jobs" || !visible(allJobs)) {
-                    const pageText = normalize(document.body.innerText);
+                  const modeForToggle = (toggle) => {
+                    const toggleLabel = normalize(toggle?.getAttribute("aria-label"));
+                    if (toggleLabel === "table mode") return "card";
+                    if (toggleLabel === "card mode") return "table";
+                    const table = document.querySelector("table.data-viewer-table");
+                    if (visible(table)) return "table";
+                    const card = [...document.querySelectorAll('[id^="resultRow_"]')]
+                      .find(visible);
+                    return card ? "card" : "unknown";
+                  };
+                  const pageText = normalize(document.body.innerText);
+                  const unavailable = pageText.includes(
+                    "to search for jobs, ensure the following"
+                  ) && [
+                    "you are scheduled out to work for the upcoming term",
+                    "you have accepted the terms & conditions",
+                    "you are not restricted from applying to jobs",
+                  ].some((marker) => pageText.includes(marker));
+                  if (unavailable) {
                     return {
-                      clicked: false,
-                      tableReady: false,
-                      unavailableReason: pageText.includes(
-                        "to search for jobs, ensure the following"
-                      )
-                        ? "WaterlooWorks does not offer All Jobs on this board " +
-                          "for the current account or recruiting term"
-                        : null,
-                      reason: "missing exact .tag-rail > button.btn__default.pill All Jobs",
+                      unavailable: true,
+                      reason: "WaterlooWorks does not offer job search on this board " +
+                        "for the current account or recruiting term",
                     };
                   }
-                  const controlDescription = normalize([
-                    allJobs.getAttribute("aria-label"),
-                    allJobs.title,
-                    allJobs.className,
-                  ].join(" "));
-                  if (/(?:card|table).*(?:mode|view)|(?:mode|view).*(?:card|table)/.test(
-                    controlDescription
-                  )) return {clicked: false, rejectedModeToggle: true};
+                  const modeToggle = [...document.querySelectorAll(
+                    'button[aria-label="Card Mode"], button[aria-label="Table Mode"]'
+                  )].find(visible);
+                  const showSearch = [...document.querySelectorAll(".js--show-search")]
+                    .find(visible);
+                  if (showSearch && modeToggle) {
+                    return {activated: true, mode: modeForToggle(modeToggle)};
+                  }
+                  const candidates = [...document.querySelectorAll(
+                    ".tag-rail button, .tag-rail [role='button'], " +
+                    "button.btn__default.pill"
+                  )];
+                  const allJobs = candidates.find((element) =>
+                    label(element) === "all jobs" && visible(element)
+                  );
+                  if (!allJobs) {
+                    return {
+                      clicked: false,
+                      reason: "no visible control labelled All Jobs",
+                    };
+                  }
                   allJobs.scrollIntoView({block: "center"});
                   allJobs.click();
                   return {
@@ -237,10 +287,12 @@ class WaterlooWorksCollector:
                 """,
                 timeout=5,
             )
-            if result.get("unavailableReason"):
-                raise RuntimeError(f"{board_name}: {result['unavailableReason']}")
+            if result.get("unavailable"):
+                raise WaterlooWorksBoardUnavailable(f"{board_name}: {result['reason']}")
+            if result.get("activated"):
+                return str(result.get("mode") or "unknown")
             if result.get("clicked"):
-                for _ in range(30):
+                for _ in range(RESULT_ACTIVATION_ATTEMPTS):
                     activation = await self.session.evaluate(
                         target,
                         r"""
@@ -253,27 +305,32 @@ class WaterlooWorksCollector:
                               style.visibility !== "hidden" &&
                               rect.width > 0 && rect.height > 0;
                           };
-                          const showSearch = document.querySelector(".js--show-search");
-                          const modeToggle = document.querySelector(
+                          const showSearch = [...document.querySelectorAll(
+                            ".js--show-search"
+                          )].find(visible);
+                          const modeToggle = [...document.querySelectorAll(
                             'button[aria-label="Card Mode"], ' +
                             'button[aria-label="Table Mode"]'
-                          );
+                          )].find(visible);
+                          const toggleLabel = String(
+                            modeToggle?.getAttribute("aria-label") || ""
+                          ).trim().toLowerCase();
+                          const mode = toggleLabel === "table mode"
+                            ? "card"
+                            : toggleLabel === "card mode" ? "table" : "unknown";
                           return {
                             activated: visible(showSearch) && visible(modeToggle),
+                            mode,
                           };
                         })()
                         """,
                         timeout=5,
                     )
                     if activation.get("activated"):
-                        return
-                    await asyncio.sleep(0.25)
-                raise RuntimeError(
-                    f"{board_name} All Jobs click did not activate the result set"
-                )
-            if result.get("tableReady"):
-                return
-            await asyncio.sleep(0.5)
+                        return str(activation.get("mode") or "unknown")
+                    await asyncio.sleep(RESULT_ACTIVATION_POLL_SECONDS)
+                raise RuntimeError(f"{board_name} All Jobs click did not activate the result set")
+            await asyncio.sleep(ALL_JOBS_POLL_SECONDS)
         raise RuntimeError(f"{board_name} did not expose an All Jobs button")
 
     async def _wait_for_board_ready(
@@ -284,7 +341,7 @@ class WaterlooWorksCollector:
     ) -> None:
         expected_path = urlsplit(board_url).path
         last_path = ""
-        for _ in range(90):
+        for _ in range(API_READINESS_ATTEMPTS):
             try:
                 readiness = await self.session.evaluate(
                     target,
@@ -296,7 +353,7 @@ class WaterlooWorksCollector:
                     return
             except Exception:
                 pass
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(API_READINESS_POLL_SECONDS)
         if last_path and last_path != expected_path:
             raise RuntimeError(f"redirected to {last_path}; expected {expected_path}")
         raise RuntimeError(f"{board_name} did not expose the authenticated job API")

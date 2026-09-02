@@ -272,7 +272,7 @@ def test_collector_keeps_all_jobs_initialization_click():
 
     click_expression = session.evaluate.await_args_list[0].args[1]
     activation_expression = session.evaluate.await_args_list[1].args[1]
-    assert ".tag-rail > button.btn__default.pill" in click_expression
+    assert ".tag-rail button" in click_expression
     assert "allJobs.click()" in click_expression
     assert 'button[aria-label="Table Mode"]' in activation_expression
 

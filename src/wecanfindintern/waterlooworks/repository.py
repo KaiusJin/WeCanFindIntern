@@ -235,6 +235,19 @@ class WaterlooWorksRepository:
                 (_now(), error[:1000], run_id, board),
             )
 
+    def mark_board_skipped(self, run_id: str, board: str, reason: str) -> None:
+        """Record an account-inaccessible board without failing the whole run."""
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE waterlooworks_board_runs
+                SET status='skipped', finished_at=?, error=?
+                WHERE run_id=? AND board=?
+                """,
+                (_now(), reason[:1000], run_id, board),
+            )
+
     def store_board_postings(
         self,
         run_id: str,
