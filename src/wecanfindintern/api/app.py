@@ -42,17 +42,12 @@ DESKTOP_CSP = (
 
 
 async def _recommendation_index_loop(
-    database: Database, waterlooworks: WaterlooWorksService
+    indexer: RecommendationIndexer,
+    waterlooworks: WaterlooWorksService,
+    wake: asyncio.Event,
 ) -> None:
     """Keep the derived lexical RAG index fresh without delaying API startup."""
 
-    embedding_config = EmbeddingConfig.from_env()
-    indexer = RecommendationIndexer(
-        database.pool,
-        embedder=(
-            EmbeddingGateway(embedding_config) if embedding_config is not None else None
-        ),
-    )
     # A document-version bump must refresh unchanged active jobs as well as jobs
     # arriving through the ingestion trigger queue.
     await indexer.enqueue_stale_public_documents()
@@ -76,12 +71,18 @@ async def _recommendation_index_loop(
             # This also repairs vectors left missing by a previous transient failure.
             await indexer.embed_missing_primary_chunks(limit=100)
             iteration += 1
-            await asyncio.sleep(2 if report.scanned >= 100 else 30)
+            delay = 2 if report.scanned >= 100 else 30
         except asyncio.CancelledError:
             raise
         except Exception as error:
             logger.warning("Recommendation index maintenance failed: %s", error)
-            await asyncio.sleep(30)
+            delay = 30
+        try:
+            await asyncio.wait_for(wake.wait(), timeout=delay)
+        except TimeoutError:
+            pass
+        finally:
+            wake.clear()
 
 
 def create_app() -> FastAPI:
@@ -96,6 +97,16 @@ def create_app() -> FastAPI:
         app.state.database = database
         app.state.agent_memory = AgentMemoryManager(AgentMemoryStore(database.pool))
         app.state.waterlooworks = WaterlooWorksService()
+        embedding_config = EmbeddingConfig.from_env()
+        app.state.recommendation_indexer = RecommendationIndexer(
+            database.pool,
+            embedder=(
+                EmbeddingGateway(embedding_config)
+                if embedding_config is not None
+                else None
+            ),
+        )
+        app.state.recommendation_index_wake = asyncio.Event()
         app.state.background_collection = None
         if os.getenv("WCFI_USER_DATA_DIR") and os.getenv("WCFI_RESOURCE_DIR"):
             from wecanfindintern.desktop.collection import BackgroundCollectionService
@@ -108,7 +119,11 @@ def create_app() -> FastAPI:
             )
             app.state.background_collection.start()
         recommendation_index_task = asyncio.create_task(
-            _recommendation_index_loop(database, app.state.waterlooworks)
+            _recommendation_index_loop(
+                app.state.recommendation_indexer,
+                app.state.waterlooworks,
+                app.state.recommendation_index_wake,
+            )
         )
         yield
         if app.state.background_collection is not None:

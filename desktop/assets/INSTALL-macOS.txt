@@ -1,13 +1,15 @@
-WeCanFindIntern for macOS — 首次打开说明
+WeCanFindIntern for macOS — First Launch Guide
 
-此版本使用无证书的 ad-hoc 完整性签名，没有经过 Apple 公证。
-macOS 首次打开时需要由用户手动信任：
+This release uses a certificate-free ad-hoc integrity signature and is not
+notarized by Apple. The first launch requires manual approval in macOS:
 
-1. 将 WeCanFindIntern.app 拖到“应用程序”文件夹。
-2. 尝试打开一次，然后关闭 macOS 的安全提示。
-3. 打开“系统设置”>“隐私与安全性”。
-4. 在“安全性”区域找到 WeCanFindIntern，点击“仍要打开”。
-5. 输入 Mac 登录密码并确认。以后可以正常双击打开。
+1. Drag WeCanFindIntern.app into the Applications folder.
+2. Try to open it once, then dismiss the macOS security warning.
+3. Open System Settings > Privacy & Security.
+4. In the Security section, find WeCanFindIntern and click Open Anyway.
+5. Enter your Mac login password and confirm. You can open the app normally
+   afterward.
 
-安装前请在 GitHub Release 的 SHA256SUMS.txt 中核对下载文件。
-请勿全局关闭 Gatekeeper，也不要安装来源不明的副本。
+Before installing, verify the download against SHA256SUMS.txt in the GitHub
+Release. Do not disable Gatekeeper globally or install copies from unknown
+sources.

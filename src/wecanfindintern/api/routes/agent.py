@@ -17,6 +17,7 @@ from wecanfindintern.agent.models import (
     AgentApproval,
     AgentApprovalDecisionResult,
     AgentDecisionRequest,
+    AgentEmbeddingConfigRequest,
     AgentMessage,
     AgentMessageRequest,
     AgentSession,
@@ -25,7 +26,7 @@ from wecanfindintern.agent.models import (
     AgentTurnResult,
 )
 from wecanfindintern.agent.orchestrator import AgentOrchestrator
-from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig
+from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig, EmbeddingGateway
 from wecanfindintern.agent.recommend.repository import RecommendationRepository
 from wecanfindintern.agent.repository import AgentRepository
 from wecanfindintern.api.dependencies import (
@@ -101,6 +102,8 @@ def _deps(request: Request, payload: AgentMessageRequest) -> AgentDeps:
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    if payload.embedding_provider:
+        _activate_embedding_config(request, embedding_config)
     return _build_agent_deps(
         request,
         llm_config=LlmConfig(
@@ -113,6 +116,24 @@ def _deps(request: Request, payload: AgentMessageRequest) -> AgentDeps:
     )
 
 
+def _activate_embedding_config(
+    request: Request, config: EmbeddingConfig | None
+) -> bool:
+    """Apply one UI-selected embedding profile to the resident indexer."""
+
+    indexer = getattr(request.app.state, "recommendation_indexer", None)
+    if indexer is None:
+        return False
+    current = indexer.embedder.config if indexer.embedder is not None else None
+    if current == config:
+        return False
+    indexer.embedder = EmbeddingGateway(config) if config is not None else None
+    wake = getattr(request.app.state, "recommendation_index_wake", None)
+    if wake is not None:
+        wake.set()
+    return True
+
+
 def _execution_deps(request: Request) -> AgentDeps:
     """Dependencies for approval execution (no LLM round-trip needed)."""
 
@@ -120,6 +141,33 @@ def _execution_deps(request: Request) -> AgentDeps:
         request,
         llm_config=None,
     )
+
+
+@agent_router.put("/embedding-config")
+async def configure_agent_embedding(
+    payload: AgentEmbeddingConfigRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Keep corpus indexing aligned with the embedding profile saved in the UI."""
+
+    try:
+        config = EmbeddingConfig.from_values(
+            provider=payload.provider,
+            model=payload.model,
+            dimensions=payload.dimensions,
+            api_key=payload.api_key,
+            api_base=payload.api_base,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    changed = _activate_embedding_config(request, config)
+    return {
+        "configured": True,
+        "changed": changed,
+        "provider": config.provider,
+        "model": config.model,
+        "dimensions": config.dimensions,
+    }
 
 
 @agent_router.post("/sessions", response_model=AgentSessionResponse, status_code=201)

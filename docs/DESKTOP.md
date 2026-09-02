@@ -154,8 +154,8 @@ publish to an app store.
 macOS artifacts use a certificate-free ad-hoc signature over the complete app
 bundle. This signature seals the app resources and is checked with
 `codesign --verify --deep --strict` during release, but it does not establish a
-trusted developer identity and cannot be notarized by Apple. The DMG includes a
-Chinese first-launch guide. Users install the app in `/Applications`, try to open
+trusted developer identity and cannot be notarized by Apple. The DMG includes an
+English first-launch guide. Users install the app in `/Applications`, try to open
 it once, and then choose **System Settings > Privacy & Security > Open Anyway**.
 They should verify the download against the release's `SHA256SUMS.txt` first.
 

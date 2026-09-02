@@ -6,7 +6,7 @@ import {
   showErrorDialog,
 } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { readSseEvents } from "./sse.js";
-import { syncDialogScrollLock, validateAiConfig } from "./settings.js?v=20260901-settings-v1";
+import { syncDialogScrollLock, validateAiConfig } from "./settings.js?v=20260902-settings-v2";
 import {
   jobContextState,
   publicJobContext,

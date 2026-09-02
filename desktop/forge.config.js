@@ -48,7 +48,7 @@ module.exports = {
             y: 400,
             type: "file",
             path: macInstallGuide,
-            name: "首次打开说明.txt",
+            name: "First Launch Guide.txt",
           },
         ],
         additionalDMGOptions: { filesystem: "APFS" },

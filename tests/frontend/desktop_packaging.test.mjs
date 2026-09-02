@@ -25,14 +25,17 @@ test("macOS packaging seals the complete app with a certificate-free signature",
   assert.equal(forgeConfig.packagerConfig.osxNotarize, undefined);
 });
 
-test("the macOS disk image contains the manual trust guide", () => {
+test("the macOS disk image contains an English manual trust guide", () => {
   const dmgMaker = forgeConfig.makers.find((maker) => maker.name === "@electron-forge/maker-dmg");
   const appPath = "/tmp/WeCanFindIntern.app";
   const contents = dmgMaker.config.contents({ appPath });
-  const guide = contents.find((entry) => entry.name === "首次打开说明.txt");
+  const guide = contents.find((entry) => entry.name === "First Launch Guide.txt");
 
   assert.ok(guide);
   assert.equal(contents.find((entry) => entry.path === appPath)?.type, "file");
   assert.equal(contents.find((entry) => entry.path === "/Applications")?.type, "link");
   assert.equal(fs.existsSync(guide.path), true);
+  const guideText = fs.readFileSync(guide.path, "utf8");
+  assert.match(guideText, /First Launch Guide/);
+  assert.doesNotMatch(guideText, /[\u3400-\u9fff]/u);
 });

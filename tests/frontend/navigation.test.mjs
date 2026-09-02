@@ -8,6 +8,7 @@ const navigationSource = await readFile(new URL("../../web/modules/navigation.js
 const heatmapSource = await readFile(new URL("../../web/modules/heatmap.js", import.meta.url), "utf8");
 const waterlooWorksSource = await readFile(new URL("../../web/modules/waterlooworks.js", import.meta.url), "utf8");
 const profileSource = await readFile(new URL("../../web/modules/profile.js", import.meta.url), "utf8");
+const settingsSource = await readFile(new URL("../../web/modules/settings.js", import.meta.url), "utf8");
 
 const sidebarSource = indexSource.match(/<aside id="app-sidebar"[\s\S]*?<\/aside>/)?.[0] || "";
 
@@ -65,6 +66,12 @@ test("shared modules use one cache-busted URL", () => {
   assert.doesNotMatch(heatmapSource, /from "\.\/navigation\.js";/);
   assert.match(waterlooWorksSource, /helpers\.js\?v=20260901-error-dialog-minimal-v1/);
   assert.doesNotMatch(waterlooWorksSource, /helpers\.js\?v=20260901-waterlooworks-filters-v1/);
+});
+
+test("saved embedding settings configure the resident recommendation indexer", () => {
+  assert.match(settingsSource, /fetch\("\/api\/v1\/agent\/embedding-config"/);
+  assert.match(settingsSource, /await syncEmbeddingConfig\(\);/);
+  assert.match(settingsSource, /syncEmbeddingConfig\(\{ showError: true \}\)/);
 });
 
 test("leaving the AI Agent closes only its open dialogs", () => {

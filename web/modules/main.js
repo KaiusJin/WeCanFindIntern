@@ -1,5 +1,5 @@
 import { $, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
-import { loadSettings } from "./settings.js?v=20260901-settings-v1";
+import { loadSettings } from "./settings.js?v=20260902-settings-v2";
 import { initializeNavigation, setTabActivators, switchTab } from "./navigation.js?v=20260901-app-shell-v4";
 import { jobContextState } from "./job-context.js?v=20260831-jobboard-parity-v3";
 import { setupInfiniteScroll } from "./pagination.js?v=20260901-results-scroll-container-v1";

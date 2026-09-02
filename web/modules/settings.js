@@ -181,6 +181,7 @@ async function loadSettings() {
   if (embeddingModel) embeddingModel.value = aiSettings.embeddingModel || "qwen3-embedding:0.6b";
   if (embeddingDimensions) embeddingDimensions.value = aiSettings.embeddingDimensions || 768;
   if (embeddingBaseUrl) embeddingBaseUrl.value = aiSettings.embeddingBaseUrl || "";
+  await syncEmbeddingConfig();
 }
 
 async function saveSettings() {
@@ -220,6 +221,7 @@ async function saveSettings() {
     showErrorDialog(error, { title: "AI settings could not be saved", guidance: "Allow local storage and make sure the operating-system credential store is available." });
     return;
   }
+  if (!await syncEmbeddingConfig({ showError: true })) return;
 
   const feedback = $("#settings-save-feedback");
   if (feedback) {
@@ -271,6 +273,46 @@ function getEffectiveAiConfig() {
     embedding_api_key: embeddingKeys[embeddingProvider] || null,
     embedding_api_base: aiSettings.embeddingBaseUrl || null,
   };
+}
+
+async function syncEmbeddingConfig({ showError = false } = {}) {
+  const config = getEffectiveAiConfig();
+  if (!config.embedding_provider || !config.embedding_model) {
+    if (showError) {
+      showErrorDialog("Select an embedding provider and model.", {
+        title: "Embedding settings are incomplete",
+      });
+    }
+    return false;
+  }
+  try {
+    const response = await fetch("/api/v1/agent/embedding-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: config.embedding_provider,
+        model: config.embedding_model,
+        dimensions: config.embedding_dimensions,
+        api_key: config.embedding_api_key,
+        api_base: config.embedding_api_base || "",
+      }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail || "Embedding configuration could not be applied.");
+    }
+    return true;
+  } catch (error) {
+    if (showError) {
+      showErrorDialog(error, {
+        title: "Embedding settings could not be applied",
+        guidance: "Check the provider settings and make sure the local backend is available.",
+      });
+    } else {
+      console.warn("Embedding settings could not be applied:", error);
+    }
+    return false;
+  }
 }
 
 function validateAiConfig() {
@@ -368,6 +410,7 @@ export {
   aiSettings,
   currentActiveProvider,
   getEffectiveAiConfig,
+  syncEmbeddingConfig,
   validateAiConfig,
   syncDialogScrollLock,
   loadSettings,

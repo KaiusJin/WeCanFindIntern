@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI
 
+from wecanfindintern.agent.models import AgentEmbeddingConfigRequest
 from wecanfindintern.agent.tools import ToolError
 from wecanfindintern.api.app import app
 from wecanfindintern.api.models import JobPage
-from wecanfindintern.api.routes.agent import _public_agent_error, delete_agent_session
+from wecanfindintern.api.routes.agent import (
+    _public_agent_error,
+    configure_agent_embedding,
+    delete_agent_session,
+)
 from wecanfindintern.api.routes.jobs import _repository, jobs_router
 from wecanfindintern.api.routes.profile import (
     delete_resume,
@@ -41,6 +47,42 @@ def test_agent_llm_errors_hide_internal_details():
     assert detail == "The AI model could not complete this request. Please try again."
     assert "planner" not in detail.lower()
     assert "non-object" not in detail.lower()
+
+
+def test_agent_embedding_config_updates_and_wakes_resident_indexer():
+    indexer = SimpleNamespace(embedder=None)
+    wake = asyncio.Event()
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                recommendation_indexer=indexer,
+                recommendation_index_wake=wake,
+            )
+        )
+    )
+    payload = AgentEmbeddingConfigRequest(
+        provider="Ollama",
+        model="qwen3-embedding:0.6b",
+        dimensions=768,
+        api_base="http://localhost:11434/v1",
+    )
+
+    result = asyncio.run(configure_agent_embedding(payload, request))
+
+    assert result == {
+        "configured": True,
+        "changed": True,
+        "provider": "Ollama",
+        "model": "qwen3-embedding:0.6b",
+        "dimensions": 768,
+    }
+    assert indexer.embedder.config.api_base == "http://localhost:11434"
+    assert wake.is_set()
+
+    wake.clear()
+    repeated = asyncio.run(configure_agent_embedding(payload, request))
+    assert repeated["changed"] is False
+    assert not wake.is_set()
 
 
 class FakeProfileRepo:
@@ -123,6 +165,7 @@ def test_openapi_contract_covers_frontend_endpoints():
     assert "delete" in paths["/api/v1/tracker/bookmarks/waterlooworks/{source_job_id}"]
     assert "post" in paths["/api/v1/waterlooworks/applications/sync"]
     assert "post" in paths["/api/v1/agent/sessions"]
+    assert "put" in paths["/api/v1/agent/embedding-config"]
     assert "delete" in paths["/api/v1/agent/sessions/{session_id}"]
     assert "post" in paths["/api/v1/agent/sessions/{session_id}/messages"]
     assert "get" in paths["/api/v1/agent/sessions/{session_id}/tool-calls"]

@@ -452,13 +452,14 @@ class RecommendationIndexer:
         return changed
 
     async def _embed_chunks(self, chunks: list[tuple[int, str]]) -> int:
-        if self.embedder is None:
+        embedder = self.embedder
+        if embedder is None:
             return 0
         embedded = 0
         for start in range(0, len(chunks), self.embedding_batch_size):
             batch = chunks[start : start + self.embedding_batch_size]
             vectors = await asyncio.to_thread(
-                self.embedder.embed_texts, [text for _, text in batch]
+                embedder.embed_texts, [text for _, text in batch]
             )
             async with self.pool.connection() as connection, connection.transaction():
                 for (chunk_id, _), vector in zip(batch, vectors, strict=True):
@@ -473,11 +474,11 @@ class RecommendationIndexer:
                             embedded_at=now();""",
                         (
                             chunk_id,
-                            self.embedder.config.provider,
-                            self.embedder.config.model,
-                            self.embedder.config.dimensions,
+                            embedder.config.provider,
+                            embedder.config.model,
+                            embedder.config.dimensions,
                             vector_literal(vector),
-                            self.embedder.config.version,
+                            embedder.config.version,
                         ),
                     )
                     embedded += 1

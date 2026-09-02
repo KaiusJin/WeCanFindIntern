@@ -101,6 +101,14 @@ class AgentMessageRequest(BaseModel):
     context: AgentContext | None = None
 
 
+class AgentEmbeddingConfigRequest(BaseModel):
+    provider: Literal["OpenAI", "Gemini", "Ollama"]
+    model: str = Field(min_length=1, max_length=200)
+    dimensions: int = Field(default=768, ge=1, le=4096)
+    api_key: str | None = None
+    api_base: str | None = Field(default=None, max_length=500)
+
+
 class AgentDecisionRequest(BaseModel):
     approved: bool
 
