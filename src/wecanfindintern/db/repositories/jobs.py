@@ -82,13 +82,22 @@ class JobIngestionRepository:
         unique bytea indexes; fuzzy scoring only sees at most 25 blocked candidates.
         """
 
+        batch_jobs = list(jobs)
         counts: Counter[str] = Counter()
         async with self.pool.connection() as connection, connection.transaction():
             await connection.execute(
                 "SELECT ensure_raw_job_snapshot_partition(%s)",
                 (scraped_at,),
             )
-            for job in jobs:
+            unchanged_fingerprints = await self._refresh_unchanged_sources(
+                connection,
+                jobs=batch_jobs,
+                scraped_at=scraped_at,
+            )
+            counts[IngestionOutcome.UNCHANGED.value] += len(unchanged_fingerprints)
+            for job in batch_jobs:
+                if job.source.source_fingerprint in unchanged_fingerprints:
+                    continue
                 outcome = await self._ingest_one(
                     connection,
                     run_id=run_id,
@@ -116,6 +125,70 @@ class JobIngestionRepository:
                 ),
             )
         return counts
+
+    async def _refresh_unchanged_sources(
+        self,
+        connection: AsyncConnection,
+        *,
+        jobs: list[CanonicalJobInput],
+        scraped_at: datetime,
+    ) -> set[str]:
+        """Refresh identical source rows in one statement and bypass full dedupe."""
+
+        if not jobs:
+            return set()
+        fingerprints = [bytes.fromhex(job.source.source_fingerprint) for job in jobs]
+        payload_hashes = [stable_json_hash(job.source.payload) for job in jobs]
+        detail_times = [job.source.details_fetched_at for job in jobs]
+        rows = await (
+            await connection.execute(
+                """
+                WITH incoming(source_fingerprint, payload_hash, details_fetched_at) AS (
+                    SELECT * FROM unnest(%s::bytea[], %s::bytea[], %s::timestamptz[])
+                ),
+                touched_sources AS (
+                    UPDATE job_sources js
+                    SET last_seen_at = GREATEST(js.last_seen_at, %s),
+                        last_scraped_at = %s,
+                        details_fetched_at = CASE
+                            WHEN incoming.details_fetched_at IS NULL
+                                THEN js.details_fetched_at
+                            ELSE GREATEST(
+                                coalesce(js.details_fetched_at, incoming.details_fetched_at),
+                                incoming.details_fetched_at
+                            )
+                        END,
+                        updated_at = now()
+                    FROM incoming
+                    WHERE js.source_fingerprint = incoming.source_fingerprint
+                      AND js.last_payload_hash = incoming.payload_hash
+                    RETURNING js.job_id, js.source_fingerprint
+                ),
+                refreshed_jobs AS (
+                    UPDATE jobs j
+                    SET last_seen_at = GREATEST(j.last_seen_at, %s),
+                        last_verified_at = GREATEST(j.last_verified_at, %s),
+                        status = 1,
+                        closed_at = NULL,
+                        updated_at = now()
+                    WHERE j.id IN (SELECT job_id FROM touched_sources)
+                    RETURNING j.id
+                )
+                SELECT encode(source_fingerprint, 'hex') AS source_fingerprint
+                FROM touched_sources
+                """,
+                (
+                    fingerprints,
+                    payload_hashes,
+                    detail_times,
+                    scraped_at,
+                    scraped_at,
+                    scraped_at,
+                    scraped_at,
+                ),
+            )
+        ).fetchall()
+        return {row["source_fingerprint"] for row in rows}
 
     async def finish_run(
         self,
@@ -421,9 +494,11 @@ class JobIngestionRepository:
                 INSERT INTO job_sources (
                     job_id, source, source_job_id, source_url, canonical_source_url,
                     direct_url, canonical_direct_url, direct_url_hash,
-                    source_fingerprint, last_payload_hash,
+                    source_fingerprint, last_payload_hash, details_fetched_at,
                     first_seen_at, last_seen_at, last_scraped_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
                 RETURNING id
                 """,
                 (
@@ -437,6 +512,7 @@ class JobIngestionRepository:
                     hex_bytes(incoming.dedupe.direct_url_hash),
                     fingerprint,
                     payload_hash,
+                    incoming.source.details_fetched_at,
                     incoming.first_seen_at,
                     scraped_at,
                     scraped_at,
@@ -467,6 +543,13 @@ class JobIngestionRepository:
                 canonical_direct_url = %s,
                 direct_url_hash = %s,
                 last_payload_hash = %s,
+                details_fetched_at = CASE
+                    WHEN %s::timestamptz IS NULL THEN details_fetched_at
+                    ELSE GREATEST(
+                        coalesce(details_fetched_at, %s::timestamptz),
+                        %s::timestamptz
+                    )
+                END,
                 last_seen_at = GREATEST(last_seen_at, %s),
                 last_scraped_at = %s,
                 updated_at = now()
@@ -479,6 +562,9 @@ class JobIngestionRepository:
                 incoming.source.canonical_direct_url,
                 hex_bytes(incoming.dedupe.direct_url_hash),
                 payload_hash,
+                incoming.source.details_fetched_at,
+                incoming.source.details_fetched_at,
+                incoming.source.details_fetched_at,
                 scraped_at,
                 scraped_at,
                 source_id,

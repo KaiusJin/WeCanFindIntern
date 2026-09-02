@@ -45,12 +45,18 @@ flowchart TD
    stage.
 2. Create one independent query task per enabled definition/source and bound
    concurrency with the semaphore.
-3. Call JobSpy for each page and deduplicate within the query by fingerprint.
-4. Finish all network tasks before creating the ingestion run and writing
+3. Select a durable full or rolling 48-hour sweep. The first run and every tenth
+   completed interval thereafter are full sweeps.
+4. Call JobSpy for each page and deduplicate within the query by fingerprint.
+   LinkedIn IDs are deduplicated across queries before cached/stale details are
+   hydrated.
+5. Finish all network tasks before creating the ingestion run and writing
    canonical records.
-5. Ingest into PostgreSQL by `batch_size`, with one transaction per batch.
-6. Run salary and recruiting-term enrichment after deduplication.
-7. Persist the run summary and its `success` or `partial` status.
+6. Ingest into PostgreSQL by `batch_size`, with one transaction per batch.
+   Identical payloads use one set-based timestamp refresh per batch.
+7. Run salary and recruiting-term enrichment after deduplication, skipping
+   definitive results already checked against the same content hash.
+8. Persist the run summary and its `success` or `partial` status.
 
 ### 2.2 Retry formula
 

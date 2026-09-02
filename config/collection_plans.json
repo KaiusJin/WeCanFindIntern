@@ -42,11 +42,15 @@
   ],
   "defaults": {
     "interval_seconds": 14400,
+    "recent_hours": 48,
+    "full_sweep_every": 10,
     "page_size": 25,
     "max_results_per_source": 40,
     "max_attempts": 3,
     "distance": 100,
     "linkedin_fetch_description": true,
+    "linkedin_detail_ttl_seconds": 86400,
+    "linkedin_detail_concurrency": 4,
     "verbose": 1
   }
 }

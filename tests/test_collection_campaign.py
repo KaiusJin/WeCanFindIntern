@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from scripts.collection import run_collection_campaign as campaign
+from wecanfindintern.db.repositories.collection_cache import LinkedInDetailCacheEntry
+from wecanfindintern.ingestion.jobspy_adapter import normalize_record
 
 
 def _definition(name: str, source: str) -> dict:
@@ -79,6 +81,21 @@ def test_collection_error_classification() -> None:
     assert campaign.is_retryable_collection_error(TimeoutError("read timed out"))
 
 
+def test_collection_window_starts_full_then_refreshes_every_ten() -> None:
+    assert campaign.collection_hours_window(
+        0, recent_hours=48, full_sweep_every=10
+    ) is None
+    assert campaign.collection_hours_window(
+        1, recent_hours=48, full_sweep_every=10
+    ) == 48
+    assert campaign.collection_hours_window(
+        9, recent_hours=48, full_sweep_every=10
+    ) == 48
+    assert campaign.collection_hours_window(
+        10, recent_hours=48, full_sweep_every=10
+    ) is None
+
+
 def test_campaign_result_payload_is_json_ready() -> None:
     result = campaign.CampaignResult(
         completed_at=datetime(2026, 9, 1, tzinfo=UTC),
@@ -103,3 +120,123 @@ def test_campaign_result_payload_is_json_ready() -> None:
     assert payload["failure_count"] == 1
     assert payload["database_stats"]["created"] == 6
     assert payload["duration_seconds"] == 12.35
+
+
+def test_collection_can_defer_linkedin_descriptions(monkeypatch) -> None:
+    seen = []
+
+    def scrape(query):
+        seen.append((query.linkedin_fetch_description, query.hours_old))
+        return "frame", SimpleNamespace(jobs=[])
+
+    definition = _definition("linkedin-query", "linkedin")
+    definition["query"]["linkedin_fetch_description"] = True
+    monkeypatch.setattr(campaign, "scrape_checked", scrape)
+
+    asyncio.run(
+        campaign.collect_all(
+            [definition],
+            concurrency=1,
+            defer_linkedin_descriptions=True,
+            hours_old_override=48,
+        )
+    )
+
+    assert seen == [(False, 48)]
+
+
+def test_linkedin_hydration_uses_cache_and_fetches_only_misses(monkeypatch) -> None:
+    cached_job = normalize_record(
+        {
+            "site": "linkedin",
+            "id": "li-cached",
+            "job_url": "https://linkedin.test/jobs/view/cached",
+            "title": "Cached job",
+        }
+    )
+    new_job = normalize_record(
+        {
+            "site": "linkedin",
+            "id": "li-new",
+            "job_url": "https://linkedin.test/jobs/view/new",
+            "title": "New job",
+        }
+    )
+    fetched_at = datetime(2026, 9, 2, tzinfo=UTC)
+
+    class FakeCache:
+        async def linkedin_details(self, fingerprints):
+            assert set(fingerprints) == {
+                cached_job.source_fingerprint,
+                new_job.source_fingerprint,
+            }
+            return {
+                cached_job.source_fingerprint: LinkedInDetailCacheEntry(
+                    details_fetched_at=fetched_at,
+                    payload={"description": "Cached description"},
+                )
+            }
+
+    fetched_ids = []
+
+    def fetch(source_job_id):
+        fetched_ids.append(source_job_id)
+        return {"description": "Fresh description"}
+
+    monkeypatch.setattr(campaign, "fetch_linkedin_details", fetch)
+    hydrated, stats = asyncio.run(
+        campaign.hydrate_linkedin_descriptions(
+            [cached_job, new_job],
+            FakeCache(),
+            ttl_seconds=86_400,
+            concurrency=2,
+        )
+    )
+
+    assert fetched_ids == ["li-new"]
+    assert [job.description for job in hydrated] == [
+        "Cached description",
+        "Fresh description",
+    ]
+    assert stats == {
+        "linkedin_detail_cache_hits": 1,
+        "linkedin_detail_fetched": 1,
+        "linkedin_detail_failed": 0,
+        "linkedin_detail_stale_fallbacks": 0,
+    }
+
+
+def test_linkedin_hydration_keeps_stale_detail_when_refresh_fails(monkeypatch) -> None:
+    job = normalize_record(
+        {
+            "site": "linkedin",
+            "id": "li-stale",
+            "job_url": "https://linkedin.test/jobs/view/stale",
+            "title": "Current title",
+        }
+    )
+    stale_at = datetime(2025, 1, 1, tzinfo=UTC)
+
+    class FakeCache:
+        async def linkedin_details(self, _fingerprints):
+            return {
+                job.source_fingerprint: LinkedInDetailCacheEntry(
+                    details_fetched_at=stale_at,
+                    payload={"title": "Current title", "description": "Last known JD"},
+                )
+            }
+
+    monkeypatch.setattr(campaign, "fetch_linkedin_details", lambda _job_id: {})
+    hydrated, stats = asyncio.run(
+        campaign.hydrate_linkedin_descriptions(
+            [job],
+            FakeCache(),
+            ttl_seconds=1,
+            concurrency=1,
+        )
+    )
+
+    assert hydrated[0].description == "Last known JD"
+    assert hydrated[0].details_fetched_at == stale_at
+    assert stats["linkedin_detail_failed"] == 1
+    assert stats["linkedin_detail_stale_fallbacks"] == 1

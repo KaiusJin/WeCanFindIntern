@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -53,6 +53,7 @@ class NormalizedJob(BaseModel):
     source_skills: list[str] = Field(default_factory=list)
     vacancy_count: int | None = None
     work_from_home_type: str | None = None
+    details_fetched_at: datetime | None = None
     raw: dict[str, Any]
 
 

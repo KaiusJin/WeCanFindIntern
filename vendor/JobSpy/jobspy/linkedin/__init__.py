@@ -246,7 +246,21 @@ class LinkedIn(Scraper):
             job_function=job_details.get("job_function"),
         )
 
-    def _get_job_details(self, job_id: str) -> dict:
+    def get_job_details(
+        self,
+        job_id: str,
+        description_format: DescriptionFormat = DescriptionFormat.MARKDOWN,
+    ) -> dict:
+        """Fetch one job detail page without repeating a keyword search."""
+
+        return self._get_job_details(job_id, description_format=description_format)
+
+    def _get_job_details(
+        self,
+        job_id: str,
+        *,
+        description_format: DescriptionFormat | None = None,
+    ) -> dict:
         """
         Retrieves job description and other job details by going to the job page url
         :param job_page_url:
@@ -270,9 +284,10 @@ class LinkedIn(Scraper):
         if div_content is not None:
             div_content = remove_attributes(div_content)
             description = div_content.prettify(formatter="html")
-            if self.scraper_input.description_format == DescriptionFormat.MARKDOWN:
+            output_format = description_format or self.scraper_input.description_format
+            if output_format == DescriptionFormat.MARKDOWN:
                 description = markdown_converter(description)
-            elif self.scraper_input.description_format == DescriptionFormat.PLAIN:
+            elif output_format == DescriptionFormat.PLAIN:
                 description = plain_converter(description)
         h3_tag = soup.find(
             "h3", text=lambda text: text and "Job function" in text.strip()

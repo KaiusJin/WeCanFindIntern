@@ -80,6 +80,7 @@ class IngestionSource(BaseModel):
     direct_url: str | None = None
     canonical_direct_url: str | None = None
     source_fingerprint: str
+    details_fetched_at: datetime | None = None
     payload: dict[str, Any]
 
 
@@ -217,6 +218,7 @@ def canonical_job_from_normalized(
             direct_url=job.direct_url,
             canonical_direct_url=canonical_direct_url,
             source_fingerprint=job.source_fingerprint,
+            details_fetched_at=job.details_fetched_at,
             payload=job.raw,
         ),
         first_seen_at=seen_at,

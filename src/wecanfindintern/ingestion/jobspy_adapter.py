@@ -6,11 +6,14 @@ import logging
 import math
 from collections.abc import Iterable
 from contextlib import suppress
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 import pandas as pd
 from jobspy import scrape_jobs
+from jobspy.linkedin import LinkedIn
+from jobspy.model import DescriptionFormat
+from jobspy.util import extract_emails_from_text
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from wecanfindintern.domain.normalized_job import (
@@ -27,6 +30,8 @@ __all__ = [
     "Salary",
     "build_source_fingerprint",
     "canonicalize_url",
+    "fetch_linkedin_details",
+    "merge_linkedin_details",
 ]
 
 SUPPORTED_SITES = {
@@ -305,6 +310,52 @@ def normalize_record(record: dict[str, Any]) -> NormalizedJob:
         work_from_home_type=optional_text(record.get("work_from_home_type")),
         raw=record,
     )
+
+
+LINKEDIN_DETAIL_FIELDS: tuple[str, ...] = (
+    "description",
+    "job_level",
+    "company_industry",
+    "job_type",
+    "job_url_direct",
+    "company_logo",
+    "job_function",
+    "emails",
+)
+
+
+def fetch_linkedin_details(
+    source_job_id: str,
+    *,
+    description_format: Literal["markdown", "html", "plain"] = "markdown",
+    proxies: list[str] | str | None = None,
+    ca_cert: str | None = None,
+    user_agent: str | None = None,
+) -> dict[str, Any]:
+    """Fetch one LinkedIn detail page after campaign-level ID deduplication."""
+
+    job_id = source_job_id.removeprefix("li-")
+    scraper = LinkedIn(proxies=proxies, ca_cert=ca_cert, user_agent=user_agent)
+    return scraper.get_job_details(job_id, DescriptionFormat(description_format))
+
+
+def merge_linkedin_details(
+    job: NormalizedJob,
+    details: dict[str, Any],
+    *,
+    fetched_at: datetime | None = None,
+) -> NormalizedJob:
+    """Overlay cached/fresh detail fields while retaining current search-card metadata."""
+
+    raw = dict(job.raw)
+    for field in LINKEDIN_DETAIL_FIELDS:
+        value = details.get(field)
+        if value is not None and value != "":
+            raw[field] = value
+    if raw.get("description") and not raw.get("emails"):
+        raw["emails"] = extract_emails_from_text(raw["description"])
+    merged = normalize_record(raw)
+    return merged.model_copy(update={"details_fetched_at": fetched_at or datetime.now(UTC)})
 
 
 def split_multi_value(value: Any) -> list[str]:

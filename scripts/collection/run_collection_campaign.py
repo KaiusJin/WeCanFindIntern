@@ -14,18 +14,21 @@ import sys
 import time
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
+from wecanfindintern.db.repositories.collection_cache import CollectionCacheRepository
 from wecanfindintern.db.repositories.jobs import JobIngestionRepository
 from wecanfindintern.domain.location import parse_location
 from wecanfindintern.ingestion.collection_catalog import expand_collection_catalog
 from wecanfindintern.ingestion.jobspy_adapter import (
     JobSpyQuery,
     NormalizedJob,
+    fetch_linkedin_details,
+    merge_linkedin_details,
     scrape_checked,
 )
 from wecanfindintern.ingestion.location_query import resolve_query_location
@@ -118,6 +121,8 @@ async def collect_all(
     *,
     concurrency: int = 4,
     max_retries: int = 3,
+    defer_linkedin_descriptions: bool = False,
+    hours_old_override: int | None = None,
 ) -> tuple[list[NormalizedJob], list[str], dict[str, int]]:
     collected: dict[str, NormalizedJob] = {}
     failures: list[str] = []
@@ -163,6 +168,10 @@ async def collect_all(
                 overrides = values.pop("source_overrides", {})
                 values.update(overrides.get(source, {}))
                 values = resolve_query_location(values, source)
+                if hours_old_override is not None and source in {"indeed", "linkedin"}:
+                    values["hours_old"] = hours_old_override
+                if source == "linkedin" and defer_linkedin_descriptions:
+                    values["linkedin_fetch_description"] = False
                 google_term = values.get("google_search_term")
                 if google_term:
                     values["google_search_term"] = google_term.format(
@@ -263,6 +272,124 @@ async def collect_all(
     return list(collected.values()), failures, stats
 
 
+def linkedin_details_enabled(definitions: list[dict[str, Any]]) -> bool:
+    for definition in definitions:
+        if not definition.get("enabled", True) or "linkedin" not in definition["sites"]:
+            continue
+        values = dict(definition["query"])
+        overrides = values.pop("source_overrides", {})
+        values.update(overrides.get("linkedin", {}))
+        if values.get("linkedin_fetch_description", False):
+            return True
+    return False
+
+
+def collection_hours_window(
+    completed_campaigns: int,
+    *,
+    recent_hours: int,
+    full_sweep_every: int,
+) -> int | None:
+    """Return None for full sweeps, otherwise the rolling provider age window."""
+
+    if completed_campaigns < 0:
+        raise ValueError("completed_campaigns cannot be negative")
+    if recent_hours < 1:
+        raise ValueError("recent_hours must be positive")
+    if full_sweep_every < 1:
+        raise ValueError("full_sweep_every must be positive")
+    return None if completed_campaigns % full_sweep_every == 0 else recent_hours
+
+
+async def hydrate_linkedin_descriptions(
+    jobs: list[NormalizedJob],
+    cache: CollectionCacheRepository,
+    *,
+    ttl_seconds: int,
+    concurrency: int,
+) -> tuple[list[NormalizedJob], dict[str, int]]:
+    """Reuse fresh LinkedIn JDs and fetch each remaining source ID only once."""
+
+    linkedin_jobs = [job for job in jobs if job.source == "linkedin"]
+    cached = await cache.linkedin_details([job.source_fingerprint for job in linkedin_jobs])
+    fresh_since = datetime.now(UTC) - timedelta(seconds=max(0, ttl_seconds))
+    hydrated: dict[str, NormalizedJob] = {}
+    cache_hits = 0
+    for job in linkedin_jobs:
+        entry = cached.get(job.source_fingerprint)
+        if (
+            entry is None
+            or entry.details_fetched_at < fresh_since
+            or not _linkedin_card_matches_cache(job, entry.payload)
+        ):
+            continue
+        hydrated[job.source_fingerprint] = merge_linkedin_details(
+            job,
+            entry.payload,
+            fetched_at=entry.details_fetched_at,
+        )
+        cache_hits += 1
+
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+    fetched = 0
+    failed = 0
+    stale_fallbacks = 0
+    counter_lock = asyncio.Lock()
+
+    async def _fetch(job: NormalizedJob) -> None:
+        nonlocal fetched, failed, stale_fallbacks
+        if job.source_fingerprint in hydrated:
+            return
+        if not job.source_job_id:
+            async with counter_lock:
+                failed += 1
+            return
+        async with semaphore:
+            try:
+                details = await asyncio.to_thread(fetch_linkedin_details, job.source_job_id)
+            except Exception as error:
+                log(
+                    f"LinkedIn detail fetch failed for {job.source_job_id}: "
+                    f"{type(error).__name__}: {error}",
+                    level="WARN",
+                )
+                details = {}
+        if details.get("description"):
+            hydrated[job.source_fingerprint] = merge_linkedin_details(job, details)
+            async with counter_lock:
+                fetched += 1
+        else:
+            stale = cached.get(job.source_fingerprint)
+            if stale is not None:
+                hydrated[job.source_fingerprint] = merge_linkedin_details(
+                    job,
+                    stale.payload,
+                    fetched_at=stale.details_fetched_at,
+                )
+                async with counter_lock:
+                    stale_fallbacks += 1
+            async with counter_lock:
+                failed += 1
+
+    await asyncio.gather(*[_fetch(job) for job in linkedin_jobs])
+    merged_jobs = [hydrated.get(job.source_fingerprint, job) for job in jobs]
+    return merged_jobs, {
+        "linkedin_detail_cache_hits": cache_hits,
+        "linkedin_detail_fetched": fetched,
+        "linkedin_detail_failed": failed,
+        "linkedin_detail_stale_fallbacks": stale_fallbacks,
+    }
+
+
+def _linkedin_card_matches_cache(job: NormalizedJob, payload: dict[str, Any]) -> bool:
+    for field in ("title", "company", "location"):
+        current = job.raw.get(field)
+        previous = payload.get(field)
+        if current not in (None, "") and previous not in (None, "") and current != previous:
+            return False
+    return True
+
+
 def _record_score(job: NormalizedJob) -> tuple[int, int]:
     has_salary = int(
         bool(job.salary and (job.salary.minimum is not None or job.salary.maximum is not None))
@@ -286,30 +413,109 @@ async def run(
     concurrency: int = 4,
     max_retries: int = 3,
 ) -> CampaignResult:
-    start_time = time.time()
-    definitions = expand_collection_catalog(json.loads(config_path.read_text(encoding="utf-8")))
-
-    # Stage 1: every network collection completes before any database dedupe begins.
-    normalized_jobs, failures, query_stats = await collect_all(
-        definitions, concurrency=concurrency, max_retries=max_retries
+    start_time = time.monotonic()
+    raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+    definitions = expand_collection_catalog(raw_config)
+    defaults = raw_config.get("defaults", {}) if isinstance(raw_config, dict) else {}
+    recent_hours = int(
+        os.getenv("WCFI_COLLECTION_RECENT_HOURS", defaults.get("recent_hours", 48))
     )
-    log(
-        f"Collection stage complete: {len(normalized_jobs)} unique source records "
-        f"(queries succeeded={query_stats['succeeded']}, "
-        f"failed={query_stats['failed']}, retried={query_stats['retried']})"
+    full_sweep_every = int(
+        os.getenv(
+            "WCFI_COLLECTION_FULL_SWEEP_EVERY",
+            defaults.get("full_sweep_every", 10),
+        )
     )
 
     database = Database(Settings.from_env())
     await database.open()
-    repository = JobIngestionRepository(database.pool)
-    sources = sorted({job.source for job in normalized_jobs})
-    run_record = await repository.start_run(
-        sources=sources,
-        query={"campaign": config_path.name, "plan_count": len(definitions)},
-    )
+    repository: JobIngestionRepository | None = None
+    run_record = None
     counts: Counter[str] = Counter()
-    scraped_at = datetime.now(UTC)
+    failures: list[str] = []
+    query_stats: dict[str, int] = {}
+    result: CampaignResult | None = None
     try:
+        collection_cache = CollectionCacheRepository(database.pool)
+        completed_campaigns = await collection_cache.completed_campaign_count(config_path.name)
+        hours_old = collection_hours_window(
+            completed_campaigns,
+            recent_hours=recent_hours,
+            full_sweep_every=full_sweep_every,
+        )
+        sweep_number = completed_campaigns + 1
+        sweep_mode = "full" if hours_old is None else f"recent-{hours_old}h"
+        log(
+            f"Collection sweep #{sweep_number}: mode={sweep_mode}, "
+            f"full sweep every {full_sweep_every} completed campaigns"
+        )
+
+        # Stage 1a: collect provider list pages first. LinkedIn details are deferred
+        # until IDs have been deduplicated across every keyword query.
+        collection_started = time.monotonic()
+        defer_linkedin = linkedin_details_enabled(definitions)
+        normalized_jobs, failures, query_stats = await collect_all(
+            definitions,
+            concurrency=concurrency,
+            max_retries=max_retries,
+            defer_linkedin_descriptions=defer_linkedin,
+            hours_old_override=hours_old,
+        )
+        query_stats.update(
+            {
+                "full_sweep": int(hours_old is None),
+                "recent_hours": hours_old or 0,
+                "sweep_number": sweep_number,
+            }
+        )
+
+        if defer_linkedin:
+            normalized_jobs, detail_stats = await hydrate_linkedin_descriptions(
+                normalized_jobs,
+                collection_cache,
+                ttl_seconds=int(
+                    os.getenv(
+                        "WCFI_LINKEDIN_DETAIL_TTL_SECONDS",
+                        defaults.get("linkedin_detail_ttl_seconds", 86_400),
+                    )
+                ),
+                concurrency=int(
+                    os.getenv(
+                        "WCFI_LINKEDIN_DETAIL_CONCURRENCY",
+                        defaults.get("linkedin_detail_concurrency", 4),
+                    )
+                ),
+            )
+            query_stats.update(detail_stats)
+            log(
+                "LinkedIn detail stage complete: "
+                f"cached={detail_stats['linkedin_detail_cache_hits']}, "
+                f"fetched={detail_stats['linkedin_detail_fetched']}, "
+                f"failed={detail_stats['linkedin_detail_failed']}, "
+                f"stale_fallbacks={detail_stats['linkedin_detail_stale_fallbacks']}"
+            )
+        collection_seconds = time.monotonic() - collection_started
+        log(
+            f"Collection stage complete in {collection_seconds:.1f}s: "
+            f"{len(normalized_jobs)} unique source records "
+            f"(queries succeeded={query_stats['succeeded']}, "
+            f"failed={query_stats['failed']}, retried={query_stats['retried']})"
+        )
+
+        repository = JobIngestionRepository(database.pool)
+        sources = sorted({job.source for job in normalized_jobs})
+        run_record = await repository.start_run(
+            sources=sources,
+            query={
+                "campaign": config_path.name,
+                "plan_count": len(definitions),
+                "sweep_number": sweep_number,
+                "sweep_mode": sweep_mode,
+                "recent_hours": hours_old,
+            },
+        )
+        scraped_at = datetime.now(UTC)
+        persistence_started = time.monotonic()
         pipeline = await run_ingestion_pipeline(
             pool=database.pool,
             run_id=run_record.internal_id,
@@ -318,7 +524,9 @@ async def run(
             batch_size=batch_size,
             outcomes=counts,
             after_persist=lambda persisted: log(
-                f"Dedupe stage complete: created={persisted['created']}, "
+                f"Dedupe stage complete in "
+                f"{time.monotonic() - persistence_started:.1f}s: "
+                f"created={persisted['created']}, "
                 f"merged={persisted['merged']}, unchanged={persisted['unchanged']}"
             ),
         )
@@ -343,7 +551,7 @@ async def run(
             error_summary="\n".join(failures)[:2000] or None,
             partial=bool(failures),
         )
-        duration = time.time() - start_time
+        duration = time.monotonic() - start_time
         result_status = (
             "failed" if failures and not normalized_jobs else "partial" if failures else "success"
         )
@@ -379,12 +587,13 @@ async def run(
         log(f"Collection campaign finished in {duration:.1f}s. Summary written to {summary_path}")
 
     except Exception as error:
-        await repository.finish_run(
-            run_record.internal_id,
-            failed_count=max(1, len(failures)),
-            error_summary=str(error)[:2000],
-            partial=bool(counts),
-        )
+        if repository is not None and run_record is not None:
+            await repository.finish_run(
+                run_record.internal_id,
+                failed_count=max(1, len(failures)),
+                error_summary=str(error)[:2000],
+                partial=bool(counts),
+            )
         log(f"Campaign encountered fatal error: {error}", level="ERROR")
         raise
     finally:
@@ -394,6 +603,8 @@ async def run(
         log(f"Source failures encountered: {len(failures)}", level="WARN")
         for failure in failures:
             log(f"- {failure}", level="WARN")
+    if result is None:
+        raise RuntimeError("collection campaign ended without a result")
     return result
 
 

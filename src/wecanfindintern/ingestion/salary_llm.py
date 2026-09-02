@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
@@ -24,6 +25,13 @@ from wecanfindintern.llm.prompts.salary import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class SalaryLLMCall:
+    extraction: ParsedSalary | None
+    model: str
+    error_type: str | None = None
 
 
 class SalaryLLMResult(BaseModel):
@@ -73,15 +81,29 @@ def extract_salary_with_deepseek(
     country_code: str | None = None,
     title: str | None = None,
 ) -> ParsedSalary | None:
+    return extract_salary_with_deepseek_call(
+        description,
+        country_code=country_code,
+        title=title,
+    ).extraction
+
+
+def extract_salary_with_deepseek_call(
+    description: str,
+    *,
+    country_code: str | None = None,
+    title: str | None = None,
+) -> SalaryLLMCall:
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
     if os.getenv("DEEPSEEK_SALARY_ENABLED", "true").lower() not in {"1", "true", "yes"}:
-        return None
+        return SalaryLLMCall(None, model, "disabled")
     api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
-        return None
+        return SalaryLLMCall(None, model, "missing_api_key")
 
     context = salary_signal_context(description)
     if not context:
-        return None
+        return SalaryLLMCall(None, model)
     default_currency = {"CA": "CAD", "US": "USD", "GB": "GBP"}.get(
         country_code or "", "USD"
     )
@@ -94,11 +116,12 @@ def extract_salary_with_deepseek(
         title=title,
         country_code=country_code,
     )
+    last_validation_error: str | None = None
     for _ in range(2):
         try:
             result = complete_json(
                 provider="DeepSeek",
-                model_name=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+                model_name=model,
                 api_key=api_key,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
@@ -112,28 +135,32 @@ def extract_salary_with_deepseek(
                 "DeepSeek returned an invalid salary JSON response (%s)",
                 type(error).__name__,
             )
+            last_validation_error = type(error).__name__
             continue
         except LLMError as error:
             logger.warning(
                 "DeepSeek salary extraction request failed (%s)",
                 type(error).__name__,
             )
-            return None
+            return SalaryLLMCall(None, model, type(error).__name__)
 
         if not parsed.found or not parsed.is_base_salary or parsed.confidence < 0.7:
-            return None
+            return SalaryLLMCall(None, model)
         if not parsed.interval or not parsed.currency or not parsed.evidence:
-            return None
+            return SalaryLLMCall(None, model, "invalid_result")
         if _normalize_evidence(parsed.evidence) not in _normalize_evidence(description):
-            return None
-        return validated_salary(
+            return SalaryLLMCall(None, model, "invalid_evidence")
+        extraction = validated_salary(
             interval=parsed.interval,
             minimum=parsed.minimum,
             maximum=parsed.maximum,
             currency=parsed.currency,
             source="llm_description",
         )
-    return None
+        if extraction is None:
+            return SalaryLLMCall(None, model, "invalid_salary")
+        return SalaryLLMCall(extraction, model)
+    return SalaryLLMCall(None, model, last_validation_error or "invalid_result")
 
 
 def _normalize_evidence(value: str) -> str:

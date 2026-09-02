@@ -10,8 +10,8 @@ from wecanfindintern.db.repositories.salary import SalaryRepository
 from wecanfindintern.domain.jobs import SalaryRange
 from wecanfindintern.domain.normalization import annualize_salary
 from wecanfindintern.domain.normalized_job import NormalizedJob
-from wecanfindintern.domain.salary import extract_salary_from_description
-from wecanfindintern.ingestion.salary_llm import extract_salary_with_deepseek
+from wecanfindintern.domain.salary import extract_salary_from_description, salary_signal_context
+from wecanfindintern.ingestion.salary_llm import extract_salary_with_deepseek_call
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,29 +49,48 @@ async def enrich_missing_salaries(
             regex_count += 1
             remaining.remove(candidate)
 
+    signal_candidates = []
+    for candidate in remaining:
+        if salary_signal_context(candidate.description):
+            signal_candidates.append(candidate)
+            continue
+        await repository.persist_enrichment_check(
+            job_id=candidate.job_id,
+            description_hash=candidate.description_hash,
+            status="not_found",
+        )
+
     # DeepSeek sees only unique jobs that remain salary-less after the regex pass.
-    if remaining:
+    if signal_candidates:
         salary_semaphore = asyncio.Semaphore(5)
         salary_lock = asyncio.Lock()
 
         async def _enrich_single_salary(candidate) -> None:
             nonlocal llm_count
             async with salary_semaphore:
-                extracted = await asyncio.to_thread(
-                    extract_salary_with_deepseek,
+                call = await asyncio.to_thread(
+                    extract_salary_with_deepseek_call,
                     candidate.description,
                     country_code=candidate.country_code,
                     title=candidate.title,
                 )
-                if extracted is not None and await repository.persist_enriched_salary(
+                if call.extraction is not None and await repository.persist_enriched_salary(
                     job_id=candidate.job_id,
                     description_hash=candidate.description_hash,
-                    salary=_salary_range(extracted),
+                    salary=_salary_range(call.extraction),
+                    model=call.model,
                 ):
                     async with salary_lock:
                         llm_count += 1
+                elif call.extraction is None:
+                    await repository.persist_enrichment_check(
+                        job_id=candidate.job_id,
+                        description_hash=candidate.description_hash,
+                        status="error" if call.error_type else "not_found",
+                        model=call.model,
+                    )
 
-        await asyncio.gather(*[_enrich_single_salary(c) for c in remaining])
+        await asyncio.gather(*[_enrich_single_salary(c) for c in signal_candidates])
 
     return SalaryEnrichmentStats(
         structured=0,

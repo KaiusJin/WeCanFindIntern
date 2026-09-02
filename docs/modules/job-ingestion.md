@@ -71,11 +71,20 @@ flowchart TD
 ```
 
 The default catalog covers CA and US, the configured software/data/AI internship
-and co-op keyword groups, and the enabled Indeed and LinkedIn sources.
+and co-op keyword groups, and the enabled Indeed and LinkedIn sources. Sweep
+scheduling is durable in `ingestion_runs`: the first campaign is full, campaigns
+2-10 request only postings from the previous 48 hours, and campaign 11 is full
+again. `recent_hours` and `full_sweep_every` are configurable; process restarts
+do not reset the sequence.
 
 Each enabled catalog definition is executed once per source. A query is paged until the configured maximum result count is reached, JobSpy returns no jobs, no new fingerprints are found, or the query reaches terminal retry failure.
 
 Within one query, `seen_for_query` prevents repeated pages from re-adding a source record. Across concurrent queries, records are keyed by fingerprint; if the same fingerprint appears more than once, the copy with salary data and then the longer description wins.
+
+LinkedIn keyword queries deliberately collect list cards without descriptions.
+After cross-query fingerprint deduplication, the campaign reuses detail payloads
+whose `job_sources.details_fetched_at` is within the configured TTL and fetches
+only missing/stale IDs. A list-card observation never advances detail freshness.
 
 ## Retry, isolation, and scope filtering
 
@@ -129,8 +138,9 @@ The campaign is `partial` when one or more source queries exhaust retries but th
 database pipeline completes. A database or pipeline exception is fatal to the
 current command, but committed earlier batches remain valid and the next run can
 reconcile them. Enrichment is intentionally best-effort: source salary wins,
-then regex, then DeepSeek; a failed model call leaves the job without a derived
-value for a later retry.
+then regex, then DeepSeek. Salary enrichment stores the checked description
+hash. Definitive not-found results are skipped until the JD changes; transport
+or provider errors remain retryable.
 
 ## Operator scenarios
 

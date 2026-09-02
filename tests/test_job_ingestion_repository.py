@@ -68,3 +68,50 @@ def test_canonical_refresh_reclassifies_final_merged_evidence_atomically():
     assert "job_category = %s" in update_sql
     assert ["postgresql"] in update_params
     assert canonical.classification_version in update_params
+
+
+def test_unchanged_sources_use_one_bulk_refresh_statement():
+    class FakeResult:
+        async def fetchall(self):
+            return [{"source_fingerprint": "ab" * 32}]
+
+    class FakeConnection:
+        def __init__(self):
+            self.executed = []
+
+        async def execute(self, query, params):
+            assert query.count("%s") == len(params)
+            self.executed.append((query, params))
+            return FakeResult()
+
+    normalized = normalize_record(
+        {
+            "site": "indeed",
+            "id": "job-bulk",
+            "job_url": "https://example.test/jobs/bulk",
+            "title": "Software Engineer Intern",
+            "company": "Example",
+            "description": "Build services.",
+        }
+    )
+    canonical = canonical_job_from_normalized(normalized).model_copy(
+        update={
+            "source": canonical_job_from_normalized(normalized).source.model_copy(
+                update={"source_fingerprint": "ab" * 32}
+            )
+        }
+    )
+    connection = FakeConnection()
+
+    refreshed = asyncio.run(
+        JobIngestionRepository(None)._refresh_unchanged_sources(
+            connection,
+            jobs=[canonical],
+            scraped_at=datetime.now(UTC),
+        )
+    )
+
+    assert refreshed == {"ab" * 32}
+    assert len(connection.executed) == 1
+    assert "UPDATE job_sources" in connection.executed[0][0]
+    assert "UPDATE jobs" in connection.executed[0][0]

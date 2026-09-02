@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pandas as pd
 import pytest
@@ -12,6 +12,7 @@ from wecanfindintern.ingestion.jobspy_adapter import (
     canonicalize_url,
     clean_scalar,
     dataframe_to_records,
+    merge_linkedin_details,
     normalize_record,
     stabilize_jobspy_frame,
 )
@@ -93,3 +94,32 @@ def test_indeed_rejects_incompatible_filters() -> None:
             job_type="internship",
             hours_old=24,
         )
+
+
+def test_linkedin_detail_merge_preserves_current_card_metadata() -> None:
+    row = sample_row()
+    row.update(
+        {
+            "site": "linkedin",
+            "id": "li-123",
+            "title": "Current title",
+            "description": None,
+        }
+    )
+    job = normalize_record(row)
+    fetched_at = datetime(2026, 9, 2, tzinfo=UTC)
+
+    merged = merge_linkedin_details(
+        job,
+        {
+            "title": "Stale cached title",
+            "description": "Cached full job description",
+            "job_function": "Engineering",
+        },
+        fetched_at=fetched_at,
+    )
+
+    assert merged.title == "Current title"
+    assert merged.description == "Cached full job description"
+    assert merged.job_function == "Engineering"
+    assert merged.details_fetched_at == fetched_at
