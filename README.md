@@ -1,119 +1,114 @@
 # WeCanFindIntern
 
-> Find the right opportunity, understand your fit, and move from discovery to
-> application in one focused workspace.
+> Discover better opportunities, understand your fit, and move every application
+> forward from one private career workspace.
 
-[Visit the WeCanFindIntern product site](https://wcfi.kaiusjin.com/) for the
-product introduction.
+[Explore the product](https://wcfi.kaiusjin.com/)
 
-WeCanFindIntern is a local-first career workspace for internships, co-ops,
-new-grad roles, and early-career opportunities. It brings job discovery,
+WeCanFindIntern brings internship, co-op, new-grad, and early-career job searching
+into one focused workflow. It combines public job discovery, WaterlooWorks,
 candidate context, application preparation, interview practice, and progress
-tracking into one workflow—so a job search becomes more than a stream of tabs
-and links.
+tracking without turning a job search into a collection of disconnected tabs.
 
-## One workspace for the whole search
+## A complete job-search workflow
 
-```text
-Discover → Understand → Prepare → Practice → Track → Improve
+```mermaid
+flowchart LR
+    D[Discover] --> C[Compare]
+    C --> P[Prepare]
+    P --> A[Apply]
+    A --> I[Interview]
+    I --> T[Track and improve]
 ```
 
-- **Discover:** compare opportunities from major public job sources and
-  WaterlooWorks in a consistent experience.
-- **Understand:** filter by normalized location, work mode, role type,
-  schedule, skills, requirements, compensation, and recruiting term.
-- **Prepare:** build a reusable candidate profile, review a resume import, run
-  transparent ATS diagnostics, and create grounded application materials.
-- **Practice:** generate role-specific interview questions, record or type
-  answers, receive structured feedback, and follow progress across sessions.
-- **Track:** keep bookmarks, applications, stages, deadlines, source updates,
-  and event history together.
-- **Improve:** use recommendations and a conversational assistant that works
-  from your profile and activity while keeping changes under your control.
+- **Discover** roles from Indeed, LinkedIn, and five WaterlooWorks boards.
+- **Compare** normalized locations, work modes, role types, schedules, skills,
+  requirements, compensation, and recruiting terms.
+- **Prepare** a reusable candidate profile, run transparent resume diagnostics,
+  and create grounded application material.
+- **Apply** with the original source link and keep every opportunity in a single
+  application pipeline.
+- **Interview** with role-specific questions, recorded or typed answers,
+  structured feedback, and progress history.
+- **Improve** through evidence-based recommendations and an assistant that can
+  search, analyze, compare, and act on the workspace.
 
-## Why it feels different
+## Built around your evidence
 
-### Your evidence stays at the center
+The Profile is shared across recommendations, job analysis, ATS diagnostics,
+cover letters, interview practice, and the AI Assistant. Deterministic scoring
+shows the signals behind a result, while generated analysis separates confirmed
+evidence, gaps, risks, and unknowns.
 
-Profile, resume, ATS, cover-letter, interview, recommendation, and Agent
-features share the same candidate context. Deterministic diagnostics expose the
-signals behind their results, and generated writing is checked for unsupported
-claims before it is presented for review.
+## Job data that is ready to compare
 
-### Job data becomes comparable
+The collection pipeline turns source-specific records into one consistent job
+library. It preserves source identity while normalizing the fields that matter
+for decisions: location, work mode, opportunity type, schedule, category,
+skills, requirements, salary, and recruiting term. Cross-source duplicates are
+merged without losing the original application links.
 
-The default collection campaign imports Indeed and LinkedIn records through one
-stable data model. Source identity remains intact while locations, work modes,
-opportunity types, schedules, skills, requirements, salary, and recruiting terms
-become consistent enough to search and compare.
+## WaterlooWorks, kept local
 
-### WaterlooWorks remains private and isolated
+WaterlooWorks runs through a dedicated Chrome profile so Waterloo SSO and MFA
+stay in the browser. Job postings and submitted-application status live in a
+separate local store, while still participating in search, recommendations,
+bookmarks, job analysis, and the Application Tracker.
 
-WaterlooWorks uses a dedicated local Chrome profile for interactive Waterloo
-SSO/MFA. Its postings and submitted-application status stay in a separate local
-store while still participating in search, recommendations, bookmarks, and the
-Tracker experience.
+## AI that works inside clear boundaries
 
-### AI assists; you decide
-
-The Agent can search, explain, recommend, and prepare changes. Profile and
-Tracker mutations always stop at a preview and require explicit approval. AI
-features support Gemini, OpenAI, DeepSeek, GLM, Qwen, and local Ollama through a
-shared provider boundary.
-
-### Local-first by design
-
-The desktop application bundles its application service and PostgreSQL runtime,
-stores secrets through the operating system, keeps services on loopback, runs
-scheduled collection locally, and manages local backups. The browser/developer
-mode uses the same UI and API contracts.
+The AI Assistant can search jobs, analyze complete job descriptions, compare up
+to five roles, recommend opportunities, prepare Profile changes, and work with
+the Tracker. Routine Tracker additions and stage changes happen directly;
+permanent Tracker removal and Profile replacement show an exact preview and wait
+for approval. Gemini, OpenAI, DeepSeek, GLM, Qwen, and local Ollama share one
+provider boundary.
 
 ## Product areas
 
-| Area | What it provides |
+| Area | Experience |
 |---|---|
-| Jobs | Multi-source search, facets, map distribution, details, source links, and bookmarks |
-| WaterlooWorks | Dedicated sign-in session, five-board import, application-status sync, and local search |
-| Profile | Structured candidate record, secure PDF/LaTeX resume import, review draft, and export |
-| ATS | Parsing-readiness and job-match diagnostics with evidence-backed commentary |
-| Cover Letter | Writer/Reviewer generation loop with DOCX and PDF export |
-| Interview | Question generation, local transcription, answer analysis, TTS, history, and trends |
-| Tracker | Public, WaterlooWorks, and custom applications with stages, events, bulk actions, and CSV export |
-| Agent | Search, recommendations, approval-gated changes, audit history, and layered memory |
+| Public Jobs | Multi-source search, rich filters, total results, infinite scrolling, map distribution, job details, and bookmarks |
+| WaterlooWorks | Dedicated sign-in, five-board sync, local search, submitted-application sync, and Tracker handoff |
+| Applications | Public, WaterlooWorks, and custom opportunities with stages, source snapshots, timelines, bulk actions, and CSV export |
+| Profile | Structured candidate data, secure PDF/LaTeX resume import, editable review drafts, and reusable career context |
+| Resume ATS Score | Deterministic parsing-readiness diagnostics with category evidence and optional grounded commentary |
+| Job Match | Deterministic resume-to-job matching with requirements, gaps, eligibility evidence, and transparent scoring |
+| Cover Letter | Writer/Reviewer generation loop with grounding checks and DOCX/PDF export |
+| Interview Coach | Question generation, local transcription, TTS, structured answer analysis, history, and trends |
+| AI Assistant | Job search, deep analysis, comparisons, recommendations, controlled actions, audit history, and layered memory |
 
-## Ways to run
+## Local-first delivery
 
-- **Desktop application:** self-contained macOS and Windows workflow with
-  embedded services, secure storage, backups, tray operation, and background
-  collection.
-- **Browser/developer application:** FastAPI and the native ES-module frontend
-  backed by a local PostgreSQL service.
-
-Installation, operations, build, recovery, and verification commands live in
-the technical documentation so this README can remain the product entry point.
+The desktop application packages the web experience, FastAPI service, and
+PostgreSQL 16 runtime for macOS and Windows. Services bind to loopback, provider
+keys use operating-system secure storage, backups are managed locally, and
+scheduled collection continues from the tray. The browser/development runtime
+uses the same UI and API contracts with a local PostgreSQL service.
 
 ## Documentation
 
-- [Technical documentation](docs/TECHNICAL_DOCUMENTATION.md) — architecture,
-  system boundaries, end-to-end flows, and implementation details.
-- [Documentation index](docs/README.md) — module guides, runbooks, and contract
-  references.
-- [Operations and verification](docs/modules/operations.md) — development setup,
-  collection, scheduling, maintenance, and acceptance checks.
-- [Desktop application](docs/DESKTOP.md) — runtime, platform builds, data,
-  security, backup, and recovery.
-- [Reliability and recovery](docs/RELIABILITY_AND_RECOVERY.md) — failure
-  outcomes, retries, idempotent reruns, concurrency, and operator actions.
+- [Technical Documentation](docs/TECHNICAL_DOCUMENTATION.md) — complete runtime,
+  architecture, data ownership, workflows, state transitions, and implementation
+  contracts.
+- [Documentation Index](docs/README.md) — module guides, reference contracts,
+  operations, and recovery paths.
+- [Operations and Verification](docs/modules/operations.md) — setup, collection,
+  scheduling, maintenance, and acceptance commands.
+- [Desktop Application](docs/DESKTOP.md) — packaging, local data, secure storage,
+  backups, platform builds, and startup recovery.
+- [Reliability and Recovery](docs/RELIABILITY_AND_RECOVERY.md) — retries,
+  partial outcomes, idempotent reruns, concurrency, and operator actions.
 
 ## Responsible use
 
-Collection and imported data can be governed by source-site terms, privacy
-requirements, and applicable law. Operate the software with appropriate access,
-rate limits, data handling, and retention policies.
+Job collection and imported data are governed by source terms, privacy
+requirements, and applicable law. Use appropriate access, rate limits, data
+handling, and retention policies.
 
 ## License
 
 WeCanFindIntern is licensed under the [GNU Affero General Public License,
 version 3 or later](LICENSE). Vendored and bundled third-party components retain
-their own license terms. Job, resume, and profile data are not automatically
+their own license terms. Job, resume, and Profile data are not automatically
 licensed by the AGPL.

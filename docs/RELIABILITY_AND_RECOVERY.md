@@ -82,6 +82,8 @@ interruption, rerun the campaign:
   unique constraints;
 - advisory locks serialize the same dedupe block;
 - an identical raw payload does not create another snapshot;
+- a fresh matching LinkedIn detail cache entry avoids another detail request,
+  while a failed refresh can retain the stored stale detail;
 - missing enrichment output cannot clear a valid salary or recruiting term;
 - queued queries restart from their first page.
 
@@ -98,8 +100,9 @@ not a progress file.
 - A database, migration, or unrecoverable pipeline error marks the run failed or
   partial and returns a nonzero command status. Previously committed batches
   remain.
-- Enrichment failure does not undo the canonical job. Statistics record the
-  failure, and later processing selects it again by missing value or input hash.
+- Enrichment failure does not undo the canonical job. Salary checks record the
+  description hash and `complete`, `not_found`, or `error`; errors remain
+  eligible for retry, while definitive results wait for an input change.
 
 ## 3. Database transactions and rollback
 
@@ -147,15 +150,18 @@ after identifying damaged derived data.
 
 ## 5. WaterlooWorks recovery
 
-WaterlooWorks processes boards sequentially and isolates posting failures within
-each board. SQLite enables foreign keys and a 30-second busy timeout. A posting
-is inserted once by external Job ID; later observations update only
-`last_seen_at`.
+WaterlooWorks processes boards sequentially, uses authenticated list/detail APIs,
+and isolates posting failures within each board. It pages list records in groups
+of 100, bypasses detail requests for Job IDs already stored, and fetches new
+details in batches of six. SQLite enables foreign keys and a 30-second busy
+timeout. A posting is inserted once by external Job ID; later observations
+update only `last_seen_at` and board-edge freshness.
 
 | Scenario | Current state | Recovery action |
 |---|---|---|
 | User is signed out | `waiting_for_login` | complete SSO/MFA in the dedicated Chrome profile, then refresh status |
 | Chrome is closed | `idle` with closed-browser message | launch again, sign in, and collect again |
+| Account/term cannot search a board | board is `skipped`; run can still complete | continue with the boards available to the authenticated account |
 | One board fails | run is `partial`; other boards remain | repair page/connectivity and collect all boards again |
 | One posting fails | board error/count increases; other postings remain | run a complete collection; known Job IDs stay idempotent |
 | Collector is cancelled | run is failed/cancelled | collect again using the full-board restart model |
@@ -175,7 +181,8 @@ keeps that storage isolation intact.
 | ATS commentary | LLM | retain deterministic score and report commentary error | primary score remains unchanged |
 | Cover Letter | Writer/Reviewer, at most five rounds | return the final nonempty draft marked unapproved | user reviews it; system does not claim approval |
 | Interview STT | local faster-whisper | typed answer wins; empty/no-speech input returns a readable error | audio upload to an LLM is not required |
-| Agent plan | bounded JSON plan | safe assistant reply and no write | invalid output cannot trigger approval or mutation |
+| Agent plan | three-round typed JSON plan | safe assistant reply; completed immediate actions remain audited | invalid output cannot create a new mutation |
+| Agent destructive/Profile write | stored preview and single approval transition | denial keeps state; duplicate decision conflicts | execution uses only the persisted arguments |
 
 The shared gateway retries transport failures within configured bounds. It does
 not retry JSON or business-validation failures. Cache lookup/store failure is

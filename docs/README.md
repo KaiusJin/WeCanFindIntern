@@ -1,8 +1,9 @@
 # WeCanFindIntern Documentation
 
 This index contains the technical documentation for the delivered repository.
-Every linked document describes the current implementation and its executable
-contracts.
+The root README is the product overview; the system guide is the complete
+technical entry point; module and reference documents provide the executable
+details for each ownership boundary.
 
 ## Reading paths
 
@@ -37,13 +38,13 @@ flowchart LR
 
 | Module | Delivered implementation covered |
 |---|---|
-| [Job Ingestion](modules/job-ingestion.md) | JobSpy boundary, catalog expansion, paging, retry, scope filtering, normalization handoff, persistence, and enrichment |
+| [Job Ingestion](modules/job-ingestion.md) | JobSpy boundary, recent/full sweep cadence, LinkedIn detail reuse, paging, retry, normalization, persistence, and enrichment |
 | [Domain and Data Normalization](modules/domain-normalization.md) | Canonical model, text/location/work-mode normalization, classification, salary, recruiting term, and dedupe inputs |
 | [Database and Data API](modules/database-and-data-api.md) | PostgreSQL schema, migrations, repositories, query construction, cursor pagination, facets, and transaction behavior |
-| [WaterlooWorks](modules/waterlooworks.md) | Dedicated Chrome, SSO/MFA boundary, five-board collection, SQLite, application sync, Tracker handoff, and API |
+| [WaterlooWorks](modules/waterlooworks.md) | Dedicated Chrome, authenticated list/detail APIs, five-board state, known-ID reuse, SQLite, submitted sync, and Tracker handoff |
 | [Profile and Resume Import](modules/profile.md) | `profile.v1`, PDF/LaTeX security, parsing, draft review, confirmation, persistence, and API |
 | [Application Tracker](modules/tracker.md) | Source identities, bookmarks, stages, snapshots, events, bulk actions, export, and Agent integration |
-| [AI Agent and Memory](modules/ai-agent.md) | Tool catalog, recommendations, bounded planning, approvals, streaming, audit, summaries, memory, and recovery |
+| [AI Assistant and Memory](modules/ai-agent.md) | Complete-JD analysis, comparison, recommendations, immediate/approved actions, bounded planning, audit, and memory |
 | [ATS-Style Resume Diagnostics](modules/ats-review.md) | Deterministic parsing readiness and resume/job matching with evidence and formulas |
 | [LLM-Assisted Career Tools](modules/llm-assisted-tools.md) | Shared provider gateway, ATS commentary, cover letters, interview sessions, STT/TTS, caching, and failure handling |
 | [Frontend](modules/frontend.md) | Static application shell, native ES modules, navigation, API/SSE integration, rendering safety, and state |

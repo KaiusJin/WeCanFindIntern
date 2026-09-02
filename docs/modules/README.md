@@ -18,7 +18,7 @@ verification surface for that module.
 - [ATS-Style Resume Diagnostics](ats-review.md)
 - [LLM-Assisted Career Tools](llm-assisted-tools.md)
 - [Application Tracker](tracker.md)
-- [AI Agent and Memory](ai-agent.md)
+- [AI Assistant and Memory](ai-agent.md)
 
 ## Delivery and operation
 

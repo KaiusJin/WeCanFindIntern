@@ -15,7 +15,10 @@ flowchart TD
     W[(WaterlooWorks SQLite)] -. separate source store .-> A
 ```
 
-`src/wecanfindintern/db/pool.py` creates the async psycopg pool. `Settings` controls minimum/maximum pool size and statement timeout. `read_repository.py` is the read-facing job query layer; `db/repositories/` contains ingestion, salary, and recruiting-term writes.
+`src/wecanfindintern/db/pool.py` creates the async psycopg pool. `Settings`
+controls minimum/maximum pool size and statement timeout. `read_repository.py`
+is the read-facing job query layer; `db/repositories/` contains ingestion,
+collection-cache, salary, and recruiting-term repositories.
 
 ## Migration sequence
 
@@ -49,16 +52,25 @@ sequenceDiagram
 ### `ingestion_runs`
 
 Represents one single-query ingest or full campaign. It stores source/query
-metadata, timestamps, status, and counters for created, merged, updated,
-unchanged, failed, and enriched records.
+metadata, sweep number/mode for catalog campaigns, timestamps, status, and
+counters for created, merged, updated, unchanged, failed, and enriched records.
 
 ### `jobs`
 
-Stores the current canonical job. It uses an internal BIGINT primary key for database joins and a public UUID for API references. It contains title/company/location/work mode, opportunity and schedule classification, categories/tags, description, date fields, salary fields, status, and dedupe block. Active partial indexes support the hot feed.
+Stores the current canonical job. It uses an internal BIGINT primary key for
+database joins and a public UUID for API references. It contains
+title/company/location/work mode, opportunity and schedule classification,
+categories/tags, description, date fields, salary fields, salary-enrichment
+input hash/status/check time/model, lifecycle status, and dedupe block. Active
+partial indexes support the hot feed.
 
 ### `job_sources`
 
-Stores source-specific identity and links for each canonical job. Unique indexes enforce source fingerprint idempotency and the source/source-job-id relationship. A detail response can show every source link without joining raw payloads into the list query.
+Stores source-specific identity and links for each canonical job. Unique indexes
+enforce source fingerprint idempotency and the source/source-job-id relationship.
+`details_fetched_at` distinguishes a successful LinkedIn detail fetch from a
+list-card observation and drives detail-cache freshness. A detail response can
+show every source link without joining raw payloads into the list query.
 
 ### `raw_job_snapshots`
 
@@ -100,13 +112,24 @@ The repository orders active jobs by `published_sort_at` and internal `id`. `enc
 
 ```json
 {
+  "schema_version": "job-page.v3",
   "items": [],
+  "total_count": 0,
+  "last_updated_at": null,
   "next_cursor": null,
   "has_more": false
 }
 ```
 
-The API deliberately avoids a total row count in the public feed. Details and source links are loaded separately.
+`total_count` is computed against the complete filtered active set.
+`last_updated_at` is the greatest available ingestion/job visibility timestamp.
+The UI uses both values for result and freshness indicators. Details and source
+links are loaded separately.
+
+The public route orders by `(published_sort_at DESC, id DESC)`, including when a
+text query is present. The repository also supports a relevance-ranked mode for
+bounded internal callers such as Agent search; its cursor adds the computed
+text-search rank before timestamp and ID.
 
 ### `GET /api/v1/jobs/{job_id}`
 
@@ -127,14 +150,21 @@ country and overall totals for `web/modules/heatmap.js`.
 - The generated full-text search document covers title, company, location, and
   normalized skill tags while excluding long descriptions.
 - Raw snapshot BRIN/time indexes support audit and retention operations.
-- Details aggregate source links separately; lists avoid expensive source JSON aggregation.
+- Lists compute their filtered count separately and avoid source JSON
+  aggregation; details aggregate source links on demand.
 - Connection pooling and statement timeouts prevent one slow query from consuming unbounded resources.
 
 ## Ingestion transaction behavior
 
 The jobs repository uses source fingerprint and dedupe-block advisory locks inside the transaction. This prevents two concurrent writers from creating the same source or racing on the same cross-source block while allowing unrelated blocks to proceed concurrently.
 
-For an unchanged source payload, the repository updates visibility timestamps and counters without adding a duplicate raw snapshot. For a changed payload, it updates source/current canonical values and writes a new snapshot tied to the ingestion run. Dedupe decisions remain auditable.
+For each batch, payload hashes are evaluated first. Existing source fingerprints
+with the same payload hash are refreshed in one set-based SQL statement and skip
+per-row dedupe. That update advances source/job visibility, reactivates the
+canonical job, clears `closed_at`, and advances a supplied LinkedIn detail
+timestamp. It adds no duplicate raw snapshot. Changed/new payloads follow the
+locked per-record path, update source/current canonical values, and write a new
+snapshot tied to the ingestion run. Dedupe decisions remain auditable.
 
 ### Transaction, concurrency, and recovery contract
 
@@ -161,6 +191,7 @@ maintenance operation or a verified PostgreSQL backup restore.
 | Situation | Database behavior | API/operation behavior |
 |---|---|---|
 | repeated source record | unique lookup and update/unchanged outcome | no duplicate canonical row |
+| repeated identical batch records | set-based visibility/detail-freshness update | no candidate scan or raw snapshot insertion |
 | changed source payload | current source/canonical fields update and new snapshot by hash | detail remains source-linked |
 | duplicate across sources | audited merge and new source edge | one public job with multiple links |
 | invalid cursor/filter | no SQL mutation | 422 |

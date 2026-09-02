@@ -50,13 +50,20 @@ Response:
 
 ```json
 {
+  "schema_version": "job-page.v3",
   "items": [],
+  "total_count": 0,
+  "last_updated_at": null,
   "next_cursor": null,
   "has_more": false
 }
 ```
 
-The list is active-job only and uses keyset pagination on `(published_sort_at, id)`. It intentionally does not return an expensive total count.
+The list is active-job only and uses keyset pagination on
+`(published_sort_at, id)`. `total_count` covers the complete filtered active set,
+while `last_updated_at` reports the greatest current ingestion/job visibility
+timestamp. Text queries filter through PostgreSQL full-text search and the public
+route retains newest-first ordering.
 
 ### `GET /api/v1/jobs/{job_id}`
 
@@ -97,14 +104,18 @@ Source-level idempotency uses the SHA-256 source fingerprint. Cross-source candi
 
 ## Performance contract
 
-Active partial indexes serve feed filters. Lists use cursor pagination and avoid source-payload aggregation. Details load source links separately. Raw snapshots are time-partitioned and indexed for audit/retention. The connection pool and statement timeout bound database resource usage.
+Active partial indexes serve feed filters. Lists use cursor pagination, execute a
+separate filtered count/freshness query, and avoid source-payload aggregation.
+Details load source links separately. Raw snapshots are time-partitioned and
+indexed for audit/retention. The connection pool and statement timeout bound
+database resource usage.
 
 ## Request outcomes
 
 | Request condition | Response behavior |
 |---|---|
-| Valid filters with matching jobs | 200, active items, cursor and `has_more` |
-| Valid filters with no matches | 200 with an empty `items` list |
+| Valid filters with matching jobs | 200 with active items, total, freshness, cursor, and `has_more` |
+| Valid filters with no matches | 200 with empty `items`, `total_count=0`, and no cursor |
 | Repeated multi-value filters | values are validated/normalized and combined by the repository contract |
 | Invalid date, salary, cursor, enum-like value or bounds | 422 with no query mutation |
 | Detail UUID is well formed but absent | 404 |

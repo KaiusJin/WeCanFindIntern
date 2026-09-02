@@ -26,7 +26,7 @@ flowchart LR
 | `main.js` | Application startup and global interactions |
 | `navigation.js` | Sidebar/tab activation, URL hashes, Public Jobs List/Map state, and mobile drawer behavior |
 | `helpers.js` | HTML escaping, Markdown rendering, labels, dates, salary formatting, timeout fetch, drop zones |
-| `pagination.js` | Shared page controls and page-size behavior |
+| `pagination.js` | IntersectionObserver-based infinite scrolling within a selected scroll root |
 | `bookmarks.js` | Shared public/WaterlooWorks bookmark state and mutations |
 | `job-context.js` | Stable open-job context shared with career tools and Agent |
 | `resume-source.js` | Shared current Profile/resume projection for career tools |
@@ -47,17 +47,39 @@ flowchart LR
 
 ## Public job flow
 
-`jobs.js` loads `/api/v1/jobs/facets`, maps structured facet codes into select options, reads search/filter controls, and builds query parameters. Any new filter resets the keyset cursor. `loadJobs({append})` shows loading/error state, requests a page, appends or replaces cards, saves `next_cursor`, and disables further loading when `has_more=false`.
+`jobs.js` loads `/api/v1/jobs/facets`, maps structured facet codes into filter
+options, reads search/filter controls, and builds repeated query parameters.
+Any new filter resets the keyset cursor. `loadJobs({append})` shows
+loading/error state, requests a page, appends or replaces cards, renders
+`total_count` and `last_updated_at`, saves `next_cursor`, and stops infinite
+scrolling when `has_more=false`.
 
 Opening a card requests `/api/v1/jobs/{uuid}` and renders canonical title/company/location, salary, tags, description, source links, and Tracker action in an adjacent detail pane. Filters use a temporary sheet instead of consuming a permanent column. Infinite scroll is scoped to the results pane; Opportunity Map is selected with the local List/Map switch while Public Jobs remains the active global destination.
 
 ## WaterlooWorks flow
 
-`waterlooworks.js` polls `/status` while connecting/collecting, calls `/launch` or `/collect`, displays per-board progress and errors, and loads local postings with board/query controls. On desktop, sync controls, the posting list, and posting detail are sibling panes; on narrow screens the detail pane becomes an overlay. Details are fetched separately. A local job reference always remains distinguishable from a public UUID in Tracker and Agent actions, and WaterlooWorks postings are never merged into the Public Jobs list.
+`waterlooworks.js` polls `/status` while connecting or synchronizing and uses one
+sync dialog to select job postings, submitted applications, or both. When both
+are selected, posting collection finishes first and application synchronization
+is queued next. Board source, work mode, and opportunity type are multi-select
+filters; company, skill, category, location hierarchy, and posted date are also
+available. New filter requests abort or supersede older list requests, reset the
+cursor, and scroll the results root to its start.
+
+On desktop, sync controls, the posting list, and posting detail are sibling
+panes; on narrow screens the detail pane becomes an overlay. Details are fetched
+separately. A local Job ID remains distinguishable from a public UUID in Tracker
+and Agent actions, and WaterlooWorks postings remain outside the Public Jobs
+list.
 
 ## Tracker flow
 
-The Tracker module keeps filters in the URL, fetches applications and both bookmark lists in parallel, and updates cards/buttons after mutations. The desktop layout presents the application list and selected application as sibling panes; the existing drawer becomes a narrow-screen detail overlay. Bulk actions operate on selected application IDs; custom-job creation calls the full tracker create endpoint.
+The Tracker module keeps filters and numbered paging in the URL, fetches
+applications and both bookmark lists in parallel, and updates cards/buttons
+after mutations. The desktop layout presents the application list and selected
+application as sibling panes; the drawer becomes a narrow-screen detail overlay.
+Bulk actions operate on selected application IDs; custom-job creation calls the
+full tracker create endpoint.
 
 ## Profile and generated-content flow
 
@@ -65,7 +87,14 @@ Profile forms are generated from section configuration. Repeated records can be 
 
 ## Agent flow
 
-`agent.js` creates or restores sessions, loads messages and pending approvals, posts the current message with the selected provider/model/key, renders assistant text and tool results, and shows approval buttons for pending writes. Session rename, preferences, memory status, and memory deletion use their dedicated endpoints. The browser sends the open-job context as request context so the Agent can explain the currently viewed job without guessing its identity.
+`agent.js` creates or restores sessions, loads messages and pending approvals,
+posts the current message with the selected provider/model/key, renders
+assistant text and typed job/tool results, and shows approval buttons for
+pending writes. The composer can attach up to five source-aware jobs selected
+from Public Jobs or WaterlooWorks. Attachments and the currently open job are
+sent as request context, allowing analysis, comparison, and Tracker operations
+to resolve stable identities. Session rename/delete, preferences, memory status,
+and memory deletion use their dedicated endpoints.
 
 ## Rendering and safety
 
@@ -103,6 +132,7 @@ backup, tray, and background-collection commands.
 | List/detail request fails | preserve prior usable view and do not advance pagination |
 | SSE sends progress then completion | render bounded progress and reconcile with final result event |
 | SSE ends after a persisted operation | reload authoritative session/Tracker/Profile state |
+| WaterlooWorks board is skipped | keep the run successful when all accessible work completes and retain the board's skipped state |
 | WaterlooWorks board is partial | keep successful board counters/items and show failed board evidence |
 | Approval is decided | disable/update approval UI and refresh affected domain state |
 | Desktop secret/backup action | call the restricted preload method; renderer never reads filesystem/Node APIs |

@@ -12,6 +12,7 @@ The ingestion module turns source-specific JobSpy results into stable internal r
 | JobSpy boundary | `src/wecanfindintern/ingestion/jobspy_adapter.py` | Calls vendored JobSpy and normalizes rows |
 | Query location | `src/wecanfindintern/ingestion/location_query.py` | Applies source-specific location/country query values |
 | Collection catalog | `src/wecanfindintern/ingestion/collection_catalog.py` | Expands JSON plans into executable definitions |
+| Detail cache | `src/wecanfindintern/db/repositories/collection_cache.py` | Reads durable campaign counts and reusable LinkedIn detail payloads |
 | Campaign runner | `scripts/collection/run_collection_campaign.py` | Runs every query, retries failures, then persists and enriches |
 | Single-query runner | `scripts/collection/ingest_jobspy_to_db.py` | Runs one JobSpy query and writes a batch |
 | Developer CLI | `src/wecanfindintern/ingestion/jobspy_cli.py` | Shared CLI parsing and query defaults |
@@ -55,16 +56,21 @@ The handler is always removed in a `finally` block so repeated collection does n
 
 ## Campaign lifecycle
 
-`run_collection_campaign.py` separates network collection from database mutation:
+`run_collection_campaign.py` separates provider collection from database
+mutation and records the selected sweep mode in each ingestion run:
 
 ```mermaid
 flowchart TD
-    A[Expand collection catalog] --> B[Concurrent source/page queries]
-    B --> C[Per-query fingerprint filtering]
-    C --> D[Cross-query best-record selection]
-    D --> E[All network work complete]
-    E --> F[CanonicalJobInput conversion]
-    F --> G[PostgreSQL batch ingest and dedupe]
+    A[Expand collection catalog] --> S{Durable completed-campaign count}
+    S -->|scheduled full sweep| B[Unbounded provider age]
+    S -->|scheduled recent sweep| R[Override hours_old]
+    B --> C[Concurrent source/page queries]
+    R --> C
+    C --> D[Per-query fingerprint filtering]
+    D --> E[Cross-query best-record selection]
+    E --> L[Hydrate deduplicated LinkedIn IDs]
+    L --> F[CanonicalJobInput conversion]
+    F --> G[Set-based unchanged refresh and transactional dedupe]
     G --> H[Salary enrichment]
     H --> I[Recruiting-term enrichment]
     I --> J[Run statistics and success/partial status]
@@ -81,10 +87,22 @@ Each enabled catalog definition is executed once per source. A query is paged un
 
 Within one query, `seen_for_query` prevents repeated pages from re-adding a source record. Across concurrent queries, records are keyed by fingerprint; if the same fingerprint appears more than once, the copy with salary data and then the longer description wins.
 
-LinkedIn keyword queries deliberately collect list cards without descriptions.
-After cross-query fingerprint deduplication, the campaign reuses detail payloads
-whose `job_sources.details_fetched_at` is within the configured TTL and fetches
-only missing/stale IDs. A list-card observation never advances detail freshness.
+LinkedIn keyword queries collect list cards without descriptions. After
+cross-query fingerprint deduplication, the campaign loads the latest stored
+detail payload by source fingerprint. Reuse requires all of the following:
+
+- `details_fetched_at` falls inside `WCFI_LINKEDIN_DETAIL_TTL_SECONDS`;
+- the current card's title, company, and location agree with corresponding
+  nonempty cached fields;
+- the cached payload contains a description.
+
+Each missing or stale LinkedIn source ID is fetched once with a dedicated
+semaphore controlled by `WCFI_LINKEDIN_DETAIL_CONCURRENCY`. Current list-card
+metadata remains authoritative while detail-only fields are overlaid. A failed
+fresh fetch uses the stored stale detail payload when available. The campaign
+records `linkedin_detail_cache_hits`, `linkedin_detail_fetched`,
+`linkedin_detail_failed`, and `linkedin_detail_stale_fallbacks`. A list-card
+observation never advances detail freshness.
 
 ## Retry, isolation, and scope filtering
 
@@ -121,7 +139,18 @@ run and schedules a fresh run on the next eligible interval.
 
 ## Persistence handoff
 
-The campaign creates one ingestion run, converts every `NormalizedJob` into a salary-free `CanonicalJobInput`, and writes in batches. This ordering is intentional: all source records are available to the deduplication stage before the enrichment stages run, and the same description hash can be used to cache later AI enrichment.
+The campaign creates one ingestion run after provider collection, converts every
+`NormalizedJob` into `CanonicalJobInput`, and writes in batches. Valid structured
+source salary is part of that canonical input. All source records are therefore
+available to deduplication before description-based enrichment, and the same
+description hash gates later deterministic/model enrichment.
+
+At the start of each ingest transaction, the repository hashes the incoming
+payloads and refreshes unchanged source rows in one SQL statement. Matching
+payload hashes update `last_seen_at`, `last_scraped_at`, job visibility, and any
+newer LinkedIn detail timestamp; they skip candidate lookup and raw snapshot
+insertion. New or changed rows continue through source-fingerprint and dedupe-
+block advisory locks, and a new raw snapshot is written only for a changed hash.
 
 The single-query CLI supports raw CSV and normalized JSONL output for development. The database ingest CLI is the operational path for one-off collection; the campaign is the operational path for the configured full sweep.
 
@@ -132,15 +161,19 @@ The single-query CLI supports raw CSV and normalized JSONL output for developmen
 - Invalid source payload: row-level normalization converts missing values to `None`/empty lists where the model permits; malformed values do not enter public records.
 - Unknown country/location: the original location text is preserved; canonical structured fields remain unset rather than guessed.
 - Database failure: the persistence stage fails the run; collection results are not silently reported as fully ingested.
-- LLM enrichment failure: existing structured values are retained; failed enrichment is recorded in stage statistics and is not allowed to erase a job.
+- LLM enrichment failure: existing structured values are retained; the checked
+  description hash, status, timestamp, and model record the attempt without
+  erasing the job.
 
 The campaign is `partial` when one or more source queries exhaust retries but the
 database pipeline completes. A database or pipeline exception is fatal to the
 current command, but committed earlier batches remain valid and the next run can
 reconcile them. Enrichment is intentionally best-effort: source salary wins,
-then regex, then DeepSeek. Salary enrichment stores the checked description
-hash. Definitive not-found results are skipped until the JD changes; transport
-or provider errors remain retryable.
+then regex, then DeepSeek. Descriptions with no salary signal are recorded as
+`not_found` without a model call. A successful extraction is `complete`, a
+definitive miss is `not_found`, and transport/provider failure is `error`.
+`complete` and `not_found` are skipped until the description hash changes;
+`error` remains retryable.
 
 ## Operator scenarios
 
@@ -151,6 +184,7 @@ or provider errors remain retryable.
 | One query exhausts retries | successful query results continue to persistence; run finishes `partial` | retain committed data and rerun the full catalog |
 | Process stops during network collection | no database phase for the in-memory records | restart the full campaign from the catalog |
 | Process stops during batch persistence | committed batches remain; active transaction rolls back | restart the full campaign; identity constraints reconcile records |
+| Fresh LinkedIn detail request fails | stale stored detail is used when present; card fields otherwise remain | rerun after LinkedIn recovers; detail freshness advances only after a successful fetch |
 | Enrichment provider fails | canonical jobs and completed enrichment remain | fix provider configuration and rerun/backfill the affected enrichment |
 | Process lock is already held | second invocation exits without collection | inspect the active manual/scheduled/desktop run and wait for it |
 
@@ -159,7 +193,11 @@ or provider errors remain retryable.
 - `tests/test_jobspy_adapter.py`: stable columns, conversion, query validation.
 - `tests/test_scrape_checked.py`: empty success versus logged source failure.
 - `tests/test_collection_catalog.py`: catalog expansion and source overrides.
+- `tests/test_collection_campaign.py`: sweep cadence, LinkedIn cache/hydration,
+  retry isolation, and campaign status.
 - `tests/test_job_ingestion_repository.py`: persistence and identity behavior.
+- `tests/test_salary_enrichment.py`: signal gating, content-hash state, and
+  structured/regex/model precedence.
 - `scripts/dev/inspect_jobspy_output.py`: bounded live-source inspection before
   a full campaign.
 

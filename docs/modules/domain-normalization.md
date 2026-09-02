@@ -24,7 +24,8 @@ while `src/wecanfindintern/domain/normalized_job.py` defines the provider-neutra
 ingestion boundary:
 
 - `CompanyProfile`: display name, normalized name, industry, URLs, logo, addresses, employee/revenue labels, and description;
-- `IngestionSource`: source identity, source/direct URLs, canonical URLs, fingerprint, and source payload;
+- `IngestionSource`: source identity, source/direct URLs, canonical URLs,
+  fingerprint, successful detail-fetch timestamp, and source payload;
 - `DedupeKeys`: normalized company/title/location/block keys plus description/direct URL hashes;
 - `SalaryRange`: original interval/value/currency/source plus annualized values;
 - `CanonicalJobInput`: title, company, location, work mode, employment types, opportunity/schedule/category fields, tags, dates, description, salary, source data, dedupe keys, and first-seen time.
@@ -82,7 +83,14 @@ Opportunity type and schedule are independent dimensions. A `software developer 
 
 `domain/salary.py` handles structured and description-derived compensation. It recognizes currency symbols/codes, ranges, single values, and hourly/daily/weekly/monthly/yearly intervals. Decimal values are retained as Decimal until serialization.
 
-Validated provider-structured salary is persisted with the canonical job during the initial ingest, even when the posting has no JD. Values reported as description-derived by a provider are not treated as structured data. Salary extraction from JD text runs only after deduplication: deterministic regex first, then the bounded DeepSeek fallback for remaining candidates.
+Validated provider-structured salary is persisted with the canonical job during
+the initial ingest, even when the posting has no JD. Values reported as
+description-derived by a provider are not treated as structured data. Salary
+extraction from JD text runs only after deduplication: deterministic regex first,
+salary-signal detection second, then the bounded DeepSeek fallback for the
+remaining signaled candidates. The repository stores the checked description
+hash, `complete`/`not_found`/`error` status, check time, and model so unchanged
+definitive results are reused and provider errors remain retryable.
 
 Annualization uses hourly × 2,080, daily × 260, weekly × 52, monthly × 12, and yearly/annual × 1. The salary interval integrity migration enforces interval-specific amount ranges and annual minimum/maximum ordering. Unknown or invalid compensation is kept absent instead of being converted to a misleading zero.
 

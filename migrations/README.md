@@ -39,9 +39,28 @@ flowchart TD
     I -->|no| J[Migration complete]
 ```
 
+## Materialized schema
+
+After the complete migration set is applied, PostgreSQL contains:
+
+- canonical public jobs, source edges, partitioned raw snapshots, ingestion
+  runs, dedupe evidence, lifecycle history, classification/location fields,
+  recruiting terms, and salary-enrichment state;
+- `job_sources.details_fetched_at` for reusable LinkedIn detail payloads;
+- Profile/resume/import tables, Tracker snapshots/events, Agent
+  sessions/messages/tools/approvals/audit/memory/preferences, interview
+  sessions/answers, shared LLM cache, and recommendation
+  documents/chunks/embedding profiles/queue state;
+- generated full-text search and active partial indexes for public querying,
+  plus HNSW indexes for supported recommendation embedding profiles.
+
+Operational collection plans are read from `config/collection_plans.json`.
+
 ## Ordering
 
-Migration filenames are applied lexicographically. The sequence starts with jobs/sources/raw snapshots and ingestion runs, then adds automated collection, classification/location hierarchy, salary/recruiting-term fields, Tracker, Profile, Agent, and typed Agent memory.
+Migration filenames are applied lexicographically. The complete delivered chain
+ends at `0030_collection_performance.sql` and produces the materialized schema
+above.
 
 Do not apply a later file to a database that has skipped an earlier file. The runner records applied versions and safely skips already-applied files.
 

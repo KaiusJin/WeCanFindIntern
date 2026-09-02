@@ -130,7 +130,7 @@ treated as a miss and must not block the feature.
 | ATS commentary | deterministic score remains visible if commentary fails |
 | cover letter | up to five Writer/Reviewer rounds, then last non-empty draft marked unapproved |
 | interview answer | typed answer takes precedence; local STT failure is actionable and does not corrupt history |
-| Agent plan | safe assistant response; no approval/write from malformed or incomplete output |
+| Agent plan | malformed output creates no new approval or write; completed immediate tool results remain audited |
 
 These are fallbacks, not silent claims of success: UI/API responses preserve
 warnings, failure state, approval state, or `review_approved=false` where

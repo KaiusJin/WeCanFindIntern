@@ -59,7 +59,7 @@ Repeated Interested actions do not create duplicate rows. Stage changes update t
 
 ```mermaid
 sequenceDiagram
-    participant U as UI or approved Agent tool
+    participant U as UI or Agent tool
     participant R as TrackerRepository
     participant A as application_tracker
     participant E as application_tracker_events
@@ -91,7 +91,29 @@ Job descriptions and source details are resolved for the tracker drawer. If a so
 
 ## Agent integration
 
-Agent write tools call Tracker repositories rather than duplicating SQL. They resolve a public UUID or WaterlooWorks Job ID into a `JobReference`, generate a preview, wait for approval, and then execute the same idempotent repository operation. Ambiguous title/company references are resolved through search first.
+Agent tools call Tracker repositories rather than duplicating SQL. They resolve
+a public UUID, WaterlooWorks Job ID, or Tracker application UUID into a typed
+reference. `add_into_tracker` and `update_tracker_stage` execute immediately and
+return authoritative Tracker results in the same Agent turn.
+`remove_from_tracker` persists the selected application IDs and a deletion
+preview, waits for approval, and executes those stored arguments after approval.
+Ambiguous title/company references are resolved through search before any
+mutation.
+
+```mermaid
+flowchart TD
+    I[Agent Tracker intent] --> R{Resolved stable identity?}
+    R -->|no| S[Search and ask for a source-aware selection]
+    R -->|yes| A{Action}
+    A -->|add job| W[Immediate idempotent repository write]
+    A -->|change stage| W
+    A -->|remove record| P[Persist exact IDs and preview]
+    P --> D{Approval decision}
+    D -->|approved| X[Delete through repository]
+    D -->|denied| N[Keep Tracker state]
+    W --> F[Refresh authoritative Tracker state]
+    X --> F
+```
 
 ## User and concurrency scenarios
 

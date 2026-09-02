@@ -8,7 +8,10 @@ flowchart LR
     V --> D[Pandas DataFrame]
     D --> S[Stable 34-column frame]
     S --> N[NormalizedJob list]
-    N --> C[Canonical ingestion pipeline]
+    N --> L{Campaign LinkedIn row}
+    L -->|yes| H[Post-deduplication cached or fresh detail hydration]
+    L -->|no| C[Canonical ingestion pipeline]
+    H --> C
     D -->|empty + captured source error| E[Retryable RuntimeError]
     D -->|empty without source error| Z[Successful empty result]
 ```
@@ -83,7 +86,19 @@ This distinction is used by the campaign retry policy.
 
 ## Query constraints
 
-Callers must obey source-specific JobSpy constraints. Indeed’s `hours_old`, `job_type + is_remote`, and `easy_apply` combinations are mutually constrained. LinkedIn’s `hours_old` and `easy_apply` combination is constrained. `source_overrides` in `collection_plans.json` is the supported place for source-specific query changes. LinkedIn description fetching adds requests and is controlled by the query/configuration.
+Callers must obey source-specific JobSpy constraints. Indeed's `hours_old`,
+`job_type + is_remote`, and `easy_apply` combinations are mutually constrained.
+LinkedIn's `hours_old` and `easy_apply` combination is constrained.
+`source_overrides` in `collection_plans.json` is the supported place for source-
+specific query changes.
+
+The delivered catalog enables LinkedIn descriptions, but the campaign forces
+the list phase to `linkedin_fetch_description=false`. It first deduplicates Job
+IDs across keyword queries, then uses `LinkedIn.get_job_details()` once per
+missing/stale ID. A PostgreSQL detail cache keyed by source fingerprint reuses
+payloads whose `details_fetched_at` is inside the configured TTL and whose
+title/company/location still match the current card. This keeps the stable
+JobSpy DataFrame contract while avoiding duplicate detail calls.
 
 ## Upgrade procedure
 

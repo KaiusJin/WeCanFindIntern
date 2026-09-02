@@ -51,6 +51,8 @@ flowchart TD
 | Database | `DATABASE_URL`, `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, `DB_STATEMENT_TIMEOUT_MS` | FastAPI, scripts, migrations |
 | Recommendation vectors | `RECOMMEND_EMBEDDING_PROVIDER`, model, dimensions, key and base URL | background indexer and backfill |
 | Collection enrichment | `DEEPSEEK_*` salary/term model, enablement, timeout and API settings | salary and recruiting-term enrichment |
+| Collection sweep | `WCFI_COLLECTION_RECENT_HOURS`, `WCFI_COLLECTION_FULL_SWEEP_EVERY` | durable recent/full provider sweep selection |
+| LinkedIn details | `WCFI_LINKEDIN_DETAIL_TTL_SECONDS`, `WCFI_LINKEDIN_DETAIL_CONCURRENCY` | post-deduplication detail reuse and fetch fan-out |
 | LLM provider bases | `DEEPSEEK_API_BASE`, `GLM_API_BASE`, `QWEN_API_BASE`, `OLLAMA_API_BASE` | shared gateway |
 | Interview | `INTERVIEW_STT_MODEL`, `INTERVIEW_TTS_BACKEND` | local transcription and playback |
 | WaterlooWorks | `WATERLOOWORKS_DB_PATH`, Chrome profile/binary and URL | dedicated local source |
@@ -93,7 +95,17 @@ Run the configured campaign:
 PYTHONPATH=src .venv/bin/python scripts/collection/run_collection_campaign.py
 ```
 
-The campaign uses a single-instance lock, retries source failures, and executes collection before persistence/enrichment. Logs include query counts, retries, failures, created/merged/unchanged rows, and enrichment results.
+The campaign uses a single-instance lock, retries source failures, selects a
+durable recent/full sweep from completed campaign history, and executes provider
+collection before persistence/enrichment. LinkedIn list cards are deduplicated
+before fresh detail-cache reuse or one-time detail fetches. Logs include sweep
+mode, query counts, retries, source circuits, detail cache/fetch results,
+created/merged/unchanged rows, stage durations, and enrichment results.
+
+Both checked-in operating-system runners invoke
+`backfill_recruiting_terms.py` after a successful campaign. This covers active
+jobs omitted from a recent provider window; content hashes make already checked
+title/JD pairs a no-op.
 
 The lock prevents overlap but is not a checkpoint. Page offsets are in memory;
 after interruption, rerun the campaign from the beginning. Committed batches are
@@ -149,8 +161,9 @@ native `msvcrt` lock, so manual and scheduled campaigns cannot overlap on
 either platform.
 
 The Windows runner expects the virtual environment at `.venv\Scripts\python.exe`.
-It loads the same project `.env` file as the macOS runner and also runs the
-recruiting-term backfill after the main campaign.
+It runs from the project directory, where database/provider settings are loaded
+through the application's environment handling, and executes the same campaign
+and recruiting-term backfill sequence as the macOS runner.
 
 ## Maintenance scripts
 
@@ -233,7 +246,10 @@ matrix and detailed per-module rules.
 - `/health` failure means PostgreSQL or pool configuration is unavailable.
 - Campaign query failure is source-scoped; inspect retry and failure lines before treating the whole campaign as failed.
 - A successful collection with zero jobs is valid for an empty page; a logged JobSpy error with zero jobs is retryable.
-- A partial WaterlooWorks run means one or more boards failed while others may have imported successfully; inspect per-board counts.
+- A skipped WaterlooWorks board means the authenticated account or recruiting
+  term cannot search that board; other available boards can still complete.
+- A partial WaterlooWorks run means one or more board/posting operations failed
+  while others imported successfully; inspect per-board counts.
 - LLM feature errors are provider/configuration/output errors and do not indicate database corruption.
 - Contract-check failures indicate route/frontend drift and should be fixed before merging a feature change.
 - A desktop sidecar startup timeout means the packaged backend did not emit

@@ -1,66 +1,70 @@
 # WeCanFindIntern Technical Documentation
 
-This document describes the system boundaries, runtime topology, data ownership,
-end-to-end flows, concurrency and recovery semantics, security model, and
-acceptance entry points of the delivered repository. Detailed algorithms and
-module operations live under [`docs/modules/`](modules/README.md). Operational
-failure handling lives in the [Reliability and Recovery Runbook](RELIABILITY_AND_RECOVERY.md).
+This document describes the delivered WeCanFindIntern 1.0.0 system: runtime
+topology, ownership boundaries, end-to-end workflows, state transitions,
+concurrency, recovery, security, and verification. Module-level algorithms and
+route details are linked from the final section.
 
-## 1. System scope
+## 1. Delivered system
 
-WeCanFindIntern is a local-first, single-user career workspace. The delivered
-system includes:
+WeCanFindIntern is a local-first, single-user career workspace with these
+integrated capabilities:
 
-- public job collection from Indeed and LinkedIn through the vendored JobSpy
-  package, followed by normalization, classification, cross-source
-  deduplication, enrichment, and public querying;
-- collection from five WaterlooWorks boards through a dedicated local Chrome
-  session, including submitted-application status synchronization;
-- `profile.v1`, safe resume import, deterministic ATS diagnostics, cover-letter
-  generation, interview practice, and an Application Tracker;
-- an approval-gated AI Agent, hybrid job recommendations, audit records,
-  session summaries, long-term memory, and explicit preferences;
-- a FastAPI and static ES-module browser/development runtime, plus macOS and
-  Windows desktop runtimes built with Electron and embedded PostgreSQL/Python
-  sidecars.
+- collection from Indeed and LinkedIn through the vendored JobSpy source;
+- normalization, classification, cross-source deduplication, salary and
+  recruiting-term enrichment, search facets, result counts, and geographic
+  distribution;
+- collection from five WaterlooWorks boards through a dedicated Chrome profile,
+  plus submitted-application synchronization;
+- a structured `profile.v1` candidate record and reviewed PDF/LaTeX resume import;
+- deterministic resume parsing-readiness and resume-to-job diagnostics;
+- cover-letter generation with a Writer/Reviewer grounding loop;
+- persisted interview sessions with local speech-to-text, TTS, answer analysis,
+  criteria results, history, and trends;
+- a source-aware Application Tracker for public, WaterlooWorks, and custom jobs;
+- an AI Assistant with job search, complete-JD analysis, multi-job comparison,
+  hybrid recommendations, controlled mutations, audit history, and layered
+  memory;
+- a FastAPI/static-ES-module development runtime and packaged Electron runtimes
+  for macOS and Windows with embedded PostgreSQL 16.
 
-Source pages, raw provider payloads, browser authentication state, and normalized
-business data belong to separate ownership boundaries. Public jobs and
-WaterlooWorks preserve their own source identities. Cross-module relationships
-use a public UUID or WaterlooWorks Job ID instead of copying or guessing identity.
+Public jobs and WaterlooWorks jobs retain separate source namespaces. A public
+job is addressed by UUID; a WaterlooWorks job is addressed by its source Job ID;
+a Tracker application has its own UUID and preserves the originating reference.
 
-## 2. Repository and component boundaries
+## 2. Repository boundaries
 
 ```text
 src/wecanfindintern/
-├── api/                 FastAPI assembly, dependencies, models, and routes
-├── ingestion/           JobSpy adapter, catalog, pipeline, and enrichment
-├── domain/              normalization, classification, salary, location, contracts
-├── db/                  PostgreSQL pool, public reads, ingestion repositories
-├── waterlooworks/       Chrome control, extraction, SQLite, sync, state machine
-├── profile/             profile.v1, resume parsing, validation, persistence
-├── ats/                 deterministic parsing and match diagnostics
-├── cover_letter/        Writer/Reviewer generation and DOCX/PDF export
-├── interview/           sessions, questions, STT, TTS, analysis, history, trends
-├── tracker/             application state, events, and source identity
-├── agent/               planning, tools, approval, recommendations, and memory
-├── llm/                 provider gateway, JSON, streaming, and cache
-└── desktop/             sidecar, paths, migrations, tokens, background collection
+├── api/                 FastAPI assembly, dependencies, routes, request models
+├── application/         API projections and cross-module application services
+├── ingestion/           JobSpy adapter, catalog expansion, enrichment pipeline
+├── domain/              normalization, classification, salary, location, identity
+├── db/                  pool, public reads, ingestion/enrichment repositories
+├── waterlooworks/       Chrome control, authenticated extraction, SQLite, sync
+├── profile/             profile.v1, resume validation/parsing, persistence
+├── ats/                 deterministic parsing and job-match diagnostics
+├── cover_letter/        Writer/Reviewer workflow and DOCX/PDF export
+├── interview/           sessions, questions, STT, TTS, analysis, trends
+├── tracker/             application snapshots, stages, events, source identity
+├── agent/               planning, tools, analysis, approval, recommendation, memory
+├── llm/                 provider gateway, JSON parsing, prompts, shared cache
+└── desktop/             sidecar server, migrations, security, resident collection
 
-web/                     HTML, CSS, and native ES modules
-desktop/                 Electron main/preload, PostgreSQL, backup, and packaging
-migrations/              ordered PostgreSQL migrations
-schemas/                 versioned public job JSON Schemas
-scripts/                 collection, maintenance, desktop build, verification
-config/                  collection catalog and operating-system scheduler config
-vendor/JobSpy/           pinned local JobSpy source
-tests/                   unit, route, repository, integration, and contract evidence
+web/                     static HTML, CSS, and native ES modules
+desktop/                 Electron main/preload, PostgreSQL, backups, packaging
+migrations/              ordered, checksummed PostgreSQL schema migrations
+schemas/                 exported public-job JSON Schemas
+scripts/                 collection, maintenance, packaging, and verification
+config/                  collection catalog and launchd configuration
+vendor/JobSpy/           audited local JobSpy source
+tests/                   unit, route, frontend, repository, and integration checks
 ```
 
-Business dependencies flow from `API/scripts → service/application →
-domain/repository`. Provider DataFrames remain inside the ingestion boundary.
-Repositories and migrations own SQL. LLMs return validated content or tool plans
-and never receive a database connection.
+Dependencies flow from routes and scripts into application services, domain
+functions, and repositories. Provider DataFrames remain inside the ingestion
+boundary. SQL is owned by repositories and migrations. LLM output passes typed
+validation and receives neither a database connection nor browser credentials.
 
 ## 3. Runtime topology
 
@@ -68,20 +72,23 @@ and never receive a database connection.
 
 ```mermaid
 flowchart LR
-    U[Browser] -->|HTTP / SSE| A[FastAPI + static web]
-    A --> P[(PostgreSQL 16 / pgvector)]
-    A --> W[WaterlooWorksService]
-    W --> C[Dedicated Chrome]
+    U[Browser] -->|REST, SSE, files| A[FastAPI and static web]
+    A --> P[(PostgreSQL 16 and pgvector)]
+    A --> W[WaterlooWorks service]
+    W --> C[Dedicated Chrome profile]
     W --> S[(WaterlooWorks SQLite)]
-    A --> L[Configured LLM or local Ollama]
-    A --> T[Local STT / TTS]
+    A --> L[Gemini, OpenAI-compatible API, or Ollama]
+    A --> M[Local STT and configured TTS]
+    J[Collection scripts] --> P
+    J --> X[Indeed and LinkedIn]
 ```
 
-`.env` supplies `DATABASE_URL` and optional provider/index settings. Docker
-Compose supplies development PostgreSQL bound to `127.0.0.1:5432`. The FastAPI
-lifespan opens the asynchronous psycopg pool, Agent memory manager,
-WaterlooWorks service, and recommendation-index maintenance loop. Shutdown
-cancels background work and closes each owned resource.
+`Settings.from_env()` loads `DATABASE_URL`, pool sizes, and the statement timeout
+from the environment or `.env`. Docker Compose supplies PostgreSQL/pgvector on
+`127.0.0.1:5432`. FastAPI startup opens the async psycopg pool, Agent memory
+manager, WaterlooWorks service, desktop collection service when desktop paths
+are present, and the recommendation-index maintenance task. Shutdown cancels
+background tasks before closing memory, WaterlooWorks, and the database pool.
 
 ### 3.2 Electron desktop runtime
 
@@ -91,289 +98,426 @@ sequenceDiagram
     participant P as Embedded PostgreSQL 16
     participant B as Packaged FastAPI sidecar
     participant R as Sandboxed renderer
-    E->>E: acquire single-instance lock and resolve user-data paths
-    E->>P: verify bundle, initialize or validate PG_VERSION, bind loopback port
-    E->>E: apply pending restore with safety backup
-    E->>B: spawn with DATABASE_URL, resource paths, and per-launch token
-    B->>B: apply checksummed migrations
-    B-->>E: JSON ready(host, port)
-    E->>R: create window and load exact sidecar origin
-    R->>B: send requests with injected desktop token
+    E->>E: acquire the single-instance lock and resolve user-data paths
+    E->>P: verify binaries and pgvector, initialize or validate PG_VERSION
+    E->>P: bind a random loopback port with SCRAM authentication
+    E->>E: apply a pending restore with a pre-restore safety backup
+    E->>B: spawn with resource paths, DATABASE_URL, and a per-launch token
+    B->>P: apply checksummed migrations
+    B-->>E: emit ready with the random loopback origin
+    E->>R: create the sandboxed window and load that exact origin
+    R->>B: send API requests with the injected desktop token
 ```
 
-The renderer enables the Chromium sandbox and context isolation and has no
-Node.js access. Preload exposes only allowlisted IPC for version information,
-collection status, backup/restore, and AI secrets. PostgreSQL and FastAPI bind
-random loopback ports. FastAPI middleware validates a per-launch token on
-`/health`, `/api/`, and `/desktop/` requests. Electron `safeStorage` encrypts AI
-keys. The [Desktop Application guide](DESKTOP.md) documents directories,
-packaging, backup, and recovery.
+The renderer has context isolation, Chromium sandboxing, and no Node.js access.
+Preload exposes allowlisted IPC for version, collection, backup/restore, and AI
+secret operations. Electron permits audio capture only for the sidecar origin,
+opens only trusted HTTPS/mailto links externally, and blocks renderer navigation
+away from the local origin. Closing the window keeps the tray runtime active.
 
-## 4. Data ownership
+## 4. Data ownership and identity
 
-| Data | Authoritative store | Public/module identity | Boundary and retention rule |
+| Data | Authoritative store | Identity | Write rule |
 |---|---|---|---|
-| Current public jobs | PostgreSQL `jobs` | public UUID | API returns canonical fields and excludes raw payloads |
-| Public source edges | PostgreSQL `job_sources` | source + fingerprint/job ID | detail returns source links; unique indexes enforce idempotency |
-| Raw collection snapshots | partitioned `raw_job_snapshots` | payload hash + scrape time | written when payload changes for audit and recomputation |
-| Classification/recommendation derivatives | PostgreSQL job/recommendation tables | algorithm/document/profile version | rebuildable from canonical and source data |
-| Profile and resume imports | PostgreSQL profile/resume/import tables | profile/section/resume/import UUID | current profile and review draft are separate; confirmation is atomic |
-| Tracker | PostgreSQL tracker/event tables | application UUID + public/external identity | user stage remains separate from external source status |
-| Agent, approvals, and memory | PostgreSQL Agent tables | session/message/tool/approval UUID | original arguments, single decision, incremental summary/memory watermarks |
-| LLM cache | PostgreSQL `llm_cache` | provider/model/prompt content hash | TTL cleanup; cache errors behave as misses |
-| WaterlooWorks postings and runs | user-directory SQLite | WaterlooWorks Job ID | excluded from public jobs and public cross-source deduplication |
-| WaterlooWorks SSO/MFA/cookies | dedicated Chrome profile | browser profile | excluded from PostgreSQL, SQLite, Agent context, and logs |
-| Desktop secrets, backups, and logs | operating-system app-data directory | local files | encrypted secrets; PostgreSQL and WaterlooWorks backups remain separate |
+| Public canonical job | PostgreSQL `jobs` | public UUID | current searchable projection, one row per canonical job |
+| Public source edge | PostgreSQL `job_sources` | source fingerprint and source job ID | preserves source/direct URLs and detail freshness |
+| Source observation | partitioned `raw_job_snapshots` | source edge, payload hash, scrape time | added only when the payload hash changes |
+| Dedupe evidence | PostgreSQL dedupe tables | source/candidate pair | stores rule hits, score, version, and result |
+| Derived search/recommendation data | PostgreSQL job and recommendation tables | algorithm/document/embedding profile | rebuildable from canonical source evidence |
+| Profile and resume imports | PostgreSQL profile/resume/import tables | profile, section, resume, import UUIDs | current profile and review draft remain separate until confirmation |
+| Application Tracker | PostgreSQL tracker/event tables | application UUID plus source identity | current snapshot and observable event write together |
+| Agent and memory | PostgreSQL Agent tables | session/message/tool/approval/memory UUIDs | exact arguments, audit events, summaries, and watermarks are persisted |
+| Shared LLM cache | PostgreSQL `llm_cache` | provider/model/prompt content hash | TTL-backed result cache; cache errors behave as misses |
+| WaterlooWorks jobs and runs | user-data SQLite | WaterlooWorks Job ID | posting content is inserted once; freshness and new board edges can advance |
+| WaterlooWorks authentication | dedicated Chrome profile | browser profile | SSO, MFA, and cookies remain in Chrome |
+| Desktop secrets and backups | operating-system app-data directory | local files | keys use Electron `safeStorage`; PostgreSQL dumps are separate from SQLite |
 
-## 5. Public job end-to-end flow
+## 5. Public collection and ingestion
+
+The configured catalog contains Indeed and LinkedIn queries for Canadian and US
+software, data, and AI internship/co-op roles. Collection alternates bounded
+recent sweeps and periodic full sweeps using durable completed-campaign counts.
 
 ```mermaid
 flowchart TD
-    C[config/collection_plans.json] --> X[expand_collection_catalog]
-    X --> Q[bounded concurrent source/page queries]
-    Q --> J[JobSpy DataFrame stabilization]
-    J --> N[NormalizedJob]
-    N --> F[country scope + fingerprint selection]
-    F --> K[CanonicalJobInput]
-    K --> I[batch ingest transaction]
-    I --> D{source/cross-source identity}
-    D -->|same source| U[update source edge or unchanged]
-    D -->|matched candidate| M[merge source into canonical job]
-    D -->|new identity| A[create canonical job]
-    U --> E[salary + recruiting-term enrichment]
-    M --> E
-    A --> E
-    E --> R[recommendation queue and documents]
-    R --> API[Jobs API + frontend]
+    C[Read collection_plans.json] --> E[Expand country, keyword, source definitions]
+    E --> S{Completed campaign count}
+    S -->|count modulo full_sweep_every = 0| F[Full provider sweep]
+    S -->|other counts| R[Recent hours_old sweep]
+    F --> Q[Concurrent paged source queries]
+    R --> Q
+    Q --> D[Per-query and cross-query source fingerprint selection]
+    D --> L{LinkedIn descriptions enabled}
+    L -->|yes| K[Load fresh detail payloads by fingerprint]
+    K --> H[Fetch each missing or stale LinkedIn ID once]
+    H --> N[Merge current card metadata with detail fields]
+    L -->|no| N
+    N --> C1[CanonicalJobInput conversion]
+    C1 --> U[Set-based unchanged-payload refresh]
+    U --> I[Transactional source identity and cross-source dedupe]
+    I --> SA[Salary enrichment]
+    SA --> RT[Recruiting-term enrichment]
+    RT --> QI[Recommendation queue]
+    QI --> API[Public API and UI]
 ```
 
-Implementation rules:
+### 5.1 Query and paging rules
 
-1. `JobSpyQuery` validates the source, offset, result count, and mutually
-   exclusive provider filters before an upstream call.
-   `stabilize_jobspy_frame()` supplies the fixed column contract for zero-row or
-   zero-column results.
-2. `NormalizedJob` retains a cleaned raw row and converts downstream fields to
-   provider-neutral types. Raw data enters only the snapshot boundary.
-3. Each query deduplicates with an in-memory fingerprint set. When concurrent
-   queries produce the same fingerprint, selection prefers stronger structured
-   salary data and then the longer description.
-4. Fingerprints and unique indexes establish source-level identity. Cross-source
-   deduplication selects at most 25 candidates by direct URL, company/location
-   block, and a ±60-day publication window, then compares title, location/work
-   mode, date, and five-token description shingles.
-5. Each ingest batch writes the canonical job, source edge, snapshot, and dedupe
-   evidence in one transaction. Related dedupe blocks use transaction-scoped
-   advisory locks.
-6. Salary precedence is provider-structured data, regex, then DeepSeek.
-   Recruiting-term precedence is content cache, regex, then DeepSeek. Invalid
-   results do not overwrite valid current values.
-7. A job trigger writes `recommendation_index_queue`. Background maintenance
-   produces lexical documents/chunks before filling the primary vector for the
-   configured embedding profile.
+`JobSpyQuery` validates sites, provider-specific filter combinations, offsets,
+result limits, age filters, and source settings. `scrape_checked()` distinguishes
+a successful empty DataFrame from a scraper that logged an error and returned no
+rows. `stabilize_jobspy_frame()` always produces the fixed 34-column boundary.
 
-## 6. Candidate and application flow
+The campaign uses `asyncio.Semaphore` (default 4; CLI range 1–16) and runs each
+blocking JobSpy call in a worker thread. A query stops after its configured
+maximum, an empty page, a page with no new fingerprints, or terminal failure.
+Transient failures use bounded exponential backoff with jitter; deterministic
+4xx/location errors open a source circuit for the remainder of that campaign.
 
-```mermaid
-flowchart LR
-    R[PDF or LaTeX resume] --> V[security validation and text extraction]
-    V --> D[profile.v1 import draft]
-    D -->|review autosave| D
-    D -->|confirm| P[(Current Profile)]
-    P --> ATS[Deterministic ATS]
-    P --> CL[Cover Letter Writer/Reviewer]
-    P --> IV[Interview sessions and analysis]
-    P --> REC[Hybrid recommendations]
-    P --> AG[Approval-gated Agent]
-    J[Public or WaterlooWorks job] --> ATS
-    J --> CL
-    J --> IV
-    J --> REC
-    J --> T[(Tracker)]
-    AG -->|approved repository mutation| T
-    AG -->|approved field diff| P
-```
+### 5.2 Sweep schedule and LinkedIn detail cache
 
-- PDF and LaTeX inputs pass extension, MIME/magic/structure, size, active
-  content, extraction, and English-text checks. LaTeX is parsed as text and is
-  never compiled or executed.
-- Import drafts and the current profile are persisted separately. Review
-  autosave changes only the draft. Confirmation applies the profile and updates
-  import/resume status within one transaction.
-- ATS parsing readiness and resume/job match scores are deterministic. LLM
-  commentary cannot replace or modify either score.
-- Cover Letter runs at most five Writer/Reviewer rounds, reports grounding
-  status, issues, and unsupported claims, and exports DOCX or PDF.
-- Interview questions and analyzed answers belong to a persisted session. A
-  typed answer takes precedence over a local faster-whisper transcript. TTS uses
-  local synthesis or gTTS according to configuration.
-- Tracker stores the current application snapshot and event history. Public
-  UUIDs, WaterlooWorks Job IDs, and custom records preserve distinct identities.
-  External status never overwrites the user's workflow stage.
+`CollectionCacheRepository.completed_campaign_count()` counts successful and
+partial runs for the current catalog filename. With delivered defaults, sweep 1
+is full, sweeps 2–10 request the latest 48 hours, and sweep 11 is full again.
+`WCFI_COLLECTION_RECENT_HOURS` and `WCFI_COLLECTION_FULL_SWEEP_EVERY` override
+those values. Process restarts preserve the sequence because the count comes
+from `ingestion_runs`.
 
-## 7. Agent and recommendation flow
+LinkedIn list cards are collected without descriptions, deduplicated across all
+keyword queries, and then hydrated. Cache entries come from the latest raw
+snapshot joined through `job_sources.details_fetched_at`. A cache hit requires a
+fresh timestamp and matching title/company/location card identity. The delivered
+TTL is 86,400 seconds and detail concurrency is 4. A failed fresh fetch reuses a
+stored stale detail payload when one exists; the campaign records cache hits,
+fetches, failures, and stale fallbacks independently.
+
+### 5.3 Persistence and enrichment
+
+Each batch calls `ensure_raw_job_snapshot_partition()` and owns one transaction.
+The repository first hashes incoming payloads and performs one set-based update
+for unchanged source fingerprints. Those rows refresh source/job visibility and
+`details_fetched_at` while bypassing per-row dedupe and snapshot insertion.
+
+Changed and new rows acquire transaction-scoped source-fingerprint and dedupe-
+block advisory locks. Candidate generation uses direct URL, normalized
+company/location, a ±60-day publication window, and at most 25 candidates.
+Comparison uses title, location/work mode, date distance, direct URL, and
+five-token description shingles. A match adds a source edge to the canonical
+job; a non-match creates its own canonical job.
+
+Salary precedence is provider-structured data, deterministic description regex,
+then DeepSeek. Only descriptions containing a salary signal reach the model.
+`salary_enrichment_input_hash`, status (`complete`, `not_found`, or `error`),
+check time, and model prevent repeated work on unchanged descriptions while
+leaving provider errors eligible for retry. Recruiting terms use content cache,
+regex, then constrained DeepSeek output. Neither enrichment path clears a valid
+stored value after an unresolved result.
+
+## 6. WaterlooWorks workflow
+
+WaterlooWorks uses the dedicated Chrome session as the authentication boundary
+and SQLite as its job/run store. The collector processes five boards in order:
+Full-Cycle, Employer-Student Direct, Graduating, Contract, and Campus.
 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant O as Agent orchestrator
-    participant M as LLM planner
-    participant T as Typed tool
-    participant DB as Repository
-    U->>O: message + provider configuration
-    O->>DB: persist message and load profile, window, summary, and recall
-    loop up to 4 planning rounds
-        O->>M: tool catalog + delimited context/results
-        M-->>O: validated JSON reply or one tool step
-        alt read tool
-            O->>T: validate arguments and execute bounded read
-            T->>DB: repository or service query
-            DB-->>O: bounded result for next round
-        else write tool
-            O->>DB: persist exact arguments and preview as pending approval
-            O-->>U: approval card; planning stops
+    participant S as WaterlooWorks service
+    participant C as Dedicated Chrome
+    participant X as Authenticated extractor
+    participant Q as SQLite
+    U->>S: launch
+    S->>C: open or reuse the dedicated profile
+    U->>C: complete Waterloo SSO and MFA
+    U->>S: start selected sync workflow
+    loop each configured board
+        S->>C: navigate to board and activate All Jobs
+        alt account can search the board
+            C->>X: expose session-specific list/detail action tokens
+            X->>C: POST list pages, 100 jobs per page
+            X->>Q: compare IDs with known immutable jobs
+            X->>C: fetch new details in batches of 6
+            X->>Q: insert new jobs and board edges; refresh known timestamps
+        else board unavailable for account or term
+            S->>Q: record board as skipped with reason
         end
+        S->>S: update per-board counters and continue
     end
-    U->>O: approve or deny
-    O->>DB: atomically decide pending approval
-    O->>T: execute persisted arguments only when approved
-    O-->>U: audited final result
+    S-->>U: completed or partial run snapshot
 ```
 
-Recommendations rank only public or WaterlooWorks candidates retrieved from
-repositories; the model cannot create jobs. Retrieval combines lexical rank,
-skill and requirement overlap, location/work mode, recency, optional vector
-similarity, and optional LLM reranking. Lexical documents and deterministic
-scoring keep recommendations available when the embedding provider is
-unavailable. Tracked records can be removed after candidate retrieval.
+The extractor discovers the page's same-origin POST actions and calls the
+DataViewer list, posting-data, and overview endpoints directly with the existing
+Chrome session. It is independent of table/card rendering mode. Job IDs already
+stored in SQLite are emitted as known rows without repeating detail requests.
+New postings are normalized and inserted once; later observations update only
+`last_seen_at`, plus a newly observed board edge when applicable.
 
-Agent tool arguments use Pydantic models. Read tools execute immediately. Write
-tools create pending approvals. Each approval stores the original tool name,
-validated arguments, and preview; only the first `pending → approved/denied`
-decision succeeds. Duplicate calls, ambiguous job references, invalid arguments,
-malformed plans, and provider errors terminate before mutation.
+Board states are `pending`, `collecting`, `completed`, `skipped`, or `failed`.
+An unavailable board is `skipped` and does not make the run partial. Posting or
+board failures are isolated; successful boards remain committed and the final
+run becomes `partial` when failures occurred. Service-level states include
+`idle`, `waiting_for_login`, `ready`, `collecting`, `syncing_applications`,
+`completed`, `partial`, and `failed`.
 
-## 8. API, UI, and outcome handling
+Submitted-application synchronization opens Total Submitted, extracts source
+status and job evidence, upserts WaterlooWorks application observations, and
+synchronizes each record into Tracker. External stage/status are stored
+separately from the user's Tracker stage. List queries accept repeated board,
+work-mode, and opportunity-type filters plus query, location, company, skill,
+category, city, region, country, posted date, cursor, and limit.
 
-FastAPI registers API routes before mounting the static frontend at `/`. The
-delivered route families are:
-
-```text
-/health                         database connectivity
-/api/v1/jobs                    public jobs, facets, geo distribution, detail
-/api/v1/ats                     deterministic diagnostics and commentary
-/api/v1/cover-letter            generation, SSE progress, export
-/api/v1/interview               sessions, SSE, questions, TTS, analysis, trends
-/api/v1/profile                 profile, resume imports, and drafts
-/api/v1/resumes                 shared PDF extraction
-/api/v1/tracker                 bookmarks, applications, events, bulk, CSV
-/api/v1/waterlooworks           Chrome status, collect, jobs, application sync
-/api/v1/agent                   sessions, stream, approvals, preferences, memory
-/desktop                        local collection status and trigger
-```
-
-| Scenario | Server semantics | Client/operator action |
-|---|---|---|
-| Normal list | 200 with items/cursor or page metadata | render and retain the next cursor/page |
-| Valid empty result | 200 with empty items | show the empty state without marking failure |
-| Invalid filter, body, or file | FastAPI/Pydantic/domain validation returns 422 | preserve input and show corrective detail |
-| Missing UUID or record | 404 | refresh the list or select a stable identity again |
-| Background operation already active | 409 or current running state | wait for or reuse the active operation |
-| One source, board, or posting fails | record failure; isolated work continues; result may be partial | inspect per-source/per-board summary and rerun |
-| Request or process interruption | uncommitted transaction rolls back; committed state remains | run the module's idempotent full retry or resubmit |
-| LLM configuration, transport, or output error | no mutation; deterministic result or current draft remains | correct key/model/base URL or retry the feature |
-| Repeated approval decision | first result remains; later decision conflicts | refresh session and approval state |
-| Missing or invalid desktop token | 401 | reload through the Electron renderer and current sidecar origin |
-
-The frontend uses native ES modules, lazy section loading, `fetch`, and SSE.
-Ordinary dynamic text passes through `escapeHtml()`. Markdown and generated text
-use the shared renderer. Source URLs and IDs are validated before use. Failed
-list/detail requests do not advance cursors. SSE converges through its final
-event. After Tracker or approval writes, the client rereads authoritative server
-state.
-
-## 9. Concurrency, transactions, and recovery semantics
-
-| Unit | Concurrency/transaction boundary | Idempotency or conflict protection |
-|---|---|---|
-| Public collection query | `asyncio.Semaphore`, default 4, CLI range 1–16; JobSpy runs in threads | per-query fingerprints and isolated source failures |
-| Collection process | nonblocking Unix `fcntl` or Windows `msvcrt` file lock | manual, scheduler, and desktop modes share the lock |
-| PostgreSQL request | async pool default 2–20; statement timeout default 5 seconds | each repository mutation/transaction rolls back independently |
-| Ingest batch | one transaction per batch | unique identity plus advisory transaction lock |
-| Enrichment | regex first; bounded model concurrency/batches | input/content hashes; empty output cannot clear valid values |
-| WaterlooWorks | service task lock; sequential boards; isolated posting failures | insert-once Job ID; repeats update only `last_seen_at` |
-| Recommendation index | paged queue; per-item errors record attempts | `attempts < 5`; a job update resets the item |
-| Agent turn | up to four planning rounds plus feedback budget | duplicate-call guard and single approval transition |
-| Tracker/Profile writes | repository transaction | unique source identity; atomic current row plus event/draft |
-| Desktop backup | one backup promise; custom-format temp file then rename | safety backup before restore and automatic rollback on failure |
-
-Public collection uses restart-from-source instead of a persistent page
-checkpoint. After a process interruption, collection restarts from the catalog
-and query origin. Source fingerprints, unique constraints, payload hashes, batch
-transactions, and dedupe locks converge already committed data. WaterlooWorks
-reruns complete boards rather than restoring an old DOM offset. The
-[Reliability and Recovery Runbook](RELIABILITY_AND_RECOVERY.md) contains the
-backoff formula, partial-result rules, and failure matrices.
-
-## 10. Security model
-
-- The desktop renderer uses sandboxing, context isolation, and a restricted
-  preload. Network access targets only the exact sidecar origin, and the main
-  process injects a per-launch token.
-- The sidecar permits `127.0.0.1` and `::1` only. PostgreSQL uses a random
-  loopback port, a SCRAM password, and a private desktop data directory.
-- Electron `safeStorage` encrypts provider keys and the PostgreSQL password.
-  API keys, passwords, MFA data, and cookies stay out of Profile, Agent memory,
-  and ordinary logs.
-- WaterlooWorks authentication remains in the dedicated Chrome profile. The API
-  and SQLite store extracted posting/application data and never store cookies.
-- Resume uploads are checked for type, magic, structure, active content, size,
-  and text limits before parsing. LaTeX is not executed, and unsafe PDF/LaTeX
-  input is rejected.
-- Provider and job text enters prompts in delimited data blocks. Model output
-  passes JSON, schema, and domain validation. Repositories alone own SQL and
-  mutations.
-- Desktop restore, Tracker bulk deletion, and resume deletion require explicit
-  user actions and use transactions, confirmation, or safety backups to bound
-  impact.
-
-## 11. Installation, migration, runtime, and acceptance
-
-The authoritative development sequence is:
+## 7. Candidate and application workflow
 
 ```mermaid
 flowchart LR
-    V[Create Python virtual environment] --> I[Install requirements]
-    I --> P[Start loopback PostgreSQL]
-    P --> E[Create and load .env]
-    E --> M[Apply ordered migrations]
-    M --> A[Start FastAPI]
-    A --> H[Check /health]
-    H --> C[Run contract, tests, and syntax checks]
+    R[PDF or LaTeX resume] --> V[Security validation and text extraction]
+    V --> D[Editable profile.v1 import draft]
+    D -->|autosave review| D
+    D -->|confirm| P[(Current Profile)]
+    P --> ATS[Deterministic ATS diagnostics]
+    P --> CL[Cover Letter Writer and Reviewer]
+    P --> IV[Interview sessions and analysis]
+    P --> REC[Hybrid recommendations]
+    P --> AG[AI Assistant]
+    J[Public or WaterlooWorks job] --> ATS
+    J --> CL
+    J --> IV
+    J --> REC
+    J --> T[(Application Tracker)]
+    AG -->|immediate add or stage update| T
+    AG -->|approved removal| T
+    AG -->|approved field diff| P
 ```
 
-The [Operations and Verification guide](modules/operations.md) contains exact
-commands, macOS launchd and Windows Task Scheduler procedures, maintenance
-scripts, and result interpretation. Database migrations run through
-`scripts/maintenance/migrate.py` in filename order. The runner stores filename
-and checksum in `schema_migrations` and rejects changes to an applied file.
+PDF and LaTeX uploads pass filename, extension, media type, signature/structure,
+size, active-content, extraction, text-length, and English-language checks.
+LaTeX is parsed as inert text. Resume rows and import drafts are persisted before
+the current Profile changes; confirmation saves the reviewed payload and marks
+the import/resume confirmed in one transaction.
 
-Repository acceptance entry points:
+ATS parsing readiness and resume/job matching are deterministic and expose
+category evidence. Commentary is a separate model-generated explanation that
+cannot alter a score. Cover Letter runs at most five Writer/Reviewer attempts
+and returns the last nonempty draft with its grounding status. Interview answers
+prefer typed text; otherwise local faster-whisper transcribes audio. Each
+analyzed answer is upserted by session and question index, with criteria results
+and trend data derived from persisted sessions.
+
+Tracker keeps a saved source snapshot, current stage, stage timestamps, and an
+event timeline. Public bookmarks and WaterlooWorks bookmarks are idempotent at
+the source-identity level. Unbookmarking deletes only an `interested` record;
+progressed applications remain protected. Bulk stage updates and bulk deletes
+accept at most 500 UUIDs. Submitted WaterlooWorks status can initialize a new
+record's stage and later updates only the external status fields.
+
+## 8. AI Assistant and recommendations
+
+### 8.1 Turn and mutation lifecycle
+
+```mermaid
+flowchart TD
+    A[Message with provider configuration and up to 5 attached jobs] --> P[Persist user message]
+    P --> C[Load Profile, preferences, summary, recent window, recall, attachments]
+    C --> F{Fast path or planner}
+    F -->|recommendation or clear add intent| T[Run bounded typed tool]
+    F -->|general request| L[Strict JSON planning round]
+    L --> X{Tool class}
+    X -->|read or immediate Tracker write| T
+    T --> R{Intent complete or 3-round budget reached}
+    R -->|more evidence needed| L
+    X -->|remove Tracker item or update Profile| Q[Persist exact arguments and preview]
+    Q --> W[Wait for approve or deny]
+    W -->|approve| E[Atomically decide then execute persisted arguments]
+    W -->|deny| N[Persist denial with target unchanged]
+    R -->|complete| O[Persist assistant response and audit metadata]
+    E --> O
+    N --> O
+```
+
+Immediate tools are `get_profile`, `search_jobs`, `get_job_details`,
+`analyse_job`, `compare_jobs`, `list_tracker`, `recommend_jobs`,
+`propose_profile_update`, `generate_interview_questions`, `add_into_tracker`, and
+`update_tracker_stage`. `remove_from_tracker` and `update_profile` are the two
+approval-gated tools. Approval execution uses the stored tool name and validated
+arguments; only the first `pending` transition succeeds.
+
+The planner is limited to three rounds and 6,000 characters of returned tool
+feedback. Duplicate identical tool calls terminate safely. Scraped data enters
+the prompt inside explicit data delimiters and is summarized before reuse. A
+first-round planner failure persists a safe reply; a later failure composes from
+the evidence already gathered. Incomplete model output cannot mutate state.
+
+`analyse_job` evaluates a complete JD against the confirmed Profile, separating
+must-have, preferred, and implicit requirements; Profile matches, partial
+matches, gaps, and unknowns; skill/experience/education/domain gaps; and
+seniority, work-authorization, location, and deadline risks. It produces
+`apply`, `consider`, `skip`, or `insufficient_information`. Each attached job
+requested for analysis receives its own analysis call.
+
+### 8.2 Recommendation pipeline
+
+```mermaid
+flowchart TD
+    P[Profile skills, preferences, request filters] --> C[Repository candidate set]
+    C --> L[PostgreSQL full-text retrieval]
+    C --> V[Matching embedding-profile cosine retrieval]
+    L --> R[Reciprocal Rank Fusion]
+    V --> R
+    R --> S[Deterministic evidence score]
+    S --> H[Hard filters and optional tracked exclusion]
+    H --> M{Optional LLM review}
+    M -->|enabled| B[Top 15, bounded evidence adjustment -5 to +5]
+    M -->|disabled or unavailable| O[Final ranking]
+    B --> O
+    O --> A[Complete analysis for Top 2, or Top 1 when only one exists]
+```
+
+Versioned documents contain the complete job evidence and bounded chunks.
+Lexical retrieval and normalized skill matching are always available. Vector
+retrieval runs only when the corpus and request use the same provider, model,
+and dimensions. The representative first chunk has the primary embedding;
+profile-specific HNSW indexes are used up to pgvector's 2,000-dimension index
+limit. Results record component scores, matched skills, requirement gaps,
+unknowns, retrieval provenance, confidence, and timing evidence.
+
+The API lifespan drains `recommendation_index_queue` in pages of 100, refreshes
+WaterlooWorks documents every tenth iteration, and retries missing primary
+embeddings separately from document creation. Recommendation results are cached
+in process for 10 minutes using Profile revision, Tracker fingerprint,
+preferences, corpus/document versions, filters, and provider profiles.
+
+## 9. API and frontend
+
+FastAPI registers route families before mounting `web/` at `/`:
+
+| Prefix | Delivered contract |
+|---|---|
+| `/health` | database connectivity |
+| `/api/v1/jobs` | public list, total, update timestamp, cursor, facets, geo distribution, detail |
+| `/api/v1/waterlooworks` | browser status/launch, posting sync, submitted-application sync, local list/detail |
+| `/api/v1/profile` | current Profile, context, resume uploads, import drafts, confirmation |
+| `/api/v1/resumes` | shared PDF extraction |
+| `/api/v1/ats` | deterministic score/match and separate commentary |
+| `/api/v1/cover-letter` | generation, SSE generation, DOCX/PDF export |
+| `/api/v1/interview` | sessions, SSE creation, questions, TTS, analysis, trend |
+| `/api/v1/tracker` | contract vocabulary, bookmarks, applications, events, bulk actions, CSV |
+| `/api/v1/agent` | sessions, messages/SSE, tools, approvals, preferences, memory |
+| `/desktop` | resident collection status and manual trigger |
+
+```mermaid
+flowchart LR
+    H[index.html and app shell] --> N[Hash navigation]
+    N --> J[Public Jobs loaded at startup]
+    N --> Z[Lazy-loaded feature modules]
+    J --> A[REST API]
+    Z --> A
+    Z --> S[SSE streams]
+    A --> U[Authoritative server state]
+    S --> U
+    U --> R[Escaped and validated rendering]
+```
+
+Public Jobs exposes a List/Map view, filter sheet, total count, update timestamp,
+cursor-based infinite scrolling, and a sibling detail pane. WaterlooWorks uses
+the same list/detail pattern with multi-select filters and a sync dialog that can
+queue postings, submitted applications, or both. Tracker uses numbered paging,
+selection, bulk actions, a detail/event pane, and URL-backed filters. At 900px
+and below, navigation becomes a drawer and detail panes become overlays.
+
+Feature modules are imported on first activation. Failed initial imports can be
+retried because `main.js` clears the cached rejected promise. A filter change
+invalidates the associated cursor/page state. Request IDs and abort controllers
+prevent stale WaterlooWorks list responses from replacing newer results. SSE
+consumers reconcile on the final event, and mutations reload authoritative
+Profile, Tracker, or Agent state.
+
+Ordinary dynamic values pass through `escapeHtml()`. Generated Markdown and job
+descriptions use the shared renderer. URLs and IDs are validated before use.
+Desktop secrets, backup/restore, and collection controls cross only the
+allowlisted preload bridge.
+
+## 10. Outcomes, transactions, and recovery
+
+| Scenario | System result | Supported operation |
+|---|---|---|
+| Valid query with no rows | 200 and an empty collection | render the empty state |
+| Invalid filter, payload, cursor, or file | 400/422 according to route contract | preserve input and correct the reported field |
+| Missing UUID/source record | 404 | refresh the owning list and select a stable identity |
+| Public source query exhausts retries | other sources continue; campaign becomes partial if persistence completes | rerun the complete catalog after source recovery |
+| Public process stops during network work | collected in-memory rows are discarded | rerun from the catalog |
+| Public process stops during persistence | active batch rolls back; committed batches remain | rerun; fingerprints, hashes, and locks converge state |
+| LinkedIn detail fetch fails | stale detail is reused when stored; otherwise card data remains | rerun after source recovery |
+| WaterlooWorks board is unavailable to the account | board is skipped; other boards continue | use available boards for that account/term |
+| WaterlooWorks board/posting fails | successful work remains and the run is partial | fix auth/page/connectivity and run all boards again |
+| Agent immediate action repeats | repository identity/stage rules return current state | reread Tracker state |
+| Agent approval repeats | first terminal decision remains; later transition conflicts | refresh session and approval state |
+| LLM output or transport fails | deterministic state/current draft remains; no unvalidated mutation | repair provider settings or retry the feature |
+| Recommendation vector provider fails | lexical and structured scoring continue | repair provider and backfill missing vectors |
+| Desktop restore fails | automatic safety-backup rollback runs | preserve logs and safety backup if rollback also fails |
+
+Transactions are scoped to the smallest durable unit: one ingest batch, one
+Profile save/confirmation, one Tracker mutation with events, one Agent approval
+transition, or one recommendation item. PostgreSQL pool defaults are 2–20
+connections with a 5-second statement timeout. WaterlooWorks serializes service
+tasks and uses a 30-second SQLite busy timeout. Public collection uses a cross-
+platform file lock shared by manual, scheduled, and desktop invocations.
+
+The public and WaterlooWorks collectors use restart-from-source semantics rather
+than DOM/page checkpoints. Identity constraints, payload hashes, immutable
+WaterlooWorks Job IDs, advisory locks, and short transactions make full reruns
+the recovery operation.
+
+## 11. Security model
+
+- Desktop PostgreSQL and FastAPI bind random loopback ports. The renderer's API
+  requests carry a random per-launch token validated on health, API, and desktop
+  paths.
+- PostgreSQL uses a generated SCRAM password. Electron stores provider keys and
+  the database password through operating-system `safeStorage`.
+- WaterlooWorks SSO/MFA and cookies stay in the dedicated Chrome profile. Only
+  extracted posting/application records cross into application storage.
+- Resume uploads are bounded by type, signature, structure, size, active
+  content, page/text limits, and language checks. LaTeX is parsed without
+  compilation or execution.
+- Provider, resume, and job text is delimited as data. Model responses pass JSON,
+  Pydantic, and feature-domain validation before use.
+- Repositories own SQL and mutations. Destructive Tracker, resume, and restore
+  actions require direct user actions or an approval/confirmation boundary.
+- Logs and Agent memory exclude API keys, passwords, MFA codes, and cookies.
+  Public API responses exclude raw provider payloads.
+
+## 12. Installation and acceptance
+
+```mermaid
+flowchart LR
+    V[Create Python environment] --> I[Install requirements]
+    I --> P[Start PostgreSQL]
+    P --> E[Load environment]
+    E --> M[Apply ordered migrations]
+    M --> A[Start FastAPI]
+    A --> H[Check health]
+    H --> C[Run code, frontend, contract, and test gates]
+```
+
+The executable commands, scheduler setup, maintenance procedures, and failure
+interpretation are in [Operations and Verification](modules/operations.md).
+Migrations run in lexical filename order, record checksums in
+`schema_migrations`, and reject a changed applied file.
+
+Repository acceptance entry points are:
 
 ```bash
 make check
-.venv/bin/ruff format --check src tests scripts
 PYTHONPATH=src .venv/bin/python scripts/dev/verify_data_api_contract.py
 git diff --check
 ```
 
-`make check` runs Ruff, pytest, the frontend/API route contract verifier, and
-Node syntax checks for every `web/modules/*.js` file. Integration tests marked
-`db` require a migrated PostgreSQL database. Documentation records repeatable
-gates rather than expiring test counts, historical commit IDs, or one-time run
-results.
+`make check` runs Ruff, pytest, the frontend/API route verifier, JavaScript syntax
+checks, and frontend Node tests. Database-marked integration tests require a
+migrated PostgreSQL database.
 
-## 12. Authoritative module and reference documents
+## 13. Module and reference documents
 
 - [Job Ingestion](modules/job-ingestion.md)
 - [Domain and Data Normalization](modules/domain-normalization.md)
@@ -383,7 +527,7 @@ results.
 - [ATS-Style Resume Diagnostics](modules/ats-review.md)
 - [LLM-Assisted Career Tools](modules/llm-assisted-tools.md)
 - [Application Tracker](modules/tracker.md)
-- [AI Agent and Memory](modules/ai-agent.md)
+- [AI Assistant and Memory](modules/ai-agent.md)
 - [Frontend](modules/frontend.md)
 - [Operations and Verification](modules/operations.md)
 - [Desktop Application](DESKTOP.md)

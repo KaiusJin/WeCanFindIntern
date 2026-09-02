@@ -106,8 +106,9 @@ resume.
 The profile is personal data. ATS scores are calculated locally by deterministic
 server code and do not send resume content to an LLM. Profile data should be
 sent to external LLM providers only when the user explicitly uses cover-letter,
-interview, or Agent functionality and selects that provider. Provider keys
-remain in browser settings and are not persisted in the profile tables.
+interview, or Agent functionality and selects that provider. Browser mode keeps
+provider configuration in local settings; desktop mode places keys in Electron
+`safeStorage`. Provider credentials are never persisted in Profile tables.
 
 ## Verification surface
 

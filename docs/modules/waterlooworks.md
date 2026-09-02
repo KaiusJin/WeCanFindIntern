@@ -22,7 +22,7 @@ The module consists of:
 | `waterlooworks/browser.py` | Chrome discovery, launch, debug-port reuse, target selection, navigation, and JavaScript evaluation |
 | `waterlooworks/browser_scripts.py` | Shared extraction JavaScript used by job and application pages |
 | `waterlooworks/config.py` | Provider origin, board catalog, and local filesystem configuration |
-| `waterlooworks/extractor.py` | DOM/API posting extraction and provider-to-domain normalization |
+| `waterlooworks/extractor.py` | Authenticated list/detail API extraction and provider-to-domain normalization |
 | `waterlooworks/collector.py` | Board-by-board asynchronous collection and progress updates |
 | `waterlooworks/repository.py` | SQLite schema, insert-once jobs, application state, board links, run history, and queries |
 | `waterlooworks/records.py` | Shared SQLite row decoding and removal of internal fields |
@@ -57,13 +57,17 @@ The configured boards are:
 1. Open the board URL in the authenticated target.
 2. Click `All Jobs` to initialize the complete board result set.
 3. Discover the session-specific list/detail POST action tokens embedded in the board.
-4. Page through the authenticated DataViewer list API without using table/card rows.
-5. Extract the source Job IDs from API rows.
-6. Read each posting detail and overview through their authenticated APIs.
-7. Normalize and insert the posting only when its source Job ID is not already stored.
-8. Insert the `(Job ID, board)` relationship if that edge has not been observed before.
+4. Detect and record the active table/card display mode while remaining independent
+   from its responsive rows.
+5. Page through the authenticated DataViewer list API at 100 records per request.
+6. Compare every source Job ID with the SQLite set returned by `known_job_ids()`.
+7. Return known IDs as lightweight observations and fetch new posting detail and
+   overview data in batches of six concurrent requests.
+8. Normalize and insert each new posting, then insert or refresh its `(Job ID,
+   board)` relationship.
 9. Record discovered, newly inserted, already-known, and failed counts for the board.
-10. Continue to the next board even when this board fails.
+10. Mark an account/term-inaccessible board as `skipped`; isolate other board or
+    posting errors and continue to the next board.
 
 The collector updates the shared `WaterlooWorksSnapshot`, so the UI can display progress without waiting for the whole run.
 
@@ -76,13 +80,16 @@ sequenceDiagram
     loop each configured board
         S->>C: navigate and wait for authenticated shell
         C->>C: click All Jobs to initialize the result set
-        C->>D: discover board API actions
-        D->>C: POST paginated list API and discover Job IDs
-        loop each posting
-            D->>C: POST detail and overview APIs
-            D->>Q: insert new Job ID or update freshness
+        alt board available to this account and term
+            C->>D: discover same-origin board API actions
+            D->>C: POST list pages of 100 and discover Job IDs
+            D->>Q: compare IDs with the complete known-ID set
+            D->>C: POST detail and overview for new IDs in batches of 6
+            D->>Q: insert new jobs and refresh all observations/board edges
+            Q-->>S: board counters and errors
+        else access conditions prevent search
+            S->>Q: persist skipped board and reason
         end
-        Q-->>S: board counters and errors
     end
     S-->>S: finish success or partial run
 ```
@@ -97,20 +104,62 @@ Salary extraction converts WaterlooWorks fields into minimum, maximum, interval,
 
 `WaterlooWorksRepository` opens the configured SQLite file with foreign keys and a 30-second busy timeout. Its schema stores jobs, board memberships, collection runs, and per-board run rows. Writes are keyed by `source_job_id`.
 
-On startup, the service reads the most recent run and reconstructs the UI snapshot. Job content is immutable by source Job ID: a normal re-encounter is counted separately as already known and does not rewrite the posting payload, description, deadline, salary, or derived classification. It updates only `last_seen_at`. A missing board edge may be inserted, while an existing edge updates only its own `last_seen_at`. Schema compatibility upgrades may add missing columns, but they do not backfill or delete existing job content. Submitted-application status remains independently refreshable in `waterlooworks_applications` and Tracker.
+On startup, the service reads the most recent run and reconstructs the UI
+snapshot. Job content is immutable by source Job ID: a normal re-encounter is
+counted separately as already known and does not rewrite the posting payload,
+description, deadline, salary, or derived classification. It updates only
+`last_seen_at`. A missing board edge may be inserted, while an existing edge
+updates only its own `last_seen_at`. Submitted-application status remains
+independently refreshable in `waterlooworks_applications` and Tracker.
 
-List queries support board, text query, company, skill, category, location, work mode, canonical opportunity type, posted date, limit, cursor, and `include_description`. `full_cycle` and `employer_student_direct` map to `opportunity_type=co_op`; they are not silently relabeled as internships. The Campus board contributes `part_time` employment/schedule evidence but does not force an opportunity type, because schedule and opportunity are separate dimensions. Pagination is cursor-based and responses expose `total_count`, `next_cursor`, and `has_more`. List and detail responses use the same row decoder and remove all storage-internal fields.
+List queries support repeated boards (including the synthetic `applications`
+source), text query, free-text location, company, skill, category, city, region,
+country, repeated work modes, repeated canonical opportunity types, posted date,
+limit, cursor, and the repository-only `include_description` switch.
+`full_cycle` and `employer_student_direct` map to `opportunity_type=co_op`.
+The Campus board contributes `part_time` employment/schedule evidence while
+opportunity type remains independently classified. Pagination is cursor-based
+and responses expose `total_count`, `last_updated_at`, `next_cursor`, and
+`has_more`. List and detail responses use the same row decoder and remove all
+storage-internal fields.
 
 ## Service states
 
-The shared snapshot includes `idle`, `waiting_for_login`, `ready`, `collecting`, `importing`, `completed`, `partial`, and `failed`-style states as produced by the service/collector, together with browser state, page URL, run timestamps, run id, totals, and per-board counters.
+The shared service snapshot uses `idle`, `waiting_for_login`, `ready`,
+`collecting`, `syncing_applications`, `completed`, `partial`, and `failed`.
+It includes browser state, page URL, run timestamps, run ID, totals, and per-board
+counters. Each live board uses `pending`, `collecting`, `completed`, `skipped`,
+or `failed` and also reports its detected display mode.
+
+```mermaid
+stateDiagram-v2
+    [*] --> idle
+    idle --> waiting_for_login: launch or reconnect
+    waiting_for_login --> ready: authenticated account path detected
+    ready --> collecting: posting sync accepted
+    ready --> syncing_applications: submitted sync accepted
+    collecting --> completed: all available boards and postings succeed
+    collecting --> partial: board or posting failure recorded
+    syncing_applications --> completed: all records synchronize
+    syncing_applications --> partial: storage or Tracker item fails
+    collecting --> failed: run-level exception
+    syncing_applications --> failed: run-level exception
+    completed --> idle: dedicated target closes
+    partial --> idle: dedicated target closes
+    failed --> idle: dedicated target closes
+```
 
 - `launch`: opens/reuses Chrome and sets waiting-for-login.
 - `get_status`: reconnects to the debug port, checks target/auth/page readiness, and reports whether the browser closed.
-- `start_collection`: refuses to start without an authenticated WaterlooWorks target; refuses to start a second active collection; launches a task and returns immediately.
+- `start_collection`: requires an authenticated WaterlooWorks target; returns the
+  current snapshot when another collection/application-sync task owns the
+  service; otherwise launches a task and returns immediately.
 - `close`: cancels an active collector and closes the browser session.
 
-If a board cannot be reached, the board is marked failed and the run can finish as partial. If the browser closes, the service reports idle/closed-browser state rather than claiming a successful sync.
+If the account or recruiting term is not eligible to search a board, that board
+is `skipped` and the run can still complete. Navigation, API-contract, or posting
+errors are failures and can produce a partial run. If the browser closes, the
+service reports the closed/idle state.
 
 ## Retry and restart behavior
 
@@ -137,6 +186,7 @@ contention; it is not a general retry loop for a permanently locked database.
 |---|---|---|
 | Waterloo SSO/MFA is incomplete | `waiting_for_login` | finish sign-in in the dedicated window, then refresh status |
 | Authenticated browser is ready | collection request is accepted with 202 | follow per-board progress until success/partial |
+| Account/term cannot search one board | board is `skipped`; the run can still complete | use the available boards returned for the account |
 | One board cannot load | other boards continue and the run becomes `partial` | retain imported jobs, correct the browser/source issue, rerun all boards |
 | One posting cannot be parsed | posting failure/count is recorded | rerun collection; known Job IDs remain idempotent |
 | Chrome closes during a run | task stops with closed/idle state | launch the dedicated profile and rerun |
@@ -154,12 +204,14 @@ contention; it is not a general retry loop for a permanently locked database.
   `getPostingData` and `getPostingOverview` APIs for complete descriptions,
   inserts missing jobs locally, and idempotently mirrors all application
   statuses into Tracker.
-- `GET /api/v1/waterlooworks/jobs` with board, query, company, skill,
-  category, city, region, country, work mode, opportunity type, posted-after,
-  limit, and cursor filters
+- `GET /api/v1/waterlooworks/jobs` with repeated board, repeated work-mode,
+  repeated opportunity-type, query, free-text location, company, skill,
+  category, city, region, country, posted-after, limit, and cursor filters
 - `GET /api/v1/waterlooworks/jobs/{source_job_id}`
 
-Invalid board values are rejected. Not-connected/not-authenticated collection requests return an error instead of opening an uncontrolled browser workflow.
+Not-connected or unauthenticated collection requests return a conflict response.
+A board filter outside the stored board vocabulary produces an empty matching
+set rather than changing source data.
 
 Application status mapping is deterministic: `Not Selected` becomes
 `rejected`, `Selected for Interview` becomes `interview`, `Employed` becomes

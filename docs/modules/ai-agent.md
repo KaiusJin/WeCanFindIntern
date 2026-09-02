@@ -1,4 +1,4 @@
-# AI Agent and Memory Module
+# AI Assistant and Memory Module
 
 ## Purpose
 
@@ -27,14 +27,13 @@ The Agent is a controlled natural-language interface over Profile, Jobs, Waterlo
 
 Immediate tools execute in the current turn: `get_profile`, `search_jobs`, `get_job_details`, `analyse_job`, `compare_jobs`, `list_tracker`, `recommend_jobs`, `propose_profile_update`, `generate_interview_questions`, `add_into_tracker`, and `update_tracker_stage`.
 
-The Agent composer can attach up to five jobs to one message. New clients send
-them as `context.jobs`; the request model still accepts the former singular
-`context.job` shape for compatibility. `compare_jobs` accepts two to five
-source-aware `JobReference` values, resolves current job data from the domain
-repositories, and ranks the jobs with the same bounded Profile/preference fit
-signals used by recommendations. It returns the recommended job, score margin,
-trade-offs, missing evidence, and confidence. Expired roles remain visible but
-cannot outrank an open role.
+The Agent composer can attach up to five jobs to one message through
+`context.jobs`. `compare_jobs` accepts two to five source-aware `JobReference`
+values, resolves current job data from the domain repositories, and ranks the
+jobs with the same bounded Profile/preference fit signals used by
+recommendations. It returns the recommended job, score margin, trade-offs,
+missing evidence, and confidence. Expired roles remain visible but cannot
+outrank an open role.
 
 `analyse_job` runs one evidence-constrained model analysis over a source-aware
 job's complete JD and the confirmed Profile. It extracts responsibilities and
@@ -51,6 +50,12 @@ analysis results are rendered directly into the assistant message in the
 user's language; they do not require a separate reply-composer model call.
 
 `add_into_tracker` immediately adds a record to Tracker at the initial Interested stage, and `update_tracker_stage` immediately changes Tracker stages. The confirmation-required write tools are `remove_from_tracker` (can remove a record at any Tracker stage) and `update_profile`.
+
+| Tool class | Tools | Execution boundary |
+|---|---|---|
+| Repository/model reads | `get_profile`, `search_jobs`, `get_job_details`, `analyse_job`, `compare_jobs`, `list_tracker`, `recommend_jobs`, `propose_profile_update`, `generate_interview_questions` | validate and execute in the current turn |
+| Immediate Tracker writes | `add_into_tracker`, `update_tracker_stage` | execute through `TrackerRepository`, persist tool/audit result, then refresh Tracker state |
+| Approval-gated writes | `remove_from_tracker`, `update_profile` | persist exact arguments and preview; execute only after a single pending-to-approved transition |
 
 `JobReference` is the stable cross-source identity: `source=public` uses a public UUID and `source=waterloo_work` uses a WaterlooWorks Job ID. The Agent must resolve a title/company phrase through search; if multiple results remain, it asks the user to choose rather than guessing.
 
@@ -135,10 +140,10 @@ flowchart TD
     E -->|yes| F[Atomically approve or deny persisted arguments]
     E -->|no| G[Plan one strict-JSON step]
     G --> H{Step type}
-    H -->|read| I[Validate and execute bounded tool]
+    H -->|read or immediate Tracker write| I[Validate and execute bounded tool]
     I --> J[Feed delimited result into next round]
     J --> G
-    H -->|write| K[Persist preview and pending approval; stop]
+    H -->|approval-gated write| K[Persist preview and pending approval; stop]
     H -->|final reply| L[Compose and persist assistant result]
     F --> L
     K --> M[Return approval card and turn result]
@@ -255,7 +260,8 @@ fall back to lexical/skill signals when vector or optional review is unavailable
 |---|---|---|
 | Read request with one stable match | tool runs in the current bounded loop | render result and audit/tool metadata |
 | Job phrase matches multiple records | no mutation; choices use source-aware references | select a public UUID or WaterlooWorks Job ID |
-| Planner requests a write tool | exact arguments and preview become pending approval | approve or deny the displayed change |
+| Planner requests Tracker add/stage update | validated write executes and is audited in the current turn | refresh/render authoritative Tracker state |
+| Planner requests Tracker removal or Profile save | exact arguments and preview become pending approval | approve or deny the displayed change |
 | Approval button/message is repeated | repository returns the first terminal decision or conflict | refresh session and Tracker/Profile state |
 | Planner repeats the same tool call | duplicate is audited and the loop terminates | rephrase only if a different operation is intended |
 | First planning call fails or output is malformed | safe assistant result is persisted; no write occurs | correct provider configuration or retry/rephrase |
