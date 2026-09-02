@@ -10,6 +10,10 @@ const mainSource = await readFile(
   new URL("../../web/modules/main.js", import.meta.url),
   "utf8",
 );
+const indexSource = await readFile(
+  new URL("../../web/index.html", import.meta.url),
+  "utf8",
+);
 
 test("interview drafts, recordings, and reports are isolated per question", () => {
   assert.match(interviewSource, /responses:\s*new Map\(\)/);
@@ -49,4 +53,10 @@ test("record button labels reflect the active question only", () => {
   assert.match(interviewSource, /\? "Analyzing…"/);
   assert.doesNotMatch(interviewSource, /Transcribing audio locally/);
   assert.match(mainSource, /interview-answer-flow-v2/);
+});
+
+test("practice history is visible when the Interview section opens", () => {
+  assert.match(indexSource, /<div id="interview-history-card" class="career-card"[^>]*>/);
+  assert.doesNotMatch(indexSource, /id="interview-history-card"[^>]*\shidden(?:\s|>)/);
+  assert.match(interviewSource, /refreshHistory\(\);\s*$/);
 });

@@ -82,15 +82,8 @@ button {
 
 
 .ww-workspace { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, .8fr); gap: 20px; padding: 0 28px 64px; }
-.ww-connection-card, .ww-side-panel, .ww-jobs-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 24px; }
-.ww-card-heading, .ww-side-heading { align-items: flex-start; display: flex; justify-content: space-between; gap: 16px; }
-.ww-card-heading h2 { font-size: 22px; margin: 3px 0 0; }
+.ww-jobs-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 24px; }
 .ww-update-times { display: grid; gap: 4px; justify-items: end; text-align: right; }
-.ww-actions { align-items: center; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; padding-top: 20px; }
-.ww-actions .text-button { margin-left: auto; }
-.ww-actions button:disabled { cursor: not-allowed; opacity: .5; }
-.ww-side-panel { grid-row: auto; }
-.ww-side-heading span { background: #edf2f4; border-radius: 999px; color: var(--dark-mint); font-size: 11px; font-weight: 700; padding: 5px 9px; }
 .ww-board-list { display: grid; margin-top: 15px; }
 .ww-board-list > div { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 12px; padding: 14px 0; }
 .ww-board-list strong { font-size: 13px; }
@@ -105,25 +98,19 @@ button {
 .ww-stat-grid span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .ww-stat-grid strong { font-size: 23px; }
 .ww-jobs-card { grid-column: 1 / -1; }
-.ww-job-filters { display: grid; gap: 10px; grid-template-columns: minmax(220px, 1fr) minmax(190px, auto) auto; margin: 20px 0; }
-.ww-job-filters input, .ww-job-filters select { border: 1px solid var(--line); border-radius: 10px; font: inherit; padding: 10px 12px; }
 .ww-job-list { display: grid; gap: 12px; }
 @keyframes ww-pulse { 50% { opacity: .3; transform: scale(.75); } }
 
 @media (max-width: 900px) {
   .ww-workspace { grid-template-columns: 1fr; padding: 0 20px 50px; }
-  .ww-side-panel, .ww-jobs-card { grid-column: auto; grid-row: auto; }
+  .ww-jobs-card { grid-column: auto; grid-row: auto; }
 }
 
 @media (max-width: 600px) {
   .ww-workspace { padding: 0 0 40px; }
-  .ww-connection-card, .ww-side-panel, .ww-jobs-card { border-radius: 14px; padding: 18px; }
-  .ww-card-heading { align-items: flex-start; flex-direction: column; }
-  .ww-actions { align-items: stretch; flex-direction: column; }
-  .ww-actions .text-button { margin-left: 0; }
+  .ww-jobs-card { border-radius: 14px; padding: 18px; }
   .ww-stat-grid { grid-template-columns: repeat(2, 1fr); row-gap: 18px; }
   .ww-stat-grid > div:nth-child(odd) { border-left: 0; padding-left: 0; }
-  .ww-job-filters { grid-template-columns: 1fr; }
 }
 
 /* Profile workspace */
@@ -3667,76 +3654,6 @@ button.tracker-stat-card.active {
   border-color: #a9bdc6;
 }
 
-.agent-attachment-preview {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  margin-bottom: 9px;
-  max-width: 100%;
-}
-
-.agent-attachment-item {
-  align-items: center;
-  background: var(--paper);
-  border: 1px solid #a9bdc6;
-  border-radius: 11px;
-  display: inline-flex;
-  gap: 9px;
-  max-width: min(100%, 520px);
-  padding: 7px 9px;
-}
-
-.agent-attachment-icon {
-  align-items: center;
-  background: var(--mint);
-  border-radius: 7px;
-  color: var(--dark-mint);
-  display: inline-flex;
-  flex: 0 0 28px;
-  height: 28px;
-  justify-content: center;
-}
-
-.agent-attachment-copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.agent-attachment-copy small {
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.agent-attachment-copy strong {
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-attachment-item [data-remove-attached-job] {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  display: inline-flex;
-  font-size: 18px;
-  height: 26px;
-  justify-content: center;
-  margin-left: 6px;
-  padding: 0;
-  width: 26px;
-}
-
-.agent-attachment-item [data-remove-attached-job]:hover {
-  color: #a33;
-}
-
 .agent-attach-dialog {
   max-width: 680px;
   width: min(680px, calc(100vw - 32px));
@@ -4264,8 +4181,6 @@ main {
 .job-card,
 .career-form-panel,
 .career-card,
-.ww-connection-card,
-.ww-side-panel,
 .ww-jobs-card,
 .profile-editor-panel,
 .profile-section-card,
@@ -4280,8 +4195,6 @@ main {
 
 .career-form-panel,
 .career-card,
-.ww-connection-card,
-.ww-side-panel,
 .ww-jobs-card,
 .profile-editor-panel {
   padding: 20px;
@@ -4429,8 +4342,6 @@ main {
 
   .career-form-panel,
   .career-card,
-  .ww-connection-card,
-  .ww-side-panel,
   .ww-jobs-card,
   .profile-editor-panel {
     padding: 16px;

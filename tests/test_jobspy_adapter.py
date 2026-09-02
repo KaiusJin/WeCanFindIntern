@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 
 import pandas as pd
 import pytest
+from jobspy.model import JobType
 
 from wecanfindintern.ingestion.jobspy_adapter import (
     JOBSPY_COLUMNS,
@@ -51,6 +53,25 @@ def test_empty_frame_receives_stable_columns() -> None:
 
 def test_pandas_missing_value_becomes_none() -> None:
     assert clean_scalar(pd.NA) is None
+
+
+def test_job_type_enums_become_json_safe_canonical_values() -> None:
+    frame = stabilize_jobspy_frame(
+        pd.DataFrame(
+            [
+                {
+                    **sample_row(),
+                    "job_type": [JobType.INTERNSHIP, JobType.FULL_TIME],
+                }
+            ]
+        )
+    )
+
+    record = dataframe_to_records(frame)[0]
+
+    assert record["job_type"] == ["internship", "fulltime"]
+    assert normalize_record(record).employment_types == ["internship", "fulltime"]
+    json.dumps(record)
 
 
 def test_normalize_jobspy_record() -> None:
@@ -123,3 +144,18 @@ def test_linkedin_detail_merge_preserves_current_card_metadata() -> None:
     assert merged.description == "Cached full job description"
     assert merged.job_function == "Engineering"
     assert merged.details_fetched_at == fetched_at
+
+
+def test_linkedin_detail_merge_cleans_job_type_enums_for_snapshot_payload() -> None:
+    row = sample_row()
+    row.update({"site": "linkedin", "id": "li-123"})
+    job = normalize_record(row)
+
+    merged = merge_linkedin_details(
+        job,
+        {"job_type": [JobType.INTERNSHIP, JobType.FULL_TIME]},
+    )
+
+    assert merged.employment_types == ["internship", "fulltime"]
+    assert merged.raw["job_type"] == ["internship", "fulltime"]
+    json.dumps(merged.raw)

@@ -735,42 +735,6 @@ def _compose_prompts(
     return system_prompt, user_prompt
 
 
-def compose_reply(
-    *,
-    llm_config: AgentDeps,
-    user_message: str,
-    tool_summaries: list[str],
-    context: dict[str, Any] | None,
-    awaiting_approval: bool,
-    working_context: WorkingContext | None = None,
-) -> str:
-    """Generate the final assistant reply from executed read-tool results."""
-
-    if llm_config.llm_config is None:
-        raise ToolError("llm_config_missing", "AI model configuration is required.")
-    config = llm_config.llm_config
-    system_prompt, user_prompt = _compose_prompts(
-        user_message=user_message,
-        tool_summaries=tool_summaries,
-        context=context,
-        awaiting_approval=awaiting_approval,
-        working_context=working_context,
-    )
-    result = complete_json(
-        provider=config.provider,
-        model_name=config.model_name,
-        api_key=config.api_key,
-        api_base=config.api_base,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        response_format=json_response_format(config.provider),
-    )
-    reply = result.data.get("reply") if isinstance(result.data, dict) else None
-    if not isinstance(reply, str) or not reply.strip():
-        raise ToolError("llm_failed", "Agent reply composer returned an empty response.")
-    return reply
-
-
 def comparison_reply(result: dict[str, Any], user_message: str) -> str:
     """Render the compare tool's evidence without another model call."""
 

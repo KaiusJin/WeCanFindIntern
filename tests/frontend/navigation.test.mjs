@@ -5,6 +5,8 @@ import test from "node:test";
 const indexSource = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
 const shellSource = await readFile(new URL("../../web/app-shell.css", import.meta.url), "utf8");
 const navigationSource = await readFile(new URL("../../web/modules/navigation.js", import.meta.url), "utf8");
+const heatmapSource = await readFile(new URL("../../web/modules/heatmap.js", import.meta.url), "utf8");
+const waterlooWorksSource = await readFile(new URL("../../web/modules/waterlooworks.js", import.meta.url), "utf8");
 const profileSource = await readFile(new URL("../../web/modules/profile.js", import.meta.url), "utf8");
 
 const sidebarSource = indexSource.match(/<aside id="app-sidebar"[\s\S]*?<\/aside>/)?.[0] || "";
@@ -56,6 +58,13 @@ test("Public Jobs owns List and Map while WaterlooWorks keeps a separate dataset
   assert.match(indexSource, /id="ww-jobs-scroll-content" class="results-scroll-content"/);
   assert.match(indexSource, /id="public-job-detail-pane"/);
   assert.match(indexSource, /id="ww-job-detail-pane"/);
+});
+
+test("shared modules use one cache-busted URL", () => {
+  assert.match(heatmapSource, /navigation\.js\?v=20260901-app-shell-v4/);
+  assert.doesNotMatch(heatmapSource, /from "\.\/navigation\.js";/);
+  assert.match(waterlooWorksSource, /helpers\.js\?v=20260901-error-dialog-minimal-v1/);
+  assert.doesNotMatch(waterlooWorksSource, /helpers\.js\?v=20260901-waterlooworks-filters-v1/);
 });
 
 test("leaving the AI Agent closes only its open dialogs", () => {

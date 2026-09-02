@@ -19,7 +19,7 @@ from wecanfindintern.agent.recommend.documents import (
     build_waterloo_document,
     vector_literal,
 )
-from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig, EmbeddingGateway
+from wecanfindintern.agent.recommend.embeddings import EmbeddingGateway
 from wecanfindintern.waterlooworks.config import waterlooworks_database_path
 from wecanfindintern.waterlooworks.records import decode_waterlooworks_job
 
@@ -61,83 +61,6 @@ class IndexReport:
     chunks_embedded: int = 0
     embedding_errors: int = 0
     indexing_errors: int = 0
-
-
-async def refresh_after_ingestion(
-    pool: AsyncConnectionPool,
-    *,
-    page_size: int = 200,
-    force_full: bool = False,
-) -> dict[str, int | str]:
-    """Refresh the recommendation index for both sources after ingestion dedupe.
-
-    Modes:
-    - No embedding configuration: skip entirely (the API's maintenance loop still
-      keeps the lexical document index fresh at runtime).
-    - First run with an embedding profile (no vectors yet): full index of every
-      existing public and WaterlooWorks job, then embed all missing chunks.
-    - Otherwise: incremental — drain the trigger-fed queue for public jobs,
-      hash-diff the WaterlooWorks documents, and embed missing chunks.
-    """
-
-    skipped = {
-        "mode": "skipped_no_embedding_config",
-        "documents_scanned": 0,
-        "documents_updated": 0,
-        "chunks_embedded": 0,
-        "embedding_errors": 0,
-        "indexing_errors": 0,
-    }
-    embedding_config = EmbeddingConfig.from_env()
-    if embedding_config is None:
-        return skipped
-    indexer = RecommendationIndexer(pool, embedder=EmbeddingGateway(embedding_config))
-    async with pool.connection() as connection:
-        row = await (
-            await connection.execute(
-                """SELECT count(*) AS n FROM recommendation_chunk_embeddings
-                WHERE provider=%s AND model=%s AND dimensions=%s;""",
-                (
-                    embedding_config.provider,
-                    embedding_config.model,
-                    embedding_config.dimensions,
-                ),
-            )
-        ).fetchone()
-    full = force_full or row["n"] == 0
-    scanned = updated = embedding_errors = indexing_errors = 0
-    if full:
-        public_report = await indexer.index_public_jobs()
-        scanned += public_report.scanned
-        updated += public_report.updated
-        embedding_errors += public_report.embedding_errors
-        indexing_errors += public_report.indexing_errors
-    else:
-        while True:
-            report = await indexer.index_pending(limit=page_size)
-            scanned += report.scanned
-            updated += report.updated
-            embedding_errors += report.embedding_errors
-            indexing_errors += report.indexing_errors
-            if report.scanned == 0 or report.scanned < page_size:
-                break
-    waterloo_items = await asyncio.to_thread(load_waterloo_jobs_from_sqlite)
-    waterloo_report = await indexer.index_waterloo_jobs(waterloo_items)
-    scanned += waterloo_report.scanned
-    updated += waterloo_report.updated
-    embedding_errors += waterloo_report.embedding_errors
-    indexing_errors += waterloo_report.indexing_errors
-    embedding_report = await indexer.embed_missing_primary_chunks()
-    embedding_errors += embedding_report.embedding_errors
-    indexing_errors += embedding_report.indexing_errors
-    return {
-        "mode": "full" if full else "incremental",
-        "documents_scanned": scanned,
-        "documents_updated": updated,
-        "chunks_embedded": embedding_report.chunks_embedded,
-        "embedding_errors": embedding_errors,
-        "indexing_errors": indexing_errors,
-    }
 
 
 class RecommendationIndexer:

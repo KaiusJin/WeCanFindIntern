@@ -14,35 +14,6 @@ from wecanfindintern.agent.memory.models import (
 from wecanfindintern.llm.gateway import complete_json
 
 
-def extraction_schema() -> dict:
-    return {
-        "type": "OBJECT",
-        "properties": {
-            "memories": {
-                "type": "ARRAY",
-                "items": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "memoryType": {"type": "STRING", "enum": sorted(MEMORY_TYPES)},
-                        "content": {"type": "STRING"},
-                        "confidence": {"type": "NUMBER"},
-                        "sourceMessageId": {"type": "STRING"},
-                        "ttlDays": {"type": "INTEGER"},
-                    },
-                    "required": [
-                        "memoryType",
-                        "content",
-                        "confidence",
-                        "sourceMessageId",
-                        "ttlDays",
-                    ],
-                },
-            }
-        },
-        "required": ["memories"],
-    }
-
-
 def validate_extraction_payload(parsed: dict, known_message_ids: set[str]) -> None:
     if not isinstance(parsed, dict) or "memories" not in parsed:
         raise ValueError("Extraction response must contain a memories array.")

@@ -57,11 +57,4 @@ class WaterlooWorksJobPage(BaseModel):
     has_more: bool
 
 
-class WaterlooWorksSyncCounts(BaseModel):
-    stored: int = 0
-    new_jobs: int = 0
-    detail_failures: int = 0
-    failed: int = 0
-
-
 WaterlooWorksPayload = dict[str, Any]

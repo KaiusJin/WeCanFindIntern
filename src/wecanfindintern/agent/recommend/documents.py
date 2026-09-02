@@ -205,7 +205,3 @@ def chunk_document(text: str) -> list[str]:
 
 def vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(format(value, ".9g") for value in vector) + "]"
-
-
-def stable_metadata_json(metadata: dict[str, Any]) -> str:
-    return json.dumps(metadata, ensure_ascii=False, sort_keys=True, default=str)

@@ -1,5 +1,5 @@
 import { $, escapeHtml, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
-import { switchTab } from "./navigation.js";
+import { switchTab } from "./navigation.js?v=20260901-app-shell-v4";
 import { applyRegionFilter } from "./jobs.js?v=20260901-agent-jd-drawer-v1";
 
 // =========================================================
@@ -91,7 +91,7 @@ function hideTooltip() {
   if (tooltip) tooltip.hidden = true;
 }
 
-function renderUsMap(states, counts, nameLookup, maxCount) {
+function renderUsMap(states, counts, maxCount) {
   const container = $("#heatmap-us");
   if (!container) return;
   const width = 960;
@@ -150,7 +150,7 @@ function attachRegionSelection(selection) {
     });
 }
 
-function renderCaMap(geojson, counts, nameLookup, maxCount) {
+function renderCaMap(geojson, counts, maxCount) {
   const container = $("#heatmap-ca");
   if (!container) return;
   const width = 760;
@@ -192,10 +192,8 @@ async function loadHeatmap() {
     const data = await response.json();
 
     const counts = {};
-    const nameLookup = { US: {}, CA: {} };
     for (const region of data.regions) {
       counts[`${region.country}:${region.region_code}`] = region.count;
-      nameLookup[region.country][region.region_code] = region.region_name;
     }
     const maxCount = data.regions.length ? data.regions[0].count : 0;
 
@@ -211,8 +209,8 @@ async function loadHeatmap() {
     await ensureD3();
     const usTopo = await (await fetch("/vendor/us-states-10m.json")).json();
     const caGeo = await (await fetch("/vendor/canada-provinces.geojson")).json();
-    renderUsMap(getTopojson().feature(usTopo, usTopo.objects.states), counts, nameLookup, maxCount);
-    renderCaMap(caGeo, counts, nameLookup, maxCount);
+    renderUsMap(getTopojson().feature(usTopo, usTopo.objects.states), counts, maxCount);
+    renderCaMap(caGeo, counts, maxCount);
   } catch (err) {
     showErrorDialog(err, { title: "Heat map unavailable" });
   }

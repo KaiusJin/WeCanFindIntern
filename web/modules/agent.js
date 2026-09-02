@@ -4,7 +4,6 @@ import {
   renderMarkdown,
   fetchWithTimeout,
   showErrorDialog,
-  workModeLabel,
 } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { readSseEvents } from "./sse.js";
 import { syncDialogScrollLock, validateAiConfig } from "./settings.js?v=20260901-settings-v1";
@@ -61,12 +60,6 @@ function restoreSession() {
 }
 
 function updateContextChip() {
-  const preview = $("#agent-attachment-preview");
-  if (preview) {
-    // Keep the composer compact. Full attachment details live in the picker.
-    preview.hidden = true;
-    preview.innerHTML = "";
-  }
   const attachButton = $("#agent-attach-jobs");
   const count = attachedJobContexts.length;
   const label = attachButton?.querySelector("span:last-child");

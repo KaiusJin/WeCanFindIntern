@@ -31,23 +31,6 @@ KEY_ALIASES: dict[str, set[str]] = {
 }
 
 
-def summary_schema() -> dict:
-    list_of_strings = {"type": "ARRAY", "items": {"type": "STRING"}}
-    return {
-        "type": "OBJECT",
-        "properties": {
-            "topicsCovered": list_of_strings,
-            "userGoals": list_of_strings,
-            "establishedFacts": list_of_strings,
-            "preferencesStated": list_of_strings,
-            "unresolvedQuestions": list_of_strings,
-            "importantMessageIds": list_of_strings,
-            "narrative": {"type": "STRING"},
-        },
-        "required": sorted(SUMMARY_KEYS),
-    }
-
-
 def previous_important_ids(previous_summary_json: str | None) -> set[str]:
     if not previous_summary_json:
         return set()

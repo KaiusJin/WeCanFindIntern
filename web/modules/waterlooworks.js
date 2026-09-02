@@ -8,7 +8,7 @@ import {
   renderJobDetail,
   showErrorDialog,
   workModeLabel,
-} from "./helpers.js?v=20260901-waterlooworks-filters-v1";
+} from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import {
   BOOKMARK_FILLED,
   BOOKMARK_OUTLINE,

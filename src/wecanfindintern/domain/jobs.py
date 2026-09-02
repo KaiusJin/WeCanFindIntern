@@ -42,13 +42,6 @@ class WorkMode(StrEnum):
     UNKNOWN = "unknown"
 
 
-class JobStatus(StrEnum):
-    ACTIVE = "active"
-    POSSIBLY_CLOSED = "possibly_closed"
-    CLOSED = "closed"
-    EXPIRED = "expired"
-
-
 class SalaryRange(BaseModel):
     interval: str | None = None
     minimum: Decimal | None = None

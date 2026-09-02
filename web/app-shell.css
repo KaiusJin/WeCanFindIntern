@@ -1059,8 +1059,6 @@ body {
 .job-card,
 .career-form-panel,
 .career-card,
-.ww-connection-card,
-.ww-side-panel,
 .ww-jobs-card,
 .profile-editor-panel,
 .profile-section-card,
@@ -1259,8 +1257,7 @@ body {
 
   #ww-jobs-card,
   #ww-jobs-card > .results-scroll-content,
-  .ww-job-list,
-  .ww-side-panel {
+  .ww-job-list {
     display: block;
     overflow: visible;
   }

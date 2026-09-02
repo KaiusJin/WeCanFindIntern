@@ -48,4 +48,6 @@ test("job-card view actions keep the Agent open and show a blurred JD drawer", (
 test("the Attach jobs dialog is hidden until it is opened", () => {
   assert.match(stylesSource, /\.agent-attach-dialog\[open\]\s*\{\s*display: flex;/);
   assert.match(indexSource, /styles\.css\?v=20260901-loading-layout-v1/);
+  assert.doesNotMatch(indexSource, /id="agent-attachment-preview"/);
+  assert.doesNotMatch(moduleSource, /#agent-attachment-preview/);
 });

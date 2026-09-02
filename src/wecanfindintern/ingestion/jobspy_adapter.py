@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from datetime import UTC, date, datetime
+from enum import Enum
 from typing import Any, Literal
 
 import pandas as pd
@@ -239,6 +240,17 @@ def dataframe_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
 def clean_scalar(value: Any) -> Any:
     if value is None:
         return None
+    if isinstance(value, Enum):
+        enum_value = value.value
+        # JobSpy's JobType values are tuples of localized aliases. The first
+        # entry is its canonical wire value (for example, "fulltime").
+        if isinstance(enum_value, tuple) and enum_value:
+            enum_value = enum_value[0]
+        return clean_scalar(enum_value)
+    if isinstance(value, Mapping):
+        return {str(key): clean_scalar(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [clean_scalar(item) for item in value]
     if isinstance(value, float) and math.isnan(value):
         return None
     try:
@@ -256,12 +268,14 @@ def clean_scalar(value: Any) -> Any:
     if hasattr(value, "item") and not isinstance(value, (str, bytes)):
         with suppress(ValueError, AttributeError):
             value = value.item()
+            return clean_scalar(value)
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     return value
 
 
 def normalize_record(record: dict[str, Any]) -> NormalizedJob:
+    record = {key: clean_scalar(value) for key, value in record.items()}
     source = _required_text(record.get("site"), "site")
     source_url = _required_text(record.get("job_url"), "job_url")
     title = _required_text(record.get("title"), "title")
@@ -351,7 +365,7 @@ def merge_linkedin_details(
     for field in LINKEDIN_DETAIL_FIELDS:
         value = details.get(field)
         if value is not None and value != "":
-            raw[field] = value
+            raw[field] = clean_scalar(value)
     if raw.get("description") and not raw.get("emails"):
         raw["emails"] = extract_emails_from_text(raw["description"])
     merged = normalize_record(raw)
