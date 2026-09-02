@@ -15,6 +15,9 @@ from wecanfindintern.waterlooworks.applications import (
     WATERLOOWORKS_APPLICATIONS_URL,
 )
 from wecanfindintern.waterlooworks.browser import ChromeSession, find_chrome_binary
+from wecanfindintern.waterlooworks.browser_scripts import (
+    WATERLOOWORKS_API_READINESS_SCRIPT,
+)
 from wecanfindintern.waterlooworks.collector import WaterlooWorksCollector
 from wecanfindintern.waterlooworks.config import (
     WATERLOOWORKS_BOARDS,
@@ -102,7 +105,7 @@ class WaterlooWorksService:
                 self.snapshot.status = "waiting_for_login"
                 self.snapshot.message = (
                     "Chrome is open. Complete Waterloo SSO/MFA; the importer will open "
-                    "each board and click All Jobs automatically."
+                    "All Jobs on each board, then read its authenticated job API."
                 )
                 return self.snapshot.payload()
             try:
@@ -117,8 +120,8 @@ class WaterlooWorksService:
             self.snapshot.browser_open = True
             self.snapshot.status = "waiting_for_login"
             self.snapshot.message = (
-                "Complete Waterloo SSO/MFA; the importer will open each board and click "
-                "All Jobs automatically."
+                "Complete Waterloo SSO/MFA; the importer will open All Jobs on each board, "
+                "then read its authenticated job API."
             )
             return self.snapshot.payload()
 
@@ -133,13 +136,19 @@ class WaterlooWorksService:
                     self.snapshot.message = "The dedicated Chrome window is closed."
                 self.snapshot.browser_open = False
                 self.snapshot.page_url = None
+                self._minimize_attempted_for_login = False
                 return self.snapshot.payload()
 
-            self.snapshot.browser_open = True
-            if self.snapshot.status in {"completed", "partial", "failed"}:
-                return self.snapshot.payload()
             target = await self.session.find_target("waterlooworks.uwaterloo.ca")
             if not target:
+                if self.snapshot.status in {"completed", "partial", "failed", "ready"}:
+                    self.snapshot.status = "idle"
+                    self.snapshot.message = "The dedicated WaterlooWorks window is closed."
+                    self.snapshot.browser_open = False
+                    self.snapshot.page_url = None
+                    self._minimize_attempted_for_login = False
+                    return self.snapshot.payload()
+                self.snapshot.browser_open = True
                 self.snapshot.status = "waiting_for_login"
                 self.snapshot.message = (
                     "Waiting for Waterloo SSO/MFA to return to WaterlooWorks…"
@@ -147,39 +156,43 @@ class WaterlooWorksService:
                 self.snapshot.page_url = None
                 return self.snapshot.payload()
 
+            try:
+                window_state = await self.session.target_window_state(target)
+            except Exception:
+                window_state = None
+            if window_state == "minimized":
+                self.snapshot.status = "idle"
+                self.snapshot.message = (
+                    "The dedicated WaterlooWorks window is closed or minimized."
+                )
+                self.snapshot.browser_open = False
+                self.snapshot.page_url = None
+                self._minimize_attempted_for_login = False
+                return self.snapshot.payload()
+
+            self.snapshot.browser_open = True
+            if self.snapshot.status in {"completed", "partial", "failed"}:
+                return self.snapshot.payload()
             self.snapshot.page_url = target.get("url")
             try:
                 readiness = await self.session.evaluate(
                     target,
-                    "({authenticated: location.pathname.startsWith('/myAccount/'), "
-                    "hasPostingApi: typeof getPostingData === 'function' && "
-                    "typeof getPostingOverview === 'function', "
-                    "hasJobTable: Boolean(document.querySelector('table tbody')), "
-                    "title: document.title})",
+                    WATERLOOWORKS_API_READINESS_SCRIPT,
                     timeout=8,
                 )
             except Exception:
                 readiness = {}
             if readiness.get("authenticated"):
                 self.snapshot.status = "ready"
-                minimized_now = False
-                if not self._minimize_attempted_for_login:
-                    self._minimize_attempted_for_login = True
-                    try:
-                        minimized_now = await self.session.minimize_window(target)
-                    except Exception:
-                        minimized_now = False
-                if readiness.get("hasPostingApi") and readiness.get("hasJobTable"):
+                if readiness.get("ready"):
                     self.snapshot.message = (
                         "WaterlooWorks is connected and ready to import."
                     )
                 else:
                     self.snapshot.message = (
-                        "WaterlooWorks is connected. Import will open All Jobs on each board, "
-                        "mark inaccessible boards as failed, and continue."
+                        "WaterlooWorks is connected. Import will open All Jobs and discover "
+                        "each board's authenticated API, then continue past inaccessible boards."
                     )
-                if minimized_now:
-                    self.snapshot.message += " The login window was minimized automatically."
             else:
                 self._minimize_attempted_for_login = False
                 self.snapshot.status = "waiting_for_login"
@@ -411,7 +424,9 @@ class WaterlooWorksService:
         self,
         *,
         board: str | None = None,
+        boards: list[str] | None = None,
         query: str | None = None,
+        location: str | None = None,
         company: str | None = None,
         skill: str | None = None,
         category: str | None = None,
@@ -426,12 +441,15 @@ class WaterlooWorksService:
         include_description: bool = False,
     ) -> dict[str, Any]:
         allowed_boards = {name for name, _ in WATERLOOWORKS_BOARDS} | {"applications"}
-        if board and board not in allowed_boards:
-            raise RuntimeError(f"Unknown WaterlooWorks board: {board}")
+        selected_boards = list(dict.fromkeys([*(boards or []), *([board] if board else [])]))
+        unknown_boards = [value for value in selected_boards if value not in allowed_boards]
+        if unknown_boards:
+            raise RuntimeError(f"Unknown WaterlooWorks board: {unknown_boards[0]}")
         return await asyncio.to_thread(
             self.repository.list_jobs,
-            board=board,
+            boards=selected_boards,
             query=query,
+            location=location,
             company=company,
             skill=skill,
             category=category,

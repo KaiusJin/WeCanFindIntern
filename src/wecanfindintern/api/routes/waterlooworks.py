@@ -61,6 +61,7 @@ WorkModeFilter = Annotated[
     Query(),
 ]
 OpportunityTypeFilter = Annotated[list[OpportunityType] | None, Query()]
+BoardFilter = Annotated[list[str] | None, Query()]
 
 
 @waterlooworks_router.get("/status")
@@ -101,8 +102,9 @@ async def sync_applications(
 @waterlooworks_router.get("/jobs", response_model=WaterlooWorksJobPage)
 async def list_jobs(
     service: ServiceDep,
-    board: str | None = Query(default=None, max_length=40),
+    board: BoardFilter = None,
     query: str | None = Query(default=None, max_length=200),
+    location: str | None = Query(default=None, max_length=200),
     company: str | None = Query(default=None, max_length=160),
     skill: str | None = Query(default=None, max_length=80),
     category: str | None = Query(default=None, max_length=60),
@@ -117,8 +119,9 @@ async def list_jobs(
 ) -> WaterlooWorksJobPage:
     try:
         payload = await service.list_jobs(
-            board=board,
+            boards=board,
             query=query,
+            location=location,
             company=company,
             skill=skill,
             category=category,

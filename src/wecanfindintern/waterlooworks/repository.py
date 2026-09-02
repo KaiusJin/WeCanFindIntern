@@ -483,7 +483,9 @@ class WaterlooWorksRepository:
         self,
         *,
         board: str | None = None,
+        boards: list[str] | None = None,
         query: str | None = None,
+        location: str | None = None,
         company: str | None = None,
         skill: str | None = None,
         category: str | None = None,
@@ -499,21 +501,40 @@ class WaterlooWorksRepository:
     ) -> dict[str, Any]:
         predicates: list[str] = []
         params: list[Any] = []
-        if board == "applications":
-            predicates.append(
-                "EXISTS (SELECT 1 FROM waterlooworks_applications a "
-                "WHERE a.source_job_id=j.source_job_id)"
-            )
-        elif board:
-            predicates.append(
-                "EXISTS (SELECT 1 FROM waterlooworks_job_boards b "
-                "WHERE b.source_job_id=j.source_job_id AND b.board=?)"
-            )
-            params.append(board)
+        selected_boards = list(dict.fromkeys([*(boards or []), *([board] if board else [])]))
+        if selected_boards:
+            board_predicates: list[str] = []
+            if "applications" in selected_boards:
+                board_predicates.append(
+                    "EXISTS (SELECT 1 FROM waterlooworks_applications a "
+                    "WHERE a.source_job_id=j.source_job_id)"
+                )
+            posting_boards = [value for value in selected_boards if value != "applications"]
+            if posting_boards:
+                placeholders = ",".join("?" for _ in posting_boards)
+                board_predicates.append(
+                    "EXISTS (SELECT 1 FROM waterlooworks_job_boards b "
+                    "WHERE b.source_job_id=j.source_job_id "
+                    f"AND b.board IN ({placeholders}))"
+                )
+                params.extend(posting_boards)
+            predicates.append(f"({' OR '.join(board_predicates)})")
         if query:
-            predicates.append("(j.title LIKE ? OR j.organization LIKE ? OR j.description LIKE ?)")
+            predicates.append(
+                "(j.source_job_id LIKE ? OR j.title LIKE ? OR "
+                "j.organization LIKE ? OR j.description LIKE ?)"
+            )
             term = f"%{query}%"
-            params.extend([term, term, term])
+            params.extend([term, term, term, term])
+        if location:
+            predicates.append(
+                "(lower(COALESCE(j.location_text, '')) LIKE ? OR "
+                "lower(COALESCE(j.city, '')) LIKE ? OR "
+                "lower(COALESCE(j.province, '')) LIKE ? OR "
+                "lower(COALESCE(j.country, '')) LIKE ?)"
+            )
+            location_term = f"%{location.lower()}%"
+            params.extend([location_term] * 4)
         if company:
             predicates.append("lower(j.organization) LIKE ?")
             params.append(f"%{company.lower()}%")

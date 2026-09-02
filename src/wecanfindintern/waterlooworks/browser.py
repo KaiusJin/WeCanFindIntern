@@ -130,6 +130,7 @@ class ChromeSession:
         if not self.websocket_url:
             return
         if target:
+            await self.restore_window(target)
             await self.cdp_call(
                 self.websocket_url,
                 "Target.activateTarget",
@@ -143,6 +144,56 @@ class ChromeSession:
                 {"url": self.start_url},
                 timeout=5,
             )
+
+    async def target_window_state(self, target: dict[str, Any]) -> str | None:
+        """Return the native window state associated with a page target."""
+
+        if not self.websocket_url or not target.get("id"):
+            return None
+        result = await self.cdp_call(
+            self.websocket_url,
+            "Browser.getWindowForTarget",
+            {"targetId": target["id"]},
+            timeout=5,
+        )
+        bounds = result.get("bounds") or {}
+        state = bounds.get("windowState")
+        if isinstance(state, str):
+            return state
+        window_id = result.get("windowId")
+        if not isinstance(window_id, int):
+            return None
+        result = await self.cdp_call(
+            self.websocket_url,
+            "Browser.getWindowBounds",
+            {"windowId": window_id},
+            timeout=5,
+        )
+        state = (result.get("bounds") or {}).get("windowState")
+        return state if isinstance(state, str) else None
+
+    async def restore_window(self, target: dict[str, Any]) -> bool:
+        """Restore a minimized page window before bringing its target forward."""
+
+        if not self.websocket_url or not target.get("id"):
+            return False
+        result = await self.cdp_call(
+            self.websocket_url,
+            "Browser.getWindowForTarget",
+            {"targetId": target["id"]},
+            timeout=5,
+        )
+        window_id = result.get("windowId")
+        if not isinstance(window_id, int):
+            return False
+        if (result.get("bounds") or {}).get("windowState") == "minimized":
+            await self.cdp_call(
+                self.websocket_url,
+                "Browser.setWindowBounds",
+                {"windowId": window_id, "bounds": {"windowState": "normal"}},
+                timeout=5,
+            )
+        return True
 
     async def minimize_window(self, target: dict[str, Any]) -> bool:
         """Minimize the Chrome window containing the given WaterlooWorks page."""

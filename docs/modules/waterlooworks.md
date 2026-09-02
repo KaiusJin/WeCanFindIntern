@@ -55,14 +55,15 @@ The configured boards are:
 `WaterlooWorksCollector.collect_all()` processes them independently:
 
 1. Open the board URL in the authenticated target.
-2. Select/click `All Jobs` when required.
-3. Wait for the result table or posting API to become available.
-4. Extract the source Job IDs.
-5. Read each posting detail.
-6. Normalize and insert the posting only when its source Job ID is not already stored.
-7. Insert the `(Job ID, board)` relationship if that edge has not been observed before.
-8. Record discovered, newly inserted, already-known, and failed counts for the board.
-9. Continue to the next board even when this board fails.
+2. Click `All Jobs` to initialize the complete board result set.
+3. Discover the session-specific list/detail POST action tokens embedded in the board.
+4. Page through the authenticated DataViewer list API without using table/card rows.
+5. Extract the source Job IDs from API rows.
+6. Read each posting detail and overview through their authenticated APIs.
+7. Normalize and insert the posting only when its source Job ID is not already stored.
+8. Insert the `(Job ID, board)` relationship if that edge has not been observed before.
+9. Record discovered, newly inserted, already-known, and failed counts for the board.
+10. Continue to the next board even when this board fails.
 
 The collector updates the shared `WaterlooWorksSnapshot`, so the UI can display progress without waiting for the whole run.
 
@@ -74,9 +75,11 @@ sequenceDiagram
     participant Q as SQLite repository
     loop each configured board
         S->>C: navigate and wait for authenticated shell
-        C->>C: select All Jobs and discover posting IDs
+        C->>C: click All Jobs to initialize the result set
+        C->>D: discover board API actions
+        D->>C: POST paginated list API and discover Job IDs
         loop each posting
-            C->>D: page, API or table payload
+            D->>C: POST detail and overview APIs
             D->>Q: insert new Job ID or update freshness
         end
         Q-->>S: board counters and errors
@@ -111,8 +114,8 @@ If a board cannot be reached, the board is marked failed and the run can finish 
 
 ## Retry and restart behavior
 
-The browser collector has bounded readiness waits (page shell, `All Jobs`, and
-posting API/table) and isolates failures at board and posting level. It does not
+The browser collector has bounded readiness waits for the page shell and embedded
+authenticated API contract, and isolates failures at board and posting level. It does not
 persist a browser page cursor or a per-posting checkpoint. A cancelled or
 interrupted run is recovered by launching/reconnecting and running collection
 again.

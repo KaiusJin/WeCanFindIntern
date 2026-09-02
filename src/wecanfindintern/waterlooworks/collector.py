@@ -8,6 +8,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from wecanfindintern.waterlooworks.browser import ChromeSession
+from wecanfindintern.waterlooworks.browser_scripts import (
+    WATERLOOWORKS_API_READINESS_SCRIPT,
+)
 from wecanfindintern.waterlooworks.config import WATERLOOWORKS_BOARDS
 from wecanfindintern.waterlooworks.extractor import (
     EXTRACT_JOBS_SCRIPT,
@@ -67,6 +70,10 @@ class WaterlooWorksCollector:
                         f"{board_name.replace('_', ' ').title()}…"
                     )
                     await self._click_all_jobs(target, board_name)
+                    self.snapshot.message = (
+                        f"Reading the job API for board {index}/{len(WATERLOOWORKS_BOARDS)}: "
+                        f"{board_name.replace('_', ' ').title()}…"
+                    )
                     await self._wait_for_board_ready(target, board_name, board_url)
                     result = await self.session.evaluate(
                         target, EXTRACT_JOBS_SCRIPT, timeout=1800
@@ -171,6 +178,8 @@ class WaterlooWorksCollector:
         target: dict[str, Any],
         board_name: str,
     ) -> None:
+        """Initialize the board's complete result set before API extraction."""
+
         for _ in range(30):
             result = await self.session.evaluate(
                 target,
@@ -194,9 +203,16 @@ class WaterlooWorksCollector:
                     '.tag-rail > button.btn__default.pill'
                   );
                   if (!allJobs || label(allJobs) !== "all jobs" || !visible(allJobs)) {
+                    const pageText = normalize(document.body.innerText);
                     return {
                       clicked: false,
                       tableReady: false,
+                      unavailableReason: pageText.includes(
+                        "to search for jobs, ensure the following"
+                      )
+                        ? "WaterlooWorks does not offer All Jobs on this board " +
+                          "for the current account or recruiting term"
+                        : null,
                       reason: "missing exact .tag-rail > button.btn__default.pill All Jobs",
                     };
                   }
@@ -221,8 +237,40 @@ class WaterlooWorksCollector:
                 """,
                 timeout=5,
             )
+            if result.get("unavailableReason"):
+                raise RuntimeError(f"{board_name}: {result['unavailableReason']}")
             if result.get("clicked"):
-                return
+                for _ in range(30):
+                    activation = await self.session.evaluate(
+                        target,
+                        r"""
+                        (() => {
+                          const visible = (element) => {
+                            if (!element) return false;
+                            const style = getComputedStyle(element);
+                            const rect = element.getBoundingClientRect();
+                            return style.display !== "none" &&
+                              style.visibility !== "hidden" &&
+                              rect.width > 0 && rect.height > 0;
+                          };
+                          const showSearch = document.querySelector(".js--show-search");
+                          const modeToggle = document.querySelector(
+                            'button[aria-label="Card Mode"], ' +
+                            'button[aria-label="Table Mode"]'
+                          );
+                          return {
+                            activated: visible(showSearch) && visible(modeToggle),
+                          };
+                        })()
+                        """,
+                        timeout=5,
+                    )
+                    if activation.get("activated"):
+                        return
+                    await asyncio.sleep(0.25)
+                raise RuntimeError(
+                    f"{board_name} All Jobs click did not activate the result set"
+                )
             if result.get("tableReady"):
                 return
             await asyncio.sleep(0.5)
@@ -240,16 +288,7 @@ class WaterlooWorksCollector:
             try:
                 readiness = await self.session.evaluate(
                     target,
-                    "({path: location.pathname, ready: document.readyState !== 'loading' && "
-                    "typeof getPostingData === 'function' && "
-                    "typeof getPostingOverview === 'function' && "
-                    "(() => { const table = document.querySelector('table.data-viewer-table'); "
-                    "if (!table) return false; const style = getComputedStyle(table); "
-                    "const rect = table.getBoundingClientRect(); "
-                    "const cardLayout = Boolean(document.querySelector("
-                    "\".tag-rail button[aria-label='Table Mode']\")); "
-                    "return style.display !== 'none' && style.visibility !== 'hidden' && "
-                    "rect.width > 0 && rect.height > 0 && !cardLayout; })()})",
+                    WATERLOOWORKS_API_READINESS_SCRIPT,
                     timeout=5,
                 )
                 last_path = readiness.get("path") or last_path
@@ -260,4 +299,4 @@ class WaterlooWorksCollector:
             await asyncio.sleep(0.5)
         if last_path and last_path != expected_path:
             raise RuntimeError(f"redirected to {last_path}; expected {expected_path}")
-        raise RuntimeError(f"{board_name} did not expose a job results table after All Jobs")
+        raise RuntimeError(f"{board_name} did not expose the authenticated job API")

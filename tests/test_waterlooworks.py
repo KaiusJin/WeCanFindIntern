@@ -15,12 +15,19 @@ from wecanfindintern.application.waterlooworks_tracker import (
 )
 from wecanfindintern.waterlooworks.applications import WATERLOOWORKS_APPLICATIONS_URL
 from wecanfindintern.waterlooworks.browser import ChromeSession
+from wecanfindintern.waterlooworks.browser_scripts import (
+    WATERLOOWORKS_API_READINESS_SCRIPT,
+)
 from wecanfindintern.waterlooworks.collector import WaterlooWorksCollector
 from wecanfindintern.waterlooworks.dates import (
     parse_waterlooworks_date,
     parse_waterlooworks_datetime,
 )
-from wecanfindintern.waterlooworks.extractor import _description, waterlooworks_salary
+from wecanfindintern.waterlooworks.extractor import (
+    EXTRACT_JOBS_SCRIPT,
+    _description,
+    waterlooworks_salary,
+)
 from wecanfindintern.waterlooworks.repository import (
     WaterlooWorksRepository,
     _storage_record,
@@ -48,6 +55,27 @@ def test_snapshot_payload_round_trip():
     payload = snapshot.payload()
     assert payload["status"] == "idle"
     assert len(payload["boards"]) == 5
+
+
+def test_status_disconnects_when_profile_process_survives_without_page():
+    session = SimpleNamespace(
+        load_existing_debug_port=AsyncMock(return_value=True),
+        find_target=AsyncMock(return_value=None),
+    )
+    service = object.__new__(WaterlooWorksService)
+    service.session = session
+    service.snapshot = WaterlooWorksSnapshot(status="completed", browser_open=True)
+    service._minimize_attempted_for_login = True
+    service._lock = asyncio.Lock()
+
+    payload = asyncio.run(service.get_status())
+
+    assert payload["status"] == "idle"
+    assert payload["browser_open"] is False
+    assert payload["page_url"] is None
+    assert payload["message"] == "The dedicated WaterlooWorks window is closed."
+    assert service._minimize_attempted_for_login is False
+    session.find_target.assert_awaited_once_with("waterlooworks.uwaterloo.ca")
 
 
 def test_application_status_mapping_and_timestamp_parsing():
@@ -84,6 +112,57 @@ def test_chrome_session_minimizes_target_window():
         "Browser.setWindowBounds",
         {"windowId": 42, "bounds": {"windowState": "minimized"}},
     )
+
+
+def test_chrome_session_restores_minimized_target_before_activation():
+    session = ChromeSession(
+        profile_dir=Path("/tmp/test-waterlooworks-profile"),
+        start_url="https://waterlooworks.uwaterloo.ca",
+        chrome_binary=None,
+    )
+    session.websocket_url = "ws://127.0.0.1/devtools/browser/test"
+    session.cdp_call = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {"windowId": 42, "bounds": {"windowState": "minimized"}},
+            {},
+            {},
+        ]
+    )
+
+    asyncio.run(session.activate_or_create_target({"id": "page-target"}))
+
+    assert session.cdp_call.await_args_list[1].args[1:] == (
+        "Browser.setWindowBounds",
+        {"windowId": 42, "bounds": {"windowState": "normal"}},
+    )
+    assert session.cdp_call.await_args_list[2].args[1:] == (
+        "Target.activateTarget",
+        {"targetId": "page-target"},
+    )
+
+
+def test_status_treats_minimized_profile_window_as_disconnected():
+    target = {
+        "id": "page-target",
+        "url": "https://waterlooworks.uwaterloo.ca/myAccount/campus/jobs.htm",
+    }
+    session = SimpleNamespace(
+        load_existing_debug_port=AsyncMock(return_value=True),
+        find_target=AsyncMock(return_value=target),
+        target_window_state=AsyncMock(return_value="minimized"),
+    )
+    service = object.__new__(WaterlooWorksService)
+    service.session = session
+    service.snapshot = WaterlooWorksSnapshot(status="partial", browser_open=True)
+    service._minimize_attempted_for_login = True
+    service._lock = asyncio.Lock()
+
+    payload = asyncio.run(service.get_status())
+
+    assert payload["status"] == "idle"
+    assert payload["browser_open"] is False
+    assert payload["page_url"] is None
+    assert service._minimize_attempted_for_login is False
 
 
 def test_application_navigation_reacquires_replaced_chrome_target():
@@ -161,6 +240,65 @@ def test_collector_board_state_lookup():
     )
     state = collector._board_state("full_cycle")
     assert state["label"] == "Co-op: Full-Cycle"
+
+
+def test_job_extractor_uses_authenticated_api_not_responsive_results_dom():
+    assert "fetch(location.pathname" in EXTRACT_JOBS_SCRIPT
+    assert "dataParams" in EXTRACT_JOBS_SCRIPT
+    assert "getPostingData" in EXTRACT_JOBS_SCRIPT
+    assert "getPostingOverview" in EXTRACT_JOBS_SCRIPT
+    assert "TextDecoder(charset)" in EXTRACT_JOBS_SCRIPT
+    assert "table tbody tr" not in EXTRACT_JOBS_SCRIPT
+    assert "Go to next page" not in EXTRACT_JOBS_SCRIPT
+    assert ".click()" not in EXTRACT_JOBS_SCRIPT
+
+
+def test_collector_keeps_all_jobs_initialization_click():
+    session = SimpleNamespace(
+        evaluate=AsyncMock(
+            side_effect=[
+                {"clicked": True},
+                {"activated": True},
+            ]
+        )
+    )
+    collector = WaterlooWorksCollector(
+        session=session,
+        repository=None,  # type: ignore[arg-type]
+        snapshot=WaterlooWorksSnapshot(),
+    )
+
+    asyncio.run(collector._click_all_jobs({}, "campus"))
+
+    click_expression = session.evaluate.await_args_list[0].args[1]
+    activation_expression = session.evaluate.await_args_list[1].args[1]
+    assert ".tag-rail > button.btn__default.pill" in click_expression
+    assert "allJobs.click()" in click_expression
+    assert 'button[aria-label="Table Mode"]' in activation_expression
+
+
+def test_collector_readiness_is_api_based_and_layout_independent():
+    board_url = "https://waterlooworks.uwaterloo.ca/myAccount/campus/jobs.htm"
+    session = SimpleNamespace(
+        evaluate=AsyncMock(
+            return_value={
+                "path": "/myAccount/campus/jobs.htm",
+                "authenticated": True,
+                "ready": True,
+            }
+        )
+    )
+    collector = WaterlooWorksCollector(
+        session=session,
+        repository=None,  # type: ignore[arg-type]
+        snapshot=WaterlooWorksSnapshot(),
+    )
+
+    asyncio.run(collector._wait_for_board_ready({}, "campus", board_url))
+
+    assert session.evaluate.await_args.args[1] == WATERLOOWORKS_API_READINESS_SCRIPT
+    assert "table" not in WATERLOOWORKS_API_READINESS_SCRIPT.casefold()
+    assert "card" not in WATERLOOWORKS_API_READINESS_SCRIPT.casefold()
 
 
 def test_salary_from_rate_of_pay_per_hour_field():
@@ -357,6 +495,15 @@ def test_repository_applies_search_filters_before_pagination(tmp_path):
     assert result["next_cursor"] is None
     assert [item["source_job_id"] for item in result["items"]] == ["match"]
 
+    id_result = repo.list_jobs(query="match")
+    assert [item["source_job_id"] for item in id_result["items"]] == ["match"]
+
+    location_result = repo.list_jobs(location="Toronto")
+    assert [item["source_job_id"] for item in location_result["items"]] == ["match"]
+
+    board_result = repo.list_jobs(boards=["full_cycle", "graduating"])
+    assert {item["source_job_id"] for item in board_result["items"]} == {"match", "wrong"}
+
 
 def test_repository_uses_stable_cursor_pagination(tmp_path):
     db = tmp_path / "waterlooworks.sqlite3"
@@ -411,7 +558,7 @@ def test_repository_stores_submitted_application_and_missing_job(tmp_path):
 
     assert errors == []
     assert counts == {"stored": 1, "new_jobs": 1, "detail_failures": 0, "failed": 0}
-    assert stored[0]["app_status"] == "Applied"
+    assert stored[0]["application_status"] == "Applied"
     job = repo.get_job("471365")
     assert job["description"] == raw["fullJdText"]
     assert job["application_status"] == "Applied"

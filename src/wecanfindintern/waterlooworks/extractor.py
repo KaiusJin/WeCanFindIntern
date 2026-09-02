@@ -50,38 +50,139 @@ _BOILERPLATE_VALUES = {
     "to be discussed",
 }
 
-# This runs inside the authenticated WaterlooWorks job-list page. Authentication
-# remains entirely in Chrome; only the extracted posting records cross into the app.
+# This runs inside the authenticated WaterlooWorks board page. It discovers the
+# session-specific POST action tokens embedded by WaterlooWorks and calls those
+# same-origin APIs directly. No responsive table/card DOM or simulated clicks are
+# involved. Authentication remains entirely in Chrome; only extracted records cross
+# into the app.
 EXTRACT_JOBS_SCRIPT = WATERLOOWORKS_EXTRACTION_HELPERS + r"""
 (async () => {
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const ITEMS_PER_PAGE = 100;
 
-  function getPageRows() {
-    return [...document.querySelectorAll("table tbody tr")]
-      .map((row) => {
-        const text = row.innerText || "";
-        const id = text.match(/\b\d{6}\b/)?.[0];
-        const link = row.querySelector("a");
-        if (!id || !link) return null;
-        let sourceUrl = location.href;
-        try {
-          sourceUrl = new URL(link.getAttribute("href") || "", location.href).href;
-        } catch (_) {}
-        return {
-          id: Number(id),
-          title: cleanText(link.innerText),
-          rowText: cleanText(text),
-          sourceUrl,
-        };
-      })
-      .filter(Boolean);
+  function inlineSource() {
+    return [...document.scripts]
+      .map((script) => script.textContent || "")
+      .join("\n");
   }
 
-  async function fetchOne(row) {
+  function actionForFunction(source, name) {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = source.match(new RegExp(
+      `function\\s+${escapedName}\\s*\\([^)]*\\)[\\s\\S]*?` +
+      `action\\s*:\\s*['\"]([^'\"]+)`,
+      "m"
+    ));
+    if (!match) throw new Error(`WaterlooWorks ${name} API action was not found.`);
+    return match[1];
+  }
+
+  function apiContract() {
+    const source = inlineSource();
+    const listMatch = source.match(
+      /dataParams\s*:\s*\{\s*action\s*:\s*['"]([^'"]+)/m
+    );
+    if (!listMatch) {
+      throw new Error("WaterlooWorks job-list API action was not found.");
+    }
+    return {
+      list: listMatch[1],
+      posting: actionForFunction(source, "getPostingData"),
+      overview: actionForFunction(source, "getPostingOverview"),
+    };
+  }
+
+  async function apiPost(action, values, responseType, timeout = 30000) {
+    const body = new URLSearchParams();
+    body.set("action", action);
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) continue;
+      body.set(key, value !== null && typeof value === "object"
+        ? JSON.stringify(value)
+        : String(value));
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(location.pathname, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`WaterlooWorks API returned HTTP ${response.status}.`);
+      }
+      const contentType = response.headers.get("content-type") || "";
+      const charset = contentType.match(/charset\s*=\s*["']?([^;"'\s]+)/i)?.[1] ||
+        "utf-8";
+      const bytes = await response.arrayBuffer();
+      let text;
+      try {
+        text = new TextDecoder(charset).decode(bytes);
+      } catch (_) {
+        text = new TextDecoder("utf-8").decode(bytes);
+      }
+      if (responseType === "text") {
+        try {
+          const decoded = JSON.parse(text);
+          return typeof decoded === "string" ? decoded : text;
+        } catch (_) {
+          return text;
+        }
+      }
+      try {
+        return JSON.parse(text);
+      } catch (_) {
+        throw new Error(
+          "WaterlooWorks API returned a non-JSON response; " +
+          "sign-in may have expired."
+        );
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function listRow(raw) {
+    const data = raw?.data || {};
+    const titleValue = data.JobTitle?.value;
+    const title = cleanText(
+      titleValue?.postingTitle || titleValue?.display || titleValue ||
+      data.JobTitle?.display || ""
+    );
+    const id = Number(raw?.id || data.Id?.value || data.ID?.value);
+    if (!Number.isFinite(id)) return null;
+    const rowText = cleanText(Object.values(data).map((entry) =>
+      entry?.display ?? entry?.value ?? ""
+    ).join(" "));
+    return {id, title, rowText, sourceUrl: location.href};
+  }
+
+  async function listPage(actions, page) {
+    const result = await apiPost(actions.list, {
+      page,
+      sort: [{key: "Id", direction: "desc"}],
+      itemsPerPage: ITEMS_PER_PAGE,
+      filters: "null",
+      columns: [],
+      keyword: "",
+      isDataViewer: true,
+    }, "json");
+    if (!result || !Array.isArray(result.data)) {
+      throw new Error("WaterlooWorks job-list API returned an invalid result.");
+    }
+    return result;
+  }
+
+  async function fetchOne(actions, row) {
     try {
       const [metadata, overviewHtml] = await Promise.all([
-        callWW(getPostingData, row.id, "getPostingData"),
-        callWW(getPostingOverview, row.id, "getPostingOverview"),
+        apiPost(actions.posting, {postingId: row.id}, "json"),
+        apiPost(actions.overview, {postingId: row.id}, "text"),
       ]);
       const parsed = parseOverview(overviewHtml);
       const geo = metadata.geoData || {};
@@ -131,19 +232,19 @@ EXTRACT_JOBS_SCRIPT = WATERLOOWORKS_EXTRACTION_HELPERS + r"""
     }
   }
 
-  if (typeof getPostingData !== "function" || typeof getPostingOverview !== "function") {
-    throw new Error("Open a WaterlooWorks job search results page before collecting.");
-  }
-
+  const actions = apiContract();
   const jobs = [];
   const seen = new Set();
   let page = 0;
   while (true) {
     page += 1;
-    const rows = getPageRows();
-    const pageIds = [...new Set(rows.map((row) => row.id))];
+    const listResult = await listPage(actions, page);
+    const rows = listResult.data.map(listRow).filter(Boolean);
+    const previousCount = seen.size;
     for (let i = 0; i < rows.length; i += 3) {
-      const results = await Promise.all(rows.slice(i, i + 3).map(fetchOne));
+      const results = await Promise.all(
+        rows.slice(i, i + 3).map((row) => fetchOne(actions, row))
+      );
       for (const job of results) {
         if (!seen.has(job.id)) {
           seen.add(job.id);
@@ -151,20 +252,10 @@ EXTRACT_JOBS_SCRIPT = WATERLOOWORKS_EXTRACTION_HELPERS + r"""
         }
       }
     }
-    const next = document.querySelector("a[aria-label='Go to next page']");
-    if (!next || next.classList.contains("disabled") || next.closest(".disabled")) break;
-    const oldFirstId = pageIds[0];
-    next.click();
-    let changed = false;
-    for (let i = 0; i < 40; i += 1) {
-      await sleep(500);
-      const nextId = getPageRows()[0]?.id;
-      if (nextId && nextId !== oldFirstId) {
-        changed = true;
-        break;
-      }
-    }
-    if (!changed) break;
+    const totalResults = Number(listResult.totalResults);
+    const reachedTotal = Number.isFinite(totalResults) && seen.size >= totalResults;
+    if (!rows.length || seen.size === previousCount || reachedTotal ||
+        rows.length < ITEMS_PER_PAGE) break;
   }
   return { generatedAt: new Date().toISOString(), pageCount: page, count: jobs.length, jobs };
 })()

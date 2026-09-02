@@ -1,5 +1,24 @@
 """Shared JavaScript helpers evaluated inside authenticated WaterlooWorks pages."""
 
+WATERLOOWORKS_API_READINESS_SCRIPT = r"""
+(() => {
+  const source = [...document.scripts]
+    .map((script) => script.textContent || "")
+    .join("\n");
+  return {
+    path: location.pathname,
+    authenticated: location.pathname.startsWith("/myAccount/"),
+    ready: document.readyState !== "loading" &&
+      typeof fetch === "function" &&
+      /dataParams\s*:\s*\{\s*action\s*:\s*['"][^'"]+/m.test(source) &&
+      /function\s+getPostingData\s*\([^)]*\)[\s\S]*?action\s*:\s*['"][^'"]+/m
+        .test(source) &&
+      /function\s+getPostingOverview\s*\([^)]*\)[\s\S]*?action\s*:\s*['"][^'"]+/m
+        .test(source),
+  };
+})()
+"""
+
 WATERLOOWORKS_EXTRACTION_HELPERS = r"""
 function callWW(fn, id, name, timeout = 20000) {
   return new Promise((resolve, reject) => {
