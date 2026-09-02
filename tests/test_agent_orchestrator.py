@@ -271,9 +271,41 @@ def test_reply_prompt_does_not_require_a_condensed_answer():
     assert "concise" not in system_prompt.lower()
     assert "one-line" not in system_prompt.lower()
     assert "summarize tool results" not in system_prompt.lower()
+    assert "do not reproduce a numbered or bulleted job list" in system_prompt.lower()
+    assert "still write a substantive answer" in system_prompt.lower()
 
 
-def test_recommendation_analysis_reply_does_not_use_extra_model_call(monkeypatch):
+def test_planner_uses_recommendations_for_personal_preferences_and_avoids_card_repetition(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_complete_json(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(data={"reply": "", "tool_calls": []})
+
+    monkeypatch.setattr(orchestrator_module, "complete_json", fake_complete_json)
+    deps = make_deps(FakeDomain())
+    deps.llm_config = SimpleNamespace(
+        provider="DeepSeek", model_name="deepseek-chat", api_key="x", api_base=None
+    )
+
+    orchestrator_module.plan_turn(
+        llm_config=deps,
+        user_message="I like Toronto and want to get 10 jobs in Toronto",
+        history=[],
+        context=None,
+        pending_approval=None,
+        round_number=1,
+    )
+
+    prompt = captured["system_prompt"]
+    assert "Use recommend_jobs, not search_jobs" in prompt
+    assert "do not reproduce a numbered or bulleted job list" in prompt.lower()
+    assert "strongest overall Profile/preference fit signals" in prompt
+
+
+def test_recommendation_analysis_is_composed_without_repeating_job_cards(monkeypatch):
     repo, session = make_repo_with_session()
     deps = make_deps(FakeDomain())
 
@@ -313,21 +345,21 @@ def test_recommendation_analysis_reply_does_not_use_extra_model_call(monkeypatch
         }
 
     monkeypatch.setattr(orchestrator_module, "run_tool", fake_run_tool)
-    def unexpected_stream(self, **kwargs):
-        raise AssertionError("analysed recommendations must render without a composer call")
-
     monkeypatch.setattr(
         orchestrator_module.AgentOrchestrator,
         "_stream_reply_events",
-        unexpected_stream,
+        fake_stream_reply(
+            "These roles match your Python and SQL experience, while the strongest "
+            "remaining unknown is whether each team expects production ownership."
+        ),
     )
 
     result = asyncio.run(
         AgentOrchestrator(repo, deps).process_message(session.id, "recommend jobs for me")
     )
 
-    assert "Backend Intern" in result.message.content
-    assert "88/100" in result.message.content
+    assert "Python and SQL" in result.message.content
+    assert "Backend Intern" not in result.message.content
     assert [call.tool_name for call in repo.tool_calls] == [
         "recommend_jobs",
         "analyse_job",
@@ -378,22 +410,21 @@ def test_recommendations_call_analysis_for_top_two_only(monkeypatch):
         }
 
     monkeypatch.setattr(orchestrator_module, "run_tool", fake_run_tool)
-    def unexpected_stream(self, **kwargs):
-        raise AssertionError("top recommendation analyses must render directly")
-
     monkeypatch.setattr(
         orchestrator_module.AgentOrchestrator,
         "_stream_reply_events",
-        unexpected_stream,
+        fake_stream_reply(
+            "The recommendations share solid early-career fit signals, but the job "
+            "descriptions should be checked for specific experience requirements."
+        ),
     )
 
     result = asyncio.run(
         AgentOrchestrator(repo, deps).process_message(session.id, "recommend jobs for me")
     )
 
-    assert "Role 0" in result.message.content
-    assert "Role 1" in result.message.content
-    assert "Role 2" not in result.message.content
+    assert "early-career fit signals" in result.message.content
+    assert "Role 0" not in result.message.content
     assert [call.tool_name for call in result.tool_calls] == [
         "recommend_jobs",
         "analyse_job",

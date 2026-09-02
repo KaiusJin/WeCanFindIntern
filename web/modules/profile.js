@@ -84,8 +84,6 @@ function collectProfile() {
   return payload;
 }
 
-function showProfileStatus(message) { const box = $("#profile-import-status"); box.hidden = false; box.textContent = message; }
-
 async function loadProfileWorkspace() {
   try { const response = await fetch("/api/v1/profile"); if (!response.ok) throw new Error("Could not load profile."); const loaded = await response.json(); profileSavedData = loaded; if (!profileImportId) renderProfile(loaded, loaded.completion_percent); } catch (error) { showErrorDialog(error, { title: "Profile unavailable" }); }
 }
@@ -126,7 +124,6 @@ async function parseProfileFile(file, sourceType = autofillMode) {
   const triggerButtons = [$("#profile-autofill-resume"), $("#profile-autofill-latex"), submitButton].filter(Boolean);
   triggerButtons.forEach((button) => { button.disabled = true; });
   if (submitButton) submitButton.textContent = "Autofilling…";
-  showProfileStatus(`Importing and validating ${file.name}…`);
   try {
     const form = new FormData(); form.append("file", file, file.name);
     const response = await fetch("/api/v1/profile/resumes", { method: "POST", body: form });

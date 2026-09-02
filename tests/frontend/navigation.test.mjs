@@ -4,11 +4,13 @@ import test from "node:test";
 
 const indexSource = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
 const shellSource = await readFile(new URL("../../web/app-shell.css", import.meta.url), "utf8");
+const stylesSource = await readFile(new URL("../../web/styles.css", import.meta.url), "utf8");
 const navigationSource = await readFile(new URL("../../web/modules/navigation.js", import.meta.url), "utf8");
 const heatmapSource = await readFile(new URL("../../web/modules/heatmap.js", import.meta.url), "utf8");
 const waterlooWorksSource = await readFile(new URL("../../web/modules/waterlooworks.js", import.meta.url), "utf8");
 const profileSource = await readFile(new URL("../../web/modules/profile.js", import.meta.url), "utf8");
 const settingsSource = await readFile(new URL("../../web/modules/settings.js", import.meta.url), "utf8");
+const trackerSource = await readFile(new URL("../../web/modules/tracker.js", import.meta.url), "utf8");
 
 const sidebarSource = indexSource.match(/<aside id="app-sidebar"[\s\S]*?<\/aside>/)?.[0] || "";
 
@@ -72,6 +74,8 @@ test("saved embedding settings configure the resident recommendation indexer", (
   assert.match(settingsSource, /fetch\("\/api\/v1\/agent\/embedding-config"/);
   assert.match(settingsSource, /await syncEmbeddingConfig\(\);/);
   assert.match(settingsSource, /syncEmbeddingConfig\(\{ showError: true \}\)/);
+  assert.doesNotMatch(indexSource, /id="settings-save-feedback"/);
+  assert.doesNotMatch(settingsSource, /settings-save-feedback|Saved in the operating-system secure store|Saved in this browser/);
 });
 
 test("leaving the AI Agent closes only its open dialogs", () => {
@@ -90,6 +94,51 @@ test("desktop workspaces are bounded and narrow screens switch to overlays", () 
   assert.match(shellSource, /body\.sidebar-open \.app-sidebar/);
   assert.match(shellSource, /\.job-detail-pane\.open/);
   assert.match(shellSource, /\.results-scroll-content/);
+});
+
+test("Applications split view lets the table scroll within its pane", () => {
+  assert.match(indexSource, /class="field-group job-content-field tracker-link-field"/);
+  assert.match(indexSource, /app-shell\.css\?v=20260902-memory-alignment-v1/);
+  assert.doesNotMatch(indexSource, /<th><\/th><\/tr><\/thead>/);
+  assert.doesNotMatch(trackerSource, /tracker-row-menu|Open application/);
+  assert.match(
+    shellSource,
+    /\.applications-list-pane \.tracker-table\s*\{[\s\S]*?min-width:\s*1000px;/,
+  );
+  assert.match(
+    shellSource,
+    /\.tracker-stats-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\) minmax\(0, 1\.25fr\);/,
+  );
+  assert.match(
+    shellSource,
+    /\.tracker-detail-drawer\.applications-detail-pane \.tracker-status-grid\s*\{[\s\S]*?border:\s*0;/,
+  );
+  assert.match(
+    shellSource,
+    /\.applications-list-pane \.tracker-inline-date\s*\{[\s\S]*?max-width:\s*none;[\s\S]*?padding-left:\s*0;[\s\S]*?width:\s*100%;/,
+  );
+  assert.match(
+    shellSource,
+    /\.applications-list-pane \.tracker-table th:nth-child\(7\)\s*\{\s*width:\s*10%;\s*\}/,
+  );
+  assert.match(
+    shellSource,
+    /\.tracker-detail-drawer\.applications-detail-pane \.tracker-link-field\s*\{[\s\S]*?grid-column:\s*1 \/ -1;/,
+  );
+  assert.match(
+    shellSource,
+    /@media \(max-width: 1300px\)[\s\S]*?\.tracker-detail-drawer\.applications-detail-pane[\s\S]*?position:\s*fixed;/,
+  );
+});
+
+test("focus rings are limited to keyboard navigation targets", () => {
+  assert.match(shellSource, /button:focus-visible,\s*a:focus-visible,/);
+  assert.match(shellSource, /input\[type="checkbox"\]:focus-visible,\s*input\[type="radio"\]:focus-visible/);
+  assert.doesNotMatch(
+    shellSource,
+    /button:focus-visible,\s*a:focus-visible,\s*input:focus-visible,\s*select:focus-visible,\s*textarea:focus-visible/,
+  );
+  assert.match(stylesSource, /\.tracker-inline-date:focus\s*\{[\s\S]*?outline:\s*0;/);
 });
 
 test("Profile exposes explicit resume imports without JSON export", () => {

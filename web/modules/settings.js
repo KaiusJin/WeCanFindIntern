@@ -223,14 +223,6 @@ async function saveSettings() {
   }
   if (!await syncEmbeddingConfig({ showError: true })) return;
 
-  const feedback = $("#settings-save-feedback");
-  if (feedback) {
-    feedback.textContent = desktop
-      ? "✓ Saved in the operating-system secure store!"
-      : "✓ Saved in this browser!";
-    feedback.hidden = false;
-    setTimeout(() => { feedback.hidden = true; }, 2500);
-  }
   setTimeout(() => { $("#settings-dialog")?.close(); }, 500);
 }
 
@@ -332,6 +324,15 @@ function validateAiConfig() {
   return config;
 }
 
+function getAiConfigOrShowError() {
+  try {
+    return validateAiConfig();
+  } catch (error) {
+    showErrorDialog(error, { title: "AI settings required" });
+    return null;
+  }
+}
+
 function syncDialogScrollLock() {
   const anyOpen = Array.from(document.querySelectorAll("dialog")).some((d) => d.open);
   if (anyOpen) {
@@ -362,7 +363,7 @@ $("#settings-dialog")?.addEventListener("click", (e) => {
   if (e.target === $("#settings-dialog")) $("#settings-dialog")?.close();
 });
 
-$("#setting-selected-model")?.addEventListener("change", (e) => {
+$("#setting-selected-model")?.addEventListener("change", () => {
   syncKeyFieldWithModel();
 });
 
@@ -409,6 +410,7 @@ $("#toggle-key-visibility")?.addEventListener("click", () => {
 export {
   aiSettings,
   currentActiveProvider,
+  getAiConfigOrShowError,
   getEffectiveAiConfig,
   syncEmbeddingConfig,
   validateAiConfig,

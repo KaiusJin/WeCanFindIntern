@@ -1,6 +1,6 @@
 import { $, escapeHtml, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { switchTab } from "./navigation.js?v=20260901-app-shell-v4";
-import { applyRegionFilter } from "./jobs.js?v=20260901-agent-jd-drawer-v1";
+import { applyRegionFilter } from "./jobs.js?v=20260902-shared-components-v1";
 
 // =========================================================
 // JOB DISTRIBUTION HEATMAP — real choropleth (d3-geo).
@@ -91,6 +91,15 @@ function hideTooltip() {
   if (tooltip) tooltip.hidden = true;
 }
 
+function createMapSvg(container, width, height, ariaLabel) {
+  return d3
+    .select(container)
+    .append("svg")
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("role", "img")
+    .attr("aria-label", ariaLabel);
+}
+
 function renderUsMap(states, counts, maxCount) {
   const container = $("#heatmap-us");
   if (!container) return;
@@ -99,12 +108,7 @@ function renderUsMap(states, counts, maxCount) {
   const projection = d3.geoAlbersUsa().fitSize([width, height], states);
   const path = d3.geoPath(projection);
 
-  const svg = d3
-    .select(container)
-    .append("svg")
-    .attr("viewBox", `0 0 ${width} ${height}`)
-    .attr("role", "img")
-    .attr("aria-label", "United States job distribution map");
+  const svg = createMapSvg(container, width, height, "United States job distribution map");
 
   const country = "US";
   svg
@@ -158,12 +162,7 @@ function renderCaMap(geojson, counts, maxCount) {
   const projection = d3.geoMercator().fitSize([width, height], geojson);
   const path = d3.geoPath(projection);
 
-  const svg = d3
-    .select(container)
-    .append("svg")
-    .attr("viewBox", `0 0 ${width} ${height}`)
-    .attr("role", "img")
-    .attr("aria-label", "Canada job distribution map");
+  const svg = createMapSvg(container, width, height, "Canada job distribution map");
 
   svg
     .selectAll("path")

@@ -21,6 +21,18 @@ import {
   publicJobContext,
   setActiveJobContext,
 } from "./job-context.js?v=20260831-jobboard-parity-v3";
+import {
+  closeJobDetailPane,
+  openJobDetailPane,
+} from "./job-detail-pane.js?v=20260902-shared-components-v1";
+import {
+  renderMultiFilter,
+  selectedMultiFilterValues,
+  setMultiFilterSelections,
+  setMultiFilterSheetOpen,
+  setupMultiFilterInteractions,
+} from "./multi-filter.js?v=20260902-shared-filters-v1";
+import { createDebouncedAction } from "./timing.js?v=20260902-shared-components-v1";
 
 const state = {
   cursor: null,
@@ -56,61 +68,17 @@ function filterDisplayValue(elementId, value) {
   return value;
 }
 
-function selectedFilterValues(elementId) {
-  return [...document.querySelectorAll(`#${elementId} input[type="checkbox"]:checked`)]
-    .map((input) => input.value);
-}
-
-function updateMultiFilterSummary(root) {
-  const selected = [...root.querySelectorAll('input[type="checkbox"]:checked')];
-  const summary = root.querySelector(".multi-filter-summary");
-  const clearButton = root.querySelector(".multi-filter-clear");
-  if (!summary) return;
-  summary.textContent = selected.length === 0
-    ? root.dataset.placeholder
-    : selected.length === 1
-      ? selected[0].dataset.label
-      : `${selected.length} selected`;
-  if (clearButton) clearButton.hidden = selected.length === 0;
-  root.classList.toggle("has-selection", selected.length > 0);
-}
-
 function setOptions(elementId, items, placeholder) {
-  const root = $(elementId);
   const id = elementId.replace(/^#/, "");
-  const selected = new Set(selectedFilterValues(id));
-  root.dataset.placeholder = placeholder;
-  root.innerHTML = `
-    <button class="multi-filter-trigger" type="button" aria-expanded="false">
-      <span class="multi-filter-summary">${escapeHtml(placeholder)}</span>
-      <span class="multi-filter-chevron" aria-hidden="true">⌄</span>
-    </button>
-    <div class="multi-filter-menu" hidden>
-      <div class="multi-filter-menu-head">
-        <span>Select one or more</span>
-        <button class="multi-filter-clear" type="button" hidden>Clear</button>
-      </div>
-      <div class="multi-filter-options">
-        ${(items || []).map((item, index) => {
-          const display = filterDisplayValue(id, item.value);
-          return `<label class="multi-filter-option" for="${id}-option-${index}">
-            <input id="${id}-option-${index}" type="checkbox" value="${escapeHtml(item.value)}" data-label="${escapeHtml(display)}"${selected.has(item.value) ? " checked" : ""} />
-            <span>${escapeHtml(display)}</span>
-            <small>${Number(item.count || 0).toLocaleString()}</small>
-          </label>`;
-        }).join("") || '<p class="multi-filter-empty">No options available</p>'}
-      </div>
-    </div>`;
-  updateMultiFilterSummary(root);
+  renderMultiFilter(elementId, items, {
+    placeholder,
+    getLabel: (item) => filterDisplayValue(id, item.value),
+    formatCount: (item) => Number(item.count || 0).toLocaleString(),
+  });
 }
 
 function setFilterSelections(elementId, values) {
-  const root = $(`#${elementId}`);
-  const selected = new Set(values);
-  root?.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-    input.checked = selected.has(input.value);
-  });
-  if (root) updateMultiFilterSummary(root);
+  setMultiFilterSelections(`#${elementId}`, values);
 }
 
 document.querySelectorAll(".multi-filter").forEach((root) => {
@@ -131,7 +99,7 @@ function readFilters() {
   if (query) params.set("query", query);
   if (location) params.set("location", location);
   for (const [elementId, param] of Object.entries(filterParamMap)) {
-    selectedFilterValues(elementId).forEach((value) => params.append(param, value));
+    selectedMultiFilterValues(`#${elementId}`).forEach((value) => params.append(param, value));
   }
   if ($("#has-salary").checked) params.set("has_salary", "true");
   const hourlyMin = $("#hourly-min").value.trim();
@@ -244,11 +212,7 @@ async function loadJobs({ append = false } = {}) {
   }
 }
 
-let debounceTimer = null;
-function debouncedLoadJobs(waitMs = 300) {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => loadJobs(), waitMs);
-}
+const debouncedLoadJobs = createDebouncedAction(() => loadJobs());
 
 async function loadFacets() {
   try {
@@ -293,39 +257,26 @@ async function loadPublicJobDetail(jobId) {
 }
 
 async function openJob(jobId) {
-  const pane = $("#public-job-detail-pane");
-  const detail = $("#public-job-detail");
-  detail.innerHTML = `<p class="loading-detail">Loading job details…</p>`;
-  pane.classList.add("open", "has-selection");
-  pane.setAttribute("aria-hidden", "false");
-  document.querySelectorAll("#job-list .job-card").forEach((card) => {
-    card.classList.toggle("selected", card.dataset.id === String(jobId));
+  await openJobDetailPane({
+    paneSelector: "#public-job-detail-pane",
+    detailSelector: "#public-job-detail",
+    cardsSelector: "#job-list .job-card",
+    selectedId: jobId,
+    getCardId: (card) => card.dataset.id,
+    loadDetail: loadPublicJobDetail,
+    errorTitle: "Job details unavailable",
   });
-  try {
-    const result = await loadPublicJobDetail(jobId);
-    detail.innerHTML = result.html;
-  } catch (requestError) {
-    pane.classList.remove("open", "has-selection");
-    pane.setAttribute("aria-hidden", "true");
-    showErrorDialog(requestError, { title: "Job details unavailable" });
-  }
 }
 
 function setFilterSheetOpen(open) {
-  const sheet = $("#job-filters-sheet");
-  const backdrop = $("#job-filters-backdrop");
-  if (!sheet || !backdrop) return;
-  sheet.classList.toggle("open", open);
-  sheet.setAttribute("aria-hidden", String(!open));
-  backdrop.hidden = !open;
-  document.body.classList.toggle("filter-sheet-open", open);
+  setMultiFilterSheetOpen("#job-filters-sheet", "#job-filters-backdrop", open);
 }
 
 function closePublicJobDetail() {
-  const pane = $("#public-job-detail-pane");
-  pane?.classList.remove("open");
-  pane?.setAttribute("aria-hidden", "true");
-  document.querySelectorAll("#job-list .job-card.selected").forEach((card) => card.classList.remove("selected"));
+  closeJobDetailPane({
+    paneSelector: "#public-job-detail-pane",
+    selectedCardsSelector: "#job-list .job-card.selected",
+  });
 }
 
 function updateSliderFill() {
@@ -363,46 +314,14 @@ function setupBackToTop() {
 
 $("#search-form")?.addEventListener("submit", (event) => { event.preventDefault(); loadJobs(); });
 $("#refresh")?.addEventListener("click", () => loadJobs());
-$(".filters-panel")?.addEventListener("click", (event) => {
-  const trigger = event.target.closest(".multi-filter-trigger");
-  if (trigger) {
-    const root = trigger.closest(".multi-filter");
-    document.querySelectorAll(".multi-filter.open").forEach((other) => {
-      if (other === root) return;
-      other.classList.remove("open");
-      other.querySelector(".multi-filter-menu").hidden = true;
-      other.querySelector(".multi-filter-trigger").setAttribute("aria-expanded", "false");
-    });
-    const willOpen = !root.classList.contains("open");
-    root.classList.toggle("open", willOpen);
-    root.querySelector(".multi-filter-menu").hidden = !willOpen;
-    trigger.setAttribute("aria-expanded", String(willOpen));
-    return;
-  }
-  const clear = event.target.closest(".multi-filter-clear");
-  if (clear) {
-    const root = clear.closest(".multi-filter");
-    root.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-      input.checked = false;
-    });
-    updateMultiFilterSummary(root);
-    debouncedLoadJobs(100);
-  }
+setupMultiFilterInteractions("#job-filters-sheet", {
+  closeOnOutsideClick: true,
+  onClear: () => debouncedLoadJobs(100),
 });
 $(".filters-panel")?.addEventListener("change", (event) => {
-  const multiFilter = event.target.closest(".multi-filter");
-  if (multiFilter) updateMultiFilterSummary(multiFilter);
   if (event.target.id !== "hourly-min" && event.target.id !== "hourly-max" && !event.target.classList.contains("dual-range-slider")) {
     debouncedLoadJobs(150);
   }
-});
-document.addEventListener("click", (event) => {
-  if (event.target.closest(".multi-filter")) return;
-  document.querySelectorAll(".multi-filter.open").forEach((root) => {
-    root.classList.remove("open");
-    root.querySelector(".multi-filter-menu").hidden = true;
-    root.querySelector(".multi-filter-trigger").setAttribute("aria-expanded", "false");
-  });
 });
 $("#hourly-slider-min")?.addEventListener("input", (event) => {
   let minVal = Number(event.target.value);
@@ -473,13 +392,6 @@ document.addEventListener("click", (event) => {
   const card = event.target.closest(".job-card");
   if (card && !card.classList.contains("ww-job-card") && !event.target.closest(".btn-ai-action") && !event.target.closest(".job-bookmark-btn")) {
     openJob(card.dataset.id);
-  }
-
-  const quick = event.target.closest("[data-query], [data-term]");
-  if (quick) {
-    if (quick.dataset.query) $("#query").value = quick.dataset.query;
-    if (quick.dataset.term) setFilterSelections("recruiting-term", [quick.dataset.term]);
-    loadJobs();
   }
 });
 $("#open-job-filters")?.addEventListener("click", () => setFilterSheetOpen(true));

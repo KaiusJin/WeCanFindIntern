@@ -52,11 +52,19 @@ test("record button labels reflect the active question only", () => {
   );
   assert.match(interviewSource, /\? "Analyzing…"/);
   assert.doesNotMatch(interviewSource, /Transcribing audio locally/);
-  assert.match(mainSource, /interview-answer-flow-v2/);
+  assert.match(mainSource, /interview\.js\?v=20260902-shared-components-v1/);
 });
 
 test("practice history is visible when the Interview section opens", () => {
   assert.match(indexSource, /<div id="interview-history-card" class="career-card"[^>]*>/);
   assert.doesNotMatch(indexSource, /id="interview-history-card"[^>]*\shidden(?:\s|>)/);
   assert.match(interviewSource, /refreshHistory\(\);\s*$/);
+});
+
+test("Interview clear and generation reuse the shared resume and session reset controls", () => {
+  assert.match(interviewSource, /const interviewResumeSource = setupProfileOrPdfResumeSource/);
+  assert.match(interviewSource, /interviewResumeSource\.pdfUpload\.reset\(\)/);
+  assert.match(interviewSource, /interviewResumeSource\.sync\(\)/);
+  assert.doesNotMatch(interviewSource, /loadInterviewProfile\(/);
+  assert.equal(interviewSource.match(/resetInterviewSessionState\(\);/g)?.length, 2);
 });

@@ -32,8 +32,11 @@ TOOL_CATALOG: list[dict[str, Any]] = [
     {
         "name": "search_jobs",
         "description": (
-            "Search jobs across the public library and WaterlooWorks. Returns title, "
-            "company, location, source and job id."
+            "Search jobs across the public library and WaterlooWorks for exact filters "
+            "or catalog lookup. Returns title, company, location, source and job id. "
+            "The limit is a global maximum across all requested sources. Use "
+            "recommend_jobs instead when the user wants roles suited to their Profile "
+            "or stated preferences."
         ),
         "parameters": SearchJobsArgs.model_json_schema(),
         "mutates": False,
@@ -83,7 +86,10 @@ TOOL_CATALOG: list[dict[str, Any]] = [
             "Recommend jobs with hybrid RAG recall over Profile, job descriptions and "
             "preferences, followed by deterministic evidence scoring and an optional "
             "bounded LLM review. The top two results, or the top one when only one "
-            "exists, receive a full job analysis. Never writes user data."
+            "exists, receive a full job analysis. Use this when the user asks for a set "
+            "of jobs based on a preferred location, role, work mode, or other personal "
+            "fit signal, even if they do not explicitly say 'recommend'. Never writes "
+            "user data."
         ),
         "parameters": RecommendJobsArgs.model_json_schema(),
         "mutates": False,

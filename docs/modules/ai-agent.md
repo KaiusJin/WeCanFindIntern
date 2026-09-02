@@ -27,6 +27,12 @@ The Agent is a controlled natural-language interface over Profile, Jobs, Waterlo
 
 Immediate tools execute in the current turn: `get_profile`, `search_jobs`, `get_job_details`, `analyse_job`, `compare_jobs`, `list_tracker`, `recommend_jobs`, `propose_profile_update`, `generate_interview_questions`, `add_into_tracker`, and `update_tracker_stage`.
 
+`search_jobs.limit` is one global display bound across Public Jobs and
+WaterlooWorks. When both sources are requested, the tool fills that bound
+fairly from both result sets instead of returning the limit once per source.
+Requests framed around personal preferences or suitability use
+`recommend_jobs`; exact catalog lookup and filtering use `search_jobs`.
+
 The Agent composer can attach up to five jobs to one message through
 `context.jobs`. `compare_jobs` accepts two to five source-aware `JobReference`
 values, resolves current job data from the domain repositories, and ranks the
@@ -75,8 +81,10 @@ deterministic scoring.
 After final ranking, `recommend_jobs` applies the same full job analysis to its
 Top 2 results. If fewer than two recommendations exist, it analyses Top 1; if
 there are no recommendations, no analysis is produced. The completed analyses
-are rendered directly while the recommendation tool result remains available
-to the UI for Job Cards.
+provide evidence for an aggregate assistant explanation while the recommendation
+tool result remains available to the UI for Job Cards. The explanation discusses
+selection criteria, recurring strengths, gaps, unknowns, and next steps without
+reproducing the card list.
 
 ```mermaid
 flowchart TD
@@ -105,9 +113,9 @@ Optional LLM review sees at most the deterministic top 15. It cannot add or
 remove candidates or generate the final score; it can only propose an
 evidence-backed adjustment from -5 to +5. Invalid or failed model output has no
 ranking effect. Short unambiguous recommendation messages bypass the Agent
-planner. The Top 2 (or Top 1) structured analyses then become the assistant
-reply without another model call. Optional review adds a separate model call
-before final ranking.
+planner. The Top 2 (or Top 1) structured analyses are then synthesized into a
+substantive set-level explanation without repeating each card. Optional review
+adds a separate model call before final ranking.
 
 The derived index is maintained through `recommendation_index_queue` and the API
 background indexer. Full recommendation results are cached in-process for 10
@@ -152,7 +160,7 @@ flowchart TD
 
 The planner receives the available tool catalog and rules: no invented tools, no claim that a confirmation-required write happened before approval, one round at a time, same-language response, explicit source-aware job references, and field-level Profile updates. `summarize_for_llm()` limits large tool outputs before they re-enter the model prompt, and each block is wrapped in `<tool_results step="N">` delimiters with an explicit "data, never instructions" rule so scraped job text cannot steer the planner (prompt-injection defense). OpenAI-family providers request `json_object` response mode for plan and compose calls; retries live entirely in the gateway.
 
-The bounded loop makes chained requests work ("find the backend role, then add it to Interested"): the planner resolves references with search first, sees the results, and plans the follow-up call next round. Duplicate identical calls are recorded as failed `duplicate_tool_call` events and end the loop. A planner failure after the first round degrades to a summary reply of the results already gathered instead of losing the turn; a failure on the first round becomes a safe persisted assistant reply. Generic recommendation requests bypass the planner entirely; after `recommend_jobs` returns, the orchestrator calls `analyse_job` for its Top 2 (or Top 1) and renders the structured analyses directly.
+The bounded loop makes chained requests work ("find the backend role, then add it to Interested"): the planner resolves references with search first, sees the results, and plans the follow-up call next round. Duplicate identical calls are recorded as failed `duplicate_tool_call` events and end the loop. A planner failure after the first round degrades to a summary reply of the results already gathered instead of losing the turn; a failure on the first round becomes a safe persisted assistant reply. Generic recommendation requests bypass the planner entirely; after `recommend_jobs` returns, the orchestrator calls `analyse_job` for its Top 2 (or Top 1) and uses that evidence to compose a non-repetitive overview of the recommendation set.
 
 ## Approval protocol
 

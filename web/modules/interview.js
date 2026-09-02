@@ -1,6 +1,6 @@
-import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, setupDropzone, showErrorDialog, showSuccessDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
-import { validateAiConfig } from "./settings.js?v=20260902-settings-v2";
-import { extractResumePdf, loadProfileContext } from "./resume-source.js";
+import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, showErrorDialog, showSuccessDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
+import { getAiConfigOrShowError } from "./settings.js?v=20260902-shared-components-v1";
+import { setupProfileOrPdfResumeSource } from "./resume-source.js?v=20260902-shared-resume-source-v1";
 import { readSseEvents } from "./sse.js";
 
 // =========================================================
@@ -21,6 +21,16 @@ const interviewState = {
   timerInterval: null,
   secondsElapsed: 0,
 };
+
+function resetInterviewSessionState() {
+  interviewState.questions = [];
+  interviewState.currentIndex = 0;
+  interviewState.sessionId = null;
+  interviewState.answered = new Set();
+  interviewState.responses = new Map();
+  interviewState.analyzing = new Set();
+  $("#interview-answer-text").value = "";
+}
 
 // Compact stepper labels keyed by question category.
 const STEP_LABELS = {
@@ -197,19 +207,6 @@ function criteriaResultsMarkup(results) {
   `).join("");
 }
 
-// Candidate source: saved Profile or uploaded resume PDF (same flow as the
-// Cover Letter section).
-async function loadInterviewProfile() {
-  try {
-    const context = await loadProfileContext();
-    const text = context.resume_text || "";
-    $("#int-resume-text").value = text;
-  } catch (error) {
-    $("#int-resume-text").value = "";
-    showErrorDialog(error, { title: "Could not load Profile" });
-  }
-}
-
 function isPdfResumeSource() {
   return $("input[name='int-resume-source'][value='pdf']")?.checked ?? false;
 }
@@ -218,40 +215,16 @@ function currentResumeText() {
   return $("#int-resume-text").value.trim();
 }
 
-async function extractInterviewPdf(file) {
-  if (!file) return;
-  const label = $("#int-file-label");
-  if (label) label.textContent = `Extracting from ${file.name}…`;
-  try {
-    const result = await extractResumePdf(file);
-    $("#int-resume-text").value = result.text;
-    if (label) label.textContent = `✓ Extracted from ${file.name}`;
-  } catch (error) {
-    if (label) label.textContent = "Click or drag & drop resume PDF";
-    $("#int-resume-text").value = "";
-    showErrorDialog(error, { title: "Resume upload failed" });
-  }
-}
-
-function syncInterviewResumeSource({ resetPdf = false } = {}) {
-  const isPdf = isPdfResumeSource();
-  $("#int-pdf-source").hidden = !isPdf;
-  if (isPdf) {
-    if (resetPdf) {
-      $("#int-resume-text").value = "";
-      $("#int-file-label").textContent = "Click or drag & drop resume PDF";
-    }
-  } else loadInterviewProfile();
-}
-
-document.querySelectorAll("input[name='int-resume-source']").forEach((input) => input.addEventListener("change", () => {
-  syncInterviewResumeSource({ resetPdf: true });
-}));
-$("#int-resume-pdf")?.addEventListener("change", (event) => extractInterviewPdf(event.target.files?.[0]));
-setupDropzone($("#int-dropzone"), (files) => extractInterviewPdf(files[0]));
 // The tab module is lazy-loaded. Synchronize with the current radio value in
 // case Upload Resume was selected while the import was still in flight.
-syncInterviewResumeSource({ resetPdf: true });
+const interviewResumeSource = setupProfileOrPdfResumeSource({
+  sourceInputSelector: "input[name='int-resume-source']",
+  pdfSourceSelector: "#int-pdf-source",
+  fileInputSelector: "#int-resume-pdf",
+  dropzoneSelector: "#int-dropzone",
+  fileLabelSelector: "#int-file-label",
+  resumeTextSelector: "#int-resume-text",
+});
 
 $("#btn-generate-questions")?.addEventListener("click", async () => {
   const jdText = $("#interview-jd-text").value.trim();
@@ -268,26 +241,15 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
     return;
   }
 
-  let config;
-  try {
-    config = validateAiConfig();
-  } catch (err) {
-    showErrorDialog(err, { title: "AI settings required" });
-    return;
-  }
+  const config = getAiConfigOrShowError();
+  if (!config) return;
 
   await stopActiveRecording();
   $("#interview-empty").hidden = true;
   $("#interview-loading").hidden = false;
   $("#interview-active-card").hidden = true;
   $("#interview-report-card").hidden = true;
-  interviewState.questions = [];
-  interviewState.currentIndex = 0;
-  interviewState.sessionId = null;
-  interviewState.answered = new Set();
-  interviewState.responses = new Map();
-  interviewState.analyzing = new Set();
-  $("#interview-answer-text").value = "";
+  resetInterviewSessionState();
 
   try {
     const res = await fetchWithTimeout(
@@ -474,13 +436,8 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
     return;
   }
 
-  let config;
-  try {
-    config = validateAiConfig();
-  } catch (err) {
-    showErrorDialog(err, { title: "AI settings required" });
-    return;
-  }
+  const config = getAiConfigOrShowError();
+  if (!config) return;
 
   const formData = new FormData();
   formData.append("job_description", jdText);
@@ -661,23 +618,13 @@ $("#clear-interview")?.addEventListener("click", async () => {
   await stopActiveRecording();
   const profileRadio = $("input[name='int-resume-source'][value='profile']");
   if (profileRadio) profileRadio.checked = true;
-  $("#int-pdf-source").hidden = true;
-  const fileInput = $("#int-resume-pdf");
-  if (fileInput) fileInput.value = "";
-  $("#int-file-label").textContent = "Click or drag & drop resume PDF";
-  $("#int-resume-text").value = "";
-  loadInterviewProfile();
+  interviewResumeSource.pdfUpload.reset();
+  interviewResumeSource.sync();
   $("#interview-jd-text").value = "";
-  $("#interview-answer-text").value = "";
   $("#interview-empty").hidden = false;
   $("#interview-active-card").hidden = true;
   $("#interview-report-card").hidden = true;
-  interviewState.questions = [];
-  interviewState.currentIndex = 0;
-  interviewState.sessionId = null;
-  interviewState.answered = new Set();
-  interviewState.responses = new Map();
-  interviewState.analyzing = new Set();
+  resetInterviewSessionState();
   clearRecordingTimer();
   if (interviewState.stream) {
     interviewState.stream.getTracks().forEach((t) => t.stop());

@@ -100,6 +100,31 @@ def profile_summary(profile: UserProfile) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _limit_search_results(
+    results: dict[str, list[dict[str, Any]]], *, limit: int
+) -> dict[str, list[dict[str, Any]]]:
+    """Apply one fair, global result limit across all requested job sources."""
+
+    limited = {source: [] for source in results}
+    positions = {source: 0 for source in results}
+    selected = 0
+    while selected < limit:
+        added = False
+        for source, items in results.items():
+            position = positions[source]
+            if position >= len(items):
+                continue
+            limited[source].append(items[position])
+            positions[source] += 1
+            selected += 1
+            added = True
+            if selected >= limit:
+                break
+        if not added:
+            break
+    return limited
+
+
 async def tool_get_profile(args: dict[str, Any], deps: AgentDeps, phase: str) -> dict[str, Any]:
     profile = await deps.profile_repo.get_profile()
     summary = profile_summary(profile)
@@ -181,6 +206,7 @@ async def tool_search_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) ->
                 "next_cursor": ww.get("next_cursor"),
             }
             used.append("waterloo_work")
+    results = _limit_search_results(results, limit=parsed.limit)
     total = sum(len(items) for items in results.values())
     lines: list[str] = []
     for source, items in results.items():

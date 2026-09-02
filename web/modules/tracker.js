@@ -98,7 +98,6 @@ function restoreTrackerFilters() {
 async function fetchTrackerData({ keepSelection = false } = {}) {
   const requestVersion = ++trackerState.requestVersion;
   trackerState.loading = true;
-  $("#tracker-result-count").textContent = "Loading…";
   try {
     syncTrackerFilterState();
     const params = buildTrackerParams();
@@ -128,7 +127,6 @@ async function fetchTrackerData({ keepSelection = false } = {}) {
     renderTrackerPagination();
     updateBookmarkButtons();
   } catch (error) {
-    $("#tracker-result-count").textContent = "Applications unavailable";
     console.error("Tracker fetch error:", error);
     showErrorDialog(error, { title: "Application Tracker unavailable" });
   } finally {
@@ -166,9 +164,6 @@ function renderTrackerList() {
   if (!body) return;
   const items = trackerState.applications;
   $("#tracker-empty").hidden = Boolean(items.length);
-  const stageFilterLabels = { "": "All applications", ...TRACKER_STAGE_LABELS };
-  $("#tracker-results-title").textContent = stageFilterLabels[trackerState.stageFilter] || "All applications";
-  $("#tracker-result-count").textContent = `${trackerState.total.toLocaleString()} record${trackerState.total === 1 ? "" : "s"}`;
   body.innerHTML = items.map((app) => {
     return `<tr class="tracker-row" data-app-id="${app.id}">
       <td class="select-col"><input class="tracker-row-check" data-app-id="${app.id}" type="checkbox" aria-label="Select ${escapeHtml(app.title)}" ${trackerState.selectedIds.has(app.id) ? "checked" : ""} /></td>
@@ -178,7 +173,6 @@ function renderTrackerList() {
       <td><span class="tracker-cell-text">${escapeHtml(TRACKER_SOURCE_LABELS[app.source] || "Other")}</span></td>
       <td><input class="tracker-inline-date" data-app-id="${app.id}" type="date" value="${toDateInput(app.applied_at)}" aria-label="Applied date for ${escapeHtml(app.title)}" /></td>
       <td><span title="${escapeHtml(new Date(app.updated_at).toLocaleString())}">${escapeHtml(formatRelativeTime(app.updated_at))}</span></td>
-      <td><button class="tracker-row-menu" data-app-id="${app.id}" type="button" aria-label="Open application">›</button></td>
     </tr>`;
   }).join("");
   updateBulkBar();

@@ -1,24 +1,25 @@
 import { $, escapeHtml, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
-import { validateAiConfig } from "./settings.js?v=20260902-settings-v2";
 import {
+  createAtsCommentary,
   renderAtsBreakdown,
   requestAtsDiagnostic,
   setupAtsResumeSource,
-} from "./ats-shared.js";
+} from "./ats-shared.js?v=20260902-shared-ats-v1";
 
-let commentaryRequestId = 0;
-
-function resetCommentary(message = "Calculate the match to generate personalized feedback.") {
-  $("#job-match-ai-status").textContent = message;
-  $("#job-match-ai-status").hidden = false;
-  $("#job-match-ai-result").hidden = true;
-}
+const commentary = createAtsCommentary({
+  defaultMessage: "Calculate the match to generate personalized feedback.",
+  statusSelector: "#job-match-ai-status",
+  resultSelector: "#job-match-ai-result",
+  summarySelector: "#job-match-ai-summary",
+  strengthsBlockSelector: "#job-match-ai-strengths-block",
+  strengthsSelector: "#job-match-ai-strengths",
+  improvementsSelector: "#job-match-ai-improvements",
+});
 
 function resetResult() {
-  commentaryRequestId += 1;
   $("#ats-match-result").hidden = true;
   $("#ats-match-pending").hidden = false;
-  resetCommentary();
+  commentary.invalidate();
 }
 
 function renderMatch(result) {
@@ -43,56 +44,12 @@ function renderMatch(result) {
   ).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
-function renderCommentary(commentary) {
-  $("#job-match-ai-status").hidden = true;
-  $("#job-match-ai-result").hidden = false;
-  $("#job-match-ai-summary").textContent = commentary.summary;
-  const strengths = commentary.strengths || [];
-  $("#job-match-ai-strengths-block").hidden = !strengths.length;
-  $("#job-match-ai-strengths").innerHTML = strengths
-    .map((item) => `<li>${escapeHtml(item)}</li>`)
-    .join("");
-  $("#job-match-ai-improvements").innerHTML = (commentary.improvements || [])
-    .map((item) => `<li>${escapeHtml(item)}</li>`)
-    .join("");
-}
-
 async function generateCommentary(resumeText, jobDescription, diagnostic) {
-  const requestId = ++commentaryRequestId;
-  let config;
-  try {
-    config = validateAiConfig();
-  } catch (error) {
-    if (requestId === commentaryRequestId) resetCommentary(error.message);
-    return;
-  }
-
-  resetCommentary("Generating personalized AI feedback…");
-  try {
-    const response = await requestAtsDiagnostic(
-      "/api/v1/ats/match/commentary",
-      {
-        resume_text: resumeText,
-        job_description: jobDescription,
-        diagnostic,
-        provider: config.provider,
-        model_name: config.model_name,
-        api_key: config.api_key,
-        api_base: config.api_base || "",
-      },
-      "AI feedback could not be generated.",
-    );
-    if (requestId !== commentaryRequestId) return;
-    if (!response.ok || !response.commentary) {
-      resetCommentary(response.error || "AI feedback could not be generated right now.");
-      return;
-    }
-    renderCommentary(response.commentary);
-  } catch (error) {
-    if (requestId === commentaryRequestId) {
-      resetCommentary(error.message || "AI feedback could not be generated right now.");
-    }
-  }
+  await commentary.generate("/api/v1/ats/match/commentary", {
+    resume_text: resumeText,
+    job_description: jobDescription,
+    diagnostic,
+  });
 }
 
 const resumeSource = setupAtsResumeSource({

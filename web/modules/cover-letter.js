@@ -1,6 +1,6 @@
-import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, setupDropzone, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
-import { validateAiConfig } from "./settings.js?v=20260902-settings-v2";
-import { extractResumePdf, loadProfileContext } from "./resume-source.js";
+import { $, escapeHtml, fetchWithTimeout, responseErrorMessage, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
+import { getAiConfigOrShowError } from "./settings.js?v=20260902-shared-components-v1";
+import { setupProfileOrPdfResumeSource } from "./resume-source.js?v=20260902-shared-resume-source-v1";
 import { readSseEvents } from "./sse.js";
 
 // =========================================================
@@ -9,18 +9,6 @@ import { readSseEvents } from "./sse.js";
 
 let coverLetterProfile = null;
 let coverLetterProgressTimer = null;
-
-async function loadCoverLetterProfile() {
-  try {
-    const context = await loadProfileContext();
-    coverLetterProfile = context.profile;
-    const text = context.resume_text || "";
-    $("#cl-resume-text").value = text;
-  } catch (error) {
-    $("#cl-resume-text").value = "";
-    showErrorDialog(error, { title: "Could not load Profile" });
-  }
-}
 
 function coverLetterUserInfo() {
   const basics = coverLetterProfile?.basics || {};
@@ -82,22 +70,6 @@ function stopCoverLetterProgress() {
   coverLetterProgressTimer = null;
 }
 
-async function extractCoverLetterPdf(file) {
-  if (!file) return;
-  const label = $("#cl-file-label");
-  if (label) label.textContent = `Extracting from ${file.name}…`;
-  try {
-    const result = await extractResumePdf(file);
-    $("#cl-resume-text").value = result.text;
-    populateCoverLetterContact(result.contact_information);
-    if (label) label.textContent = `✓ Extracted from ${file.name}`;
-  } catch (error) {
-    if (label) label.textContent = "Click or drag & drop resume PDF";
-    $("#cl-resume-text").value = "";
-    showErrorDialog(error, { title: "Resume upload failed" });
-  }
-}
-
 function populateCoverLetterContact(contact) {
   if (!contact) return;
   const fields = {
@@ -119,41 +91,31 @@ function clearCoverLetterContact() {
   });
 }
 
-function syncCoverLetterResumeSource({ resetPdf = false } = {}) {
-  const isPdf = $("input[name='cl-resume-source'][value='pdf']")?.checked ?? false;
-  $("#cl-pdf-source").hidden = !isPdf;
-  $("#cl-contact-section").hidden = !isPdf;
-  if (isPdf) {
-    if (resetPdf) {
-      $("#cl-resume-text").value = "";
-      $("#cl-file-label").textContent = "Click or drag & drop resume PDF";
-      clearCoverLetterContact();
-    }
-  } else loadCoverLetterProfile();
-}
-
-document.querySelectorAll("input[name='cl-resume-source']").forEach((input) => input.addEventListener("change", () => {
-  syncCoverLetterResumeSource({ resetPdf: true });
-}));
-$("#cl-resume-pdf")?.addEventListener("change", (event) => extractCoverLetterPdf(event.target.files?.[0]));
-setupDropzone($("#cl-dropzone"), (files) => extractCoverLetterPdf(files[0]));
 // Modules load lazily. A user can select Upload Resume before this module has
 // finished loading, so initialize from the radio's current state instead of
 // assuming the default Profile option is still selected.
-syncCoverLetterResumeSource({ resetPdf: true });
+setupProfileOrPdfResumeSource({
+  sourceInputSelector: "input[name='cl-resume-source']",
+  pdfSourceSelector: "#cl-pdf-source",
+  additionalPdfSourceSelectors: ["#cl-contact-section"],
+  fileInputSelector: "#cl-resume-pdf",
+  dropzoneSelector: "#cl-dropzone",
+  fileLabelSelector: "#cl-file-label",
+  resumeTextSelector: "#cl-resume-text",
+  onProfileLoaded: (context) => {
+    coverLetterProfile = context.profile;
+  },
+  onExtract: (data) => populateCoverLetterContact(data.contact_information),
+  onResetPdf: clearCoverLetterContact,
+});
 
 $("#btn-generate-cl")?.addEventListener("click", async () => {
   const resumeText = $("#cl-resume-text").value.trim();
   const jdText = $("#cl-jd-text").value.trim();
   if (!validateCoverLetterInputs()) return;
 
-  let config;
-  try {
-    config = validateAiConfig();
-  } catch (err) {
-    showErrorDialog(err, { title: "AI settings required" });
-    return;
-  }
+  const config = getAiConfigOrShowError();
+  if (!config) return;
 
   $("#cl-empty").hidden = true;
   $("#cl-loading").hidden = false;

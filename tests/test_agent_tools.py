@@ -276,6 +276,38 @@ def test_search_jobs_public_and_waterloo():
     assert "Found" in result["summary"]
 
 
+def test_search_jobs_applies_one_global_limit_across_sources():
+    public_jobs = [
+        make_job(title=f"Public Role {index}", company=f"Public Co {index}") for index in range(8)
+    ]
+    waterloo_jobs = [
+        {
+            "source_job_id": f"WW-{index}",
+            "title": f"Waterloo Role {index}",
+            "organization": f"Waterloo Co {index}",
+        }
+        for index in range(8)
+    ]
+    deps = _deps(
+        job_repo=FakeJobRepo(public_jobs),
+        ww=FakeWaterlooWorks(waterloo_jobs),
+    )
+
+    result = asyncio.run(
+        run_tool(
+            "search_jobs",
+            {"source": "all", "limit": 10},
+            deps,
+            phase="plan",
+        )
+    )
+
+    assert sum(len(items) for items in result["data"].values()) == 10
+    assert len(result["data"]["public"]) == 5
+    assert len(result["data"]["waterloo_work"]) == 5
+    assert result["summary"] == "Found 10 job(s) matching your criteria."
+
+
 def test_search_jobs_passes_public_filters_and_relevance_sort():
     repo = FakeJobRepo([make_job(title="Python Backend Intern", company="Acme")])
     deps = _deps(job_repo=repo)

@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260901-loading-layout-v1" />
-    <link rel="stylesheet" href="/app-shell.css?v=20260901-attach-summary-v2" />
+    <link rel="stylesheet" href="/styles.css?v=20260902-profile-section-dividers-v1" />
+    <link rel="stylesheet" href="/app-shell.css?v=20260902-memory-alignment-v2" />
   </head>
   <body>
     <div class="app-shell">
@@ -214,7 +214,6 @@
         <section class="hero section-heading">
           <div class="section-heading-row">
             <div class="section-heading-copy">
-              <p class="section-kicker">Public Jobs</p>
               <h1>Opportunity Map</h1>
               <p class="hero-copy">Explore public postings across U.S. states and Canadian provinces.</p>
             </div>
@@ -993,13 +992,6 @@
 
           <div class="tracker-control-panel">
             <label class="tracker-search"><span aria-hidden="true">⌕</span><input id="tracker-query" type="search" placeholder="Search company, role, or location…" autocomplete="off" /></label>
-          </div>
-
-          <div class="tracker-workspace-head">
-            <div>
-              <h2 id="tracker-results-title">All applications</h2>
-              <span id="tracker-result-count" class="tracker-result-count">Loading…</span>
-            </div>
             <div class="tracker-head-actions">
               <select id="tracker-sort" aria-label="Sort applications"><option value="updated:desc">Recently updated</option><option value="applied:desc">Newest applied</option><option value="company:asc">Company A–Z</option></select>
             </div>
@@ -1014,7 +1006,7 @@
             </div>
             <div class="tracker-table-wrap">
               <table class="tracker-table">
-                <thead><tr><th class="select-col"><input id="tracker-select-page" type="checkbox" aria-label="Select page" /></th><th>Company / role</th><th>Stage</th><th>Location</th><th>Source</th><th>Applied</th><th>Updated</th><th></th></tr></thead>
+                <thead><tr><th class="select-col"><input id="tracker-select-page" type="checkbox" aria-label="Select page" /></th><th>Company / role</th><th>Stage</th><th>Location</th><th>Source</th><th>Applied</th><th>Updated</th></tr></thead>
                 <tbody id="tracker-table-body"></tbody>
               </table>
               <div id="tracker-empty" class="empty-state" hidden><div class="empty-icon">⌁</div><h3>No applications found</h3><p>Try a broader search or add your first opportunity.</p></div>
@@ -1036,33 +1028,30 @@
           <div id="agent-layout" class="agent-layout">
             <aside id="agent-sidebar" class="agent-sidebar" aria-label="AI conversation history">
               <div class="agent-sidebar-top">
+                <button id="agent-sidebar-toggle" class="agent-sidebar-toggle" type="button" aria-label="Collapse conversation sidebar" aria-expanded="true" title="Collapse sidebar">
+                  <svg class="agent-sidebar-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"></path></svg>
+                  <span class="agent-sidebar-toggle-copy">Conversations</span>
+                </button>
                 <button id="agent-new-session" class="primary-button agent-new-session-btn" type="button">
-                  <span class="agent-new-session-icon" aria-hidden="true">＋</span>
+                  <svg class="agent-new-session-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"></path></svg>
                   <span class="agent-sidebar-copy">New conversation</span>
                 </button>
-                <button id="agent-sidebar-toggle" class="agent-sidebar-toggle" type="button" aria-label="Collapse conversation sidebar" aria-expanded="true" title="Collapse sidebar">‹</button>
               </div>
               <div class="agent-sidebar-content">
+                <button id="agent-memory-trigger" class="agent-memory-trigger" type="button" aria-haspopup="dialog" aria-controls="agent-memory-dialog">
+                  <svg class="agent-memory-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5a3 3 0 1 0-5.997.125A4 4 0 0 0 5 12a4 4 0 0 0 1 7.874A3 3 0 1 0 12 19"></path><path d="M12 5a3 3 0 1 1 5.997.125A4 4 0 0 1 19 12a4 4 0 0 1-1 7.874A3 3 0 1 1 12 19"></path><path d="M15 13a2 2 0 0 0-2 2v4M9 13a2 2 0 0 1 2 2v4M12 5v14"></path></svg>
+                  <span class="agent-memory-copy">Career Memory</span>
+                </button>
                 <div class="agent-sidebar-section">
-                  <div class="agent-sidebar-heading">Recent conversations</div>
+                  <div class="agent-sidebar-heading">Recent Conversations</div>
                   <div id="agent-session-list" class="agent-session-list" aria-label="Conversations"></div>
                 </div>
-                <details id="agent-memory-panel" class="agent-memory-panel">
-                  <summary>
-                    <span>What AI remembers</span>
-                    <span id="agent-memory-count" class="agent-memory-count">0</span>
-                  </summary>
-                  <p class="agent-memory-explainer">Useful details from your conversations that help personalize future answers.</p>
-                  <div id="agent-memory-list" class="agent-memory-list"></div>
-                  <div id="agent-memory-status" class="agent-memory-status">Nothing saved yet.</div>
-                </details>
               </div>
             </aside>
             <div class="agent-main">
               <div id="agent-chat" class="agent-chat" aria-live="polite">
                 <div class="agent-message agent-assistant">
                   <div class="agent-bubble agent-welcome">
-                    <span class="agent-welcome-kicker">AI JOB-SEARCH COPILOT</span>
                     <h3>What can I help you move forward?</h3>
                     <p class="md-p">I can find matching roles, explain job descriptions, and keep your application pipeline organized.</p>
                     <div class="agent-suggestion-list">
@@ -1201,7 +1190,7 @@
           <label class="field-group job-content-field"><span class="field-label">Location</span><input id="drawer-location" class="career-input" type="text" /></label>
           <label class="field-group job-content-field"><span class="field-label">Work mode</span><select id="drawer-work-mode" class="career-select"><option value="">Not specified</option><option value="hybrid">Hybrid</option><option value="remote">Remote</option><option value="onsite">In-person</option><option value="unknown">Unknown</option></select></label>
           <label class="field-group job-content-field"><span class="field-label">Source</span><select id="drawer-source" class="career-select"><option value="other">Other</option></select></label>
-          <div class="field-group job-content-field"><span class="field-label">Link</span><div class="tracker-link-row"><input id="drawer-url" class="career-input" type="url" /><button id="drawer-copy-job" class="secondary-button" type="button">Copy</button><a id="drawer-open-job" class="secondary-button" href="#" target="_blank" rel="noreferrer">Open ↗</a></div></div>
+          <div class="field-group job-content-field tracker-link-field"><span class="field-label">Link</span><div class="tracker-link-row"><input id="drawer-url" class="career-input" type="url" /><button id="drawer-copy-job" class="secondary-button" type="button">Copy</button><a id="drawer-open-job" class="secondary-button" href="#" target="_blank" rel="noreferrer">Open ↗</a></div></div>
           <label class="field-group job-content-field"><span class="field-label">Salary / Pay Rate</span><input id="drawer-salary" class="career-input" type="text" /></label>
           <label class="field-group job-content-field"><span class="field-label">Application deadline</span><input id="drawer-deadline" class="career-input" type="date" /></label>
           </div>
@@ -1309,7 +1298,6 @@
         </div>
 
         <div class="settings-dialog-footer">
-          <span id="settings-save-feedback" class="settings-save-feedback" hidden>✓ Saved securely on this computer!</span>
           <div class="settings-footer-actions">
             <button id="btn-save-settings" class="primary-button" type="button">Save Settings</button>
           </div>
@@ -1335,7 +1323,6 @@
         <div class="agent-attach-search-section">
           <div class="agent-attach-section-label">
             <label for="agent-attach-query">Find a role</label>
-            <span>Search both sources</span>
           </div>
           <div class="agent-attach-search">
             <div class="agent-attach-input-wrap">
@@ -1348,13 +1335,23 @@
         </div>
         <div class="agent-attach-results-heading">
           <strong>Available roles</strong>
-          <span id="agent-attach-results-count" aria-live="polite"></span>
         </div>
         <div id="agent-attach-results" class="agent-attach-results" aria-live="polite" role="list"></div>
       </div>
       <div class="settings-dialog-footer">
         <span class="agent-attach-footer-hint"><span aria-hidden="true">⌘</span> Select multiple roles to use in chat</span>
         <button id="done-agent-attach-dialog" class="secondary-button" type="button">Done</button>
+      </div>
+    </dialog>
+
+    <dialog id="agent-memory-dialog" class="app-message-dialog agent-memory-dialog" aria-labelledby="agent-memory-title" aria-describedby="agent-memory-description">
+      <div class="app-message-card agent-memory-card">
+        <button id="close-agent-memory-dialog" class="app-message-close" type="button" aria-label="Close Career Memory">×</button>
+        <h2 id="agent-memory-title">Career Memory <span id="agent-memory-dialog-count" class="agent-memory-dialog-count">0</span></h2>
+        <p id="agent-memory-description" class="agent-memory-dialog-description">Details from your conversations that help personalize future answers.</p>
+        <div id="agent-memory-dialog-status" class="agent-memory-status">Nothing saved yet.</div>
+        <div id="agent-memory-dialog-list" class="agent-memory-list"></div>
+        <button id="agent-memory-dialog-confirm" class="primary-button app-message-confirm" type="button">Done</button>
       </div>
     </dialog>
 
@@ -1385,6 +1382,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script type="module" src="/modules/main.js?v=20260901-agent-cards-v1"></script>
+    <script type="module" src="/modules/main.js?v=20260902-memory-alignment-v2"></script>
   </body>
 </html>

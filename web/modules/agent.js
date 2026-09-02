@@ -6,7 +6,7 @@ import {
   showErrorDialog,
 } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { readSseEvents } from "./sse.js";
-import { syncDialogScrollLock, validateAiConfig } from "./settings.js?v=20260902-settings-v2";
+import { getAiConfigOrShowError, syncDialogScrollLock } from "./settings.js?v=20260902-shared-components-v1";
 import {
   jobContextState,
   publicJobContext,
@@ -134,7 +134,6 @@ function renderAgentWelcome() {
   chat.innerHTML = `
     <div class="agent-message agent-assistant">
       <div class="agent-bubble agent-welcome">
-        <span class="agent-welcome-kicker">AI JOB-SEARCH COPILOT</span>
         <h3>What can I help you move forward?</h3>
         <p class="md-p">I can find matching roles, explain job descriptions, and keep your application pipeline organized.</p>
         <div class="agent-suggestion-list">
@@ -545,13 +544,8 @@ function setStreamActive(active) {
 }
 
 async function sendAgentMessage(text) {
-  let config;
-  try {
-    config = validateAiConfig();
-  } catch (err) {
-    showErrorDialog(err, { title: "AI settings required" });
-    return;
-  }
+  const config = getAiConfigOrShowError();
+  if (!config) return;
 
   appendMessage("user", escapeText(text));
   $("#agent-input").value = "";
@@ -670,13 +664,13 @@ function memoryTypeLabel(memoryType) {
 }
 
 async function loadMemoryStatus() {
-  const status = $("#agent-memory-status");
-  const memoryList = $("#agent-memory-list");
-  const memoryCount = $("#agent-memory-count");
+  const status = $("#agent-memory-dialog-status");
+  const memoryList = $("#agent-memory-dialog-list");
+  const dialogMemoryCount = $("#agent-memory-dialog-count");
   if (!status) return;
   if (!currentSessionId) {
     status.textContent = "Nothing saved yet.";
-    if (memoryCount) memoryCount.textContent = "0";
+    if (dialogMemoryCount) dialogMemoryCount.textContent = "0";
     if (memoryList) memoryList.innerHTML = "";
     return;
   }
@@ -685,7 +679,7 @@ async function loadMemoryStatus() {
     if (!res.ok) return;
     const data = await res.json();
     const memories = data.memories || [];
-    if (memoryCount) memoryCount.textContent = String(memories.length);
+    if (dialogMemoryCount) dialogMemoryCount.textContent = String(memories.length);
     status.textContent = memories.length
       ? `${memories.length} saved ${memories.length === 1 ? "detail" : "details"}`
       : "Nothing saved yet.";
@@ -705,6 +699,22 @@ async function loadMemoryStatus() {
       });
     }
   } catch (_) { }
+}
+
+function closeAgentMemoryDialog() {
+  const dialog = $("#agent-memory-dialog");
+  if (!dialog) return;
+  if (dialog.open) dialog.close();
+  syncDialogScrollLock();
+}
+
+function openAgentMemoryDialog() {
+  const dialog = $("#agent-memory-dialog");
+  if (!dialog) return;
+  void loadMemoryStatus();
+  if (!dialog.open) dialog.showModal();
+  syncDialogScrollLock();
+  $("#close-agent-memory-dialog")?.focus();
 }
 
 async function deleteMemory(memoryId) {
@@ -741,11 +751,11 @@ async function viewAgentJob(key, trigger = null) {
   setAgentJobDetailOpen(true);
   try {
     if (job.source === "waterloo_work") {
-      const module = await import("./waterlooworks.js?v=20260901-agent-jd-drawer-v1");
+      const module = await import("./waterlooworks.js?v=20260902-shared-components-v1");
       const result = await module.loadWaterlooWorksJobDetail(String(job.job_id));
       detail.innerHTML = result.html;
     } else {
-      const module = await import("./jobs.js?v=20260901-agent-jd-drawer-v1");
+      const module = await import("./jobs.js?v=20260902-shared-components-v1");
       const result = await module.loadPublicJobDetail(String(job.job_id));
       detail.innerHTML = result.html;
     }
@@ -820,7 +830,6 @@ function renderCurrentJobOption() {
 
 function renderAttachSearchResults(jobs, message = "") {
   const results = $("#agent-attach-results");
-  const count = $("#agent-attach-results-count");
   if (!results) return;
   const attachedKeys = new Set(attachedJobContexts.map(attachedContextKey));
   const attachedJobs = attachedJobContexts.map((job) => ({
@@ -833,11 +842,9 @@ function renderAttachSearchResults(jobs, message = "") {
   const availableJobs = jobs.filter((job) => !attachedKeys.has(agentJobKey(job)));
   const visibleJobs = [...attachedJobs, ...availableJobs];
   if (!visibleJobs.length) {
-    if (count) count.textContent = "";
     results.innerHTML = `<p class="muted-copy">${escapeHtml(message || "No matching jobs found.")}</p>`;
     return;
   }
-  if (count) count.textContent = `${visibleJobs.length} ${visibleJobs.length === 1 ? "role" : "roles"}`;
   results.innerHTML = visibleJobs.map((job) => {
     const key = agentJobKey(job);
     attachSearchJobs.set(key, job);
@@ -952,8 +959,6 @@ function openAttachDialog() {
   if (!dialog) return;
   renderCurrentJobOption();
   $("#agent-attach-query").value = "";
-  const count = $("#agent-attach-results-count");
-  if (count) count.textContent = "";
   renderAttachSearchResults([], "Loading recent jobs…");
   dialog.showModal();
   syncDialogScrollLock();
@@ -1035,6 +1040,16 @@ $("#agent-attach-results")?.addEventListener("click", (event) => {
 });
 $("#agent-sidebar-toggle")?.addEventListener("click", () => {
   setSidebarCollapsed(!$("#agent-layout")?.classList.contains("sidebar-collapsed"));
+});
+$("#agent-memory-trigger")?.addEventListener("click", openAgentMemoryDialog);
+$("#close-agent-memory-dialog")?.addEventListener("click", closeAgentMemoryDialog);
+$("#agent-memory-dialog-confirm")?.addEventListener("click", closeAgentMemoryDialog);
+$("#agent-memory-dialog")?.addEventListener("click", (event) => {
+  if (event.target === $("#agent-memory-dialog")) closeAgentMemoryDialog();
+});
+$("#agent-memory-dialog")?.addEventListener("close", () => {
+  syncDialogScrollLock();
+  $("#agent-memory-trigger")?.focus();
 });
 $("#agent-session-list")?.addEventListener("click", (event) => {
   const deleteButton = event.target.closest("[data-delete-session-id]");

@@ -3,12 +3,9 @@ import {
   escapeHtml,
   fetchWithTimeout,
   responseErrorMessage,
-  setupDropzone,
-  showErrorDialog,
 } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
-import { extractResumePdf } from "./resume-source.js";
-
-const DEFAULT_FILE_LABEL = "Click or drag & drop resume PDF";
+import { setupResumePdfInput } from "./resume-source.js?v=20260902-shared-resume-source-v1";
+import { validateAiConfig } from "./settings.js?v=20260902-shared-components-v1";
 
 export function renderAtsBreakdown(selector, items = []) {
   $(selector).innerHTML = items.map((item) => {
@@ -24,6 +21,81 @@ export function renderAtsBreakdown(selector, items = []) {
   }).join("");
 }
 
+export function createAtsCommentary({
+  defaultMessage,
+  statusSelector,
+  resultSelector,
+  summarySelector,
+  strengthsBlockSelector,
+  strengthsSelector,
+  improvementsSelector,
+}) {
+  let requestId = 0;
+
+  function reset(message = defaultMessage) {
+    $(statusSelector).textContent = message;
+    $(statusSelector).hidden = false;
+    $(resultSelector).hidden = true;
+  }
+
+  function render(commentary) {
+    $(statusSelector).hidden = true;
+    $(resultSelector).hidden = false;
+    $(summarySelector).textContent = commentary.summary;
+    const strengths = commentary.strengths || [];
+    $(strengthsBlockSelector).hidden = !strengths.length;
+    $(strengthsSelector).innerHTML = strengths
+      .map((item) => `<li>${escapeHtml(item)}</li>`)
+      .join("");
+    $(improvementsSelector).innerHTML = (commentary.improvements || [])
+      .map((item) => `<li>${escapeHtml(item)}</li>`)
+      .join("");
+  }
+
+  function invalidate() {
+    requestId += 1;
+    reset();
+  }
+
+  async function generate(endpoint, payload) {
+    const activeRequestId = ++requestId;
+    let config;
+    try {
+      config = validateAiConfig();
+    } catch (error) {
+      if (activeRequestId === requestId) reset(error.message);
+      return;
+    }
+
+    reset("Generating personalized AI feedback…");
+    try {
+      const response = await requestAtsDiagnostic(
+        endpoint,
+        {
+          ...payload,
+          provider: config.provider,
+          model_name: config.model_name,
+          api_key: config.api_key,
+          api_base: config.api_base || "",
+        },
+        "AI feedback could not be generated.",
+      );
+      if (activeRequestId !== requestId) return;
+      if (!response.ok || !response.commentary) {
+        reset(response.error || "AI feedback could not be generated right now.");
+        return;
+      }
+      render(response.commentary);
+    } catch (error) {
+      if (activeRequestId === requestId) {
+        reset(error.message || "AI feedback could not be generated right now.");
+      }
+    }
+  }
+
+  return { generate, invalidate, render, reset };
+}
+
 export function setupAtsResumeSource({
   fileInputSelector,
   dropzoneSelector,
@@ -32,36 +104,16 @@ export function setupAtsResumeSource({
   onExtract,
   onTextChanged,
 }) {
-  const fileInput = $(fileInputSelector);
-  const fileLabel = $(fileLabelSelector);
-  const resumeText = $(resumeTextSelector);
-
-  async function extractFile(file) {
-    if (!file) return;
-    fileLabel.textContent = `Extracting and checking ${file.name}…`;
-    try {
-      const data = await extractResumePdf(file);
-      resumeText.value = data.text;
-      fileLabel.textContent = `✓ Extracted from ${file.name}`;
-      await onExtract?.(data);
-    } catch (error) {
-      fileInput.value = "";
-      fileLabel.textContent = DEFAULT_FILE_LABEL;
-      showErrorDialog(error, { title: "Resume upload failed" });
-    }
-  }
-
-  fileInput?.addEventListener("change", (event) => extractFile(event.target.files?.[0]));
-  setupDropzone($(dropzoneSelector), (files) => extractFile(files[0]));
-  resumeText?.addEventListener("input", () => onTextChanged?.());
-
-  return {
-    reset() {
-      fileInput.value = "";
-      fileLabel.textContent = DEFAULT_FILE_LABEL;
-      resumeText.value = "";
-    },
-  };
+  return setupResumePdfInput({
+    fileInputSelector,
+    dropzoneSelector,
+    fileLabelSelector,
+    resumeTextSelector,
+    extractingLabel: (file) => `Extracting and checking ${file.name}…`,
+    clearFileInputOnError: true,
+    onExtract,
+    onTextChanged,
+  });
 }
 
 export async function requestAtsDiagnostic(endpoint, payload, fallback) {

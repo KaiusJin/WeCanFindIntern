@@ -1,26 +1,27 @@
 import { $, escapeHtml, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
-import { validateAiConfig } from "./settings.js?v=20260902-settings-v2";
 import {
+  createAtsCommentary,
   renderAtsBreakdown,
   requestAtsDiagnostic,
   setupAtsResumeSource,
-} from "./ats-shared.js";
+} from "./ats-shared.js?v=20260902-shared-ats-v1";
 
 let uploadedReadiness = null;
 let uploadedResumeText = "";
-let commentaryRequestId = 0;
-
-function resetCommentary(message = "Calculate the score to generate personalized feedback.") {
-  $("#ats-score-ai-status").textContent = message;
-  $("#ats-score-ai-status").hidden = false;
-  $("#ats-score-ai-result").hidden = true;
-}
+const commentary = createAtsCommentary({
+  defaultMessage: "Calculate the score to generate personalized feedback.",
+  statusSelector: "#ats-score-ai-status",
+  resultSelector: "#ats-score-ai-result",
+  summarySelector: "#ats-score-ai-summary",
+  strengthsBlockSelector: "#ats-score-ai-strengths-block",
+  strengthsSelector: "#ats-score-ai-strengths",
+  improvementsSelector: "#ats-score-ai-improvements",
+});
 
 function resetResult() {
-  commentaryRequestId += 1;
   $("#ats-readiness-result").hidden = true;
   $("#ats-readiness-pending").hidden = false;
-  resetCommentary();
+  commentary.invalidate();
 }
 
 function renderScore(result) {
@@ -36,55 +37,11 @@ function renderScore(result) {
   $("#ats-readiness-limitations").textContent = (result.limitations || []).join(" ");
 }
 
-function renderCommentary(commentary) {
-  $("#ats-score-ai-status").hidden = true;
-  $("#ats-score-ai-result").hidden = false;
-  $("#ats-score-ai-summary").textContent = commentary.summary;
-  const strengths = commentary.strengths || [];
-  $("#ats-score-ai-strengths-block").hidden = !strengths.length;
-  $("#ats-score-ai-strengths").innerHTML = strengths
-    .map((item) => `<li>${escapeHtml(item)}</li>`)
-    .join("");
-  $("#ats-score-ai-improvements").innerHTML = (commentary.improvements || [])
-    .map((item) => `<li>${escapeHtml(item)}</li>`)
-    .join("");
-}
-
 async function generateCommentary(resumeText, diagnostic) {
-  const requestId = ++commentaryRequestId;
-  let config;
-  try {
-    config = validateAiConfig();
-  } catch (error) {
-    if (requestId === commentaryRequestId) resetCommentary(error.message);
-    return;
-  }
-
-  resetCommentary("Generating personalized AI feedback…");
-  try {
-    const response = await requestAtsDiagnostic(
-      "/api/v1/ats/score/commentary",
-      {
-        resume_text: resumeText,
-        diagnostic,
-        provider: config.provider,
-        model_name: config.model_name,
-        api_key: config.api_key,
-        api_base: config.api_base || "",
-      },
-      "AI feedback could not be generated.",
-    );
-    if (requestId !== commentaryRequestId) return;
-    if (!response.ok || !response.commentary) {
-      resetCommentary(response.error || "AI feedback could not be generated right now.");
-      return;
-    }
-    renderCommentary(response.commentary);
-  } catch (error) {
-    if (requestId === commentaryRequestId) {
-      resetCommentary(error.message || "AI feedback could not be generated right now.");
-    }
-  }
+  await commentary.generate("/api/v1/ats/score/commentary", {
+    resume_text: resumeText,
+    diagnostic,
+  });
 }
 
 const resumeSource = setupAtsResumeSource({

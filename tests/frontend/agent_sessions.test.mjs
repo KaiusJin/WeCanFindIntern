@@ -8,6 +8,7 @@ const mainSource = await readFile(new URL("../../web/modules/main.js", import.me
 const jobsSource = await readFile(new URL("../../web/modules/jobs.js", import.meta.url), "utf8");
 const waterlooWorksSource = await readFile(new URL("../../web/modules/waterlooworks.js", import.meta.url), "utf8");
 const stylesSource = await readFile(new URL("../../web/styles.css", import.meta.url), "utf8");
+const appShellSource = await readFile(new URL("../../web/app-shell.css", import.meta.url), "utf8");
 
 test("conversation history exposes a confirmed delete flow", () => {
   assert.match(indexSource, /id="agent-delete-session-dialog"/);
@@ -29,8 +30,8 @@ test("only recommendation and search results render job cards", () => {
   assert.match(moduleSource, /call\.tool_name === "search_jobs"[\s\S]*waterloo_work/);
   assert.doesNotMatch(moduleSource, /call\.tool_name === "analyse_job"/);
   assert.doesNotMatch(moduleSource, /call\.tool_name === "get_job_details"/);
-  assert.match(indexSource, /main\.js\?v=20260901-agent-cards-v1/);
-  assert.match(mainSource, /agent\.js\?v=20260901-agent-cards-v1/);
+  assert.match(indexSource, /main\.js\?v=20260902-memory-alignment-v1/);
+  assert.match(mainSource, /agent\.js\?v=20260902-memory-alignment-v1/);
 });
 
 test("job-card view actions keep the Agent open and show a blurred JD drawer", () => {
@@ -47,7 +48,19 @@ test("job-card view actions keep the Agent open and show a blurred JD drawer", (
 
 test("the Attach jobs dialog is hidden until it is opened", () => {
   assert.match(stylesSource, /\.agent-attach-dialog\[open\]\s*\{\s*display: flex;/);
-  assert.match(indexSource, /styles\.css\?v=20260901-loading-layout-v1/);
+  assert.match(indexSource, /styles\.css\?v=20260902-memory-alignment-v1/);
   assert.doesNotMatch(indexSource, /id="agent-attachment-preview"/);
   assert.doesNotMatch(moduleSource, /#agent-attachment-preview/);
+});
+
+test("Career Memory keeps its count inside the dialog and aligns with sidebar actions", () => {
+  assert.doesNotMatch(indexSource, /id="agent-memory-count"/);
+  assert.doesNotMatch(moduleSource, /#agent-memory-count/);
+  assert.match(indexSource, /id="agent-memory-dialog-count"/);
+  assert.doesNotMatch(stylesSource, /\.agent-memory-count\s*\{/);
+  assert.doesNotMatch(appShellSource, /\.agent-memory-count\s*\{/);
+  assert.match(appShellSource, /\.agent-memory-trigger\s*\{[\s\S]*?gap: 9px;[\s\S]*?justify-content: flex-start;/);
+  assert.match(appShellSource, /\.agent-memory-trigger\s*\{[\s\S]*?padding: 4px 8px;/);
+  assert.match(appShellSource, /\.agent-memory-icon\s*\{[\s\S]*?width: 19px;/);
+  assert.match(appShellSource, /\.agent-sidebar-toggle\s*\{[\s\S]*?gap: 9px;/);
 });

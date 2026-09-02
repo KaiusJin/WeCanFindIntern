@@ -22,5 +22,5 @@ test("career tool loading states share the centered inline layout", () => {
   assert.match(stylesSource, /\.loading-state\s*\{[\s\S]*?align-items:\s*center;/);
   assert.match(stylesSource, /\.loading-state\s*\{[\s\S]*?justify-content:\s*center;/);
   assert.match(stylesSource, /\.loading-state\s*>\s*span\s*\{[\s\S]*?white-space:\s*nowrap;/);
-  assert.match(indexSource, /styles\.css\?v=20260901-loading-layout-v1/);
+  assert.match(indexSource, /styles\.css\?v=20260902-memory-alignment-v1/);
 });

@@ -21,7 +21,19 @@ import {
   setActiveJobContext,
   waterlooWorksJobContext,
 } from "./job-context.js?v=20260831-jobboard-parity-v3";
+import {
+  closeJobDetailPane,
+  openJobDetailPane,
+} from "./job-detail-pane.js?v=20260902-shared-components-v1";
+import {
+  renderMultiFilter,
+  selectedMultiFilterValues,
+  setMultiFilterSheetOpen,
+  setupMultiFilterInteractions,
+  updateMultiFilterSummary,
+} from "./multi-filter.js?v=20260902-shared-filters-v1";
 import { setupInfiniteScroll } from "./pagination.js?v=20260901-results-scroll-container-v1";
+import { createDebouncedAction } from "./timing.js?v=20260902-shared-components-v1";
 
 let wwBusy = false;
 let wwStatus = "idle";
@@ -41,12 +53,6 @@ const WW_TEXT_FILTER_IDS = [
   "ww-filter-city",
   "ww-filter-posted-after",
 ];
-let wwFilterDebounceTimer = null;
-
-function selectedWaterlooWorksFilterValues(rootId) {
-  return [...document.querySelectorAll(`#${rootId} input[type="checkbox"]:checked`)]
-    .map((input) => input.value);
-}
 
 function waterlooWorksFilterLabel(rootId, value) {
   if (rootId === "ww-work-mode-filter") return workModeLabel(value);
@@ -54,50 +60,14 @@ function waterlooWorksFilterLabel(rootId, value) {
   return value;
 }
 
-function updateWaterlooWorksFilterSummary(root) {
-  const selected = [...root.querySelectorAll('input[type="checkbox"]:checked')];
-  const summary = root.querySelector(".multi-filter-summary");
-  const clearButton = root.querySelector(".multi-filter-clear");
-  if (!summary) return;
-  summary.textContent = selected.length === 0
-    ? root.dataset.placeholder
-    : selected.length === 1
-      ? selected[0].dataset.label
-      : `${selected.length} selected`;
-  if (clearButton) clearButton.hidden = selected.length === 0;
-  root.classList.toggle("has-selection", selected.length > 0);
-}
-
 function setWaterlooWorksFilterOptions(rootId, items, placeholder) {
-  const root = $(`#${rootId}`);
-  if (!root) return;
-  const selected = new Set(selectedWaterlooWorksFilterValues(rootId));
-  root.dataset.placeholder = placeholder;
-  root.innerHTML = `
-    <button class="multi-filter-trigger" type="button" aria-expanded="false">
-      <span class="multi-filter-summary">${escapeHtml(placeholder)}</span>
-      <span class="multi-filter-chevron" aria-hidden="true">⌄</span>
-    </button>
-    <div class="multi-filter-menu" hidden>
-      <div class="multi-filter-menu-head">
-        <span>Select one or more</span>
-        <button class="multi-filter-clear" type="button" hidden>Clear</button>
-      </div>
-      <div class="multi-filter-options">
-        ${items.map((item, index) => {
-          const display = item.label || waterlooWorksFilterLabel(rootId, item.value);
-          const count = Number.isFinite(Number(item.count))
-            ? `<small>${Number(item.count).toLocaleString()}</small>`
-            : "<small></small>";
-          return `<label class="multi-filter-option" for="${rootId}-option-${index}">
-            <input id="${rootId}-option-${index}" type="checkbox" value="${escapeHtml(item.value)}" data-label="${escapeHtml(display)}"${selected.has(item.value) ? " checked" : ""} />
-            <span>${escapeHtml(display)}</span>
-            ${count}
-          </label>`;
-        }).join("") || '<p class="multi-filter-empty">No options available</p>'}
-      </div>
-    </div>`;
-  updateWaterlooWorksFilterSummary(root);
+  renderMultiFilter(`#${rootId}`, items, {
+    placeholder,
+    getLabel: (item) => item.label || waterlooWorksFilterLabel(rootId, item.value),
+    formatCount: (item) => Number.isFinite(Number(item.count))
+      ? Number(item.count).toLocaleString()
+      : "",
+  });
 }
 
 function updateWaterlooWorksFilterCount() {
@@ -112,26 +82,15 @@ function updateWaterlooWorksFilterCount() {
 }
 
 function setWaterlooWorksFilterSheetOpen(open) {
-  const sheet = $("#ww-job-filters-sheet");
-  const backdrop = $("#ww-job-filters-backdrop");
-  if (!sheet || !backdrop) return;
-  if (!open) {
-    sheet.querySelectorAll(".multi-filter.open").forEach((root) => {
-      root.classList.remove("open");
-      root.querySelector(".multi-filter-menu").hidden = true;
-      root.querySelector(".multi-filter-trigger").setAttribute("aria-expanded", "false");
-    });
-  }
-  sheet.classList.toggle("open", open);
-  sheet.setAttribute("aria-hidden", String(!open));
-  backdrop.hidden = !open;
-  document.body.classList.toggle("filter-sheet-open", open);
+  setMultiFilterSheetOpen(
+    "#ww-job-filters-sheet",
+    "#ww-job-filters-backdrop",
+    open,
+    { closeMenus: true },
+  );
 }
 
-function debouncedLoadWaterlooWorksJobs(waitMs = 200) {
-  clearTimeout(wwFilterDebounceTimer);
-  wwFilterDebounceTimer = setTimeout(() => loadWaterlooWorksJobs(), waitMs);
-}
+const debouncedLoadWaterlooWorksJobs = createDebouncedAction(() => loadWaterlooWorksJobs());
 
 setWaterlooWorksFilterOptions("ww-board-source-filter", [], "All board sources");
 setWaterlooWorksFilterOptions("ww-opportunity-type-filter", [
@@ -316,11 +275,11 @@ async function loadWaterlooWorksJobs({ append = false } = {}) {
   const location = $("#ww-job-location")?.value.trim();
   if (query) params.set("query", query);
   if (location) params.set("location", location);
-  selectedWaterlooWorksFilterValues("ww-board-source-filter")
+  selectedMultiFilterValues("#ww-board-source-filter")
     .forEach((value) => params.append("board", value));
-  selectedWaterlooWorksFilterValues("ww-work-mode-filter")
+  selectedMultiFilterValues("#ww-work-mode-filter")
     .forEach((value) => params.append("work_mode", value));
-  selectedWaterlooWorksFilterValues("ww-opportunity-type-filter")
+  selectedMultiFilterValues("#ww-opportunity-type-filter")
     .forEach((value) => params.append("opportunity_type", value));
   const scalarFilters = {
     company: $("#ww-filter-company")?.value.trim(),
@@ -448,37 +407,16 @@ $("#ww-refresh")?.addEventListener("click", () => {
 $("#ww-open-job-filters")?.addEventListener("click", () => setWaterlooWorksFilterSheetOpen(true));
 $("#ww-close-job-filters")?.addEventListener("click", () => setWaterlooWorksFilterSheetOpen(false));
 $("#ww-job-filters-backdrop")?.addEventListener("click", () => setWaterlooWorksFilterSheetOpen(false));
-$("#ww-job-filters-sheet")?.addEventListener("click", (event) => {
-  const trigger = event.target.closest(".multi-filter-trigger");
-  if (trigger) {
-    const root = trigger.closest(".multi-filter");
-    $("#ww-job-filters-sheet")?.querySelectorAll(".multi-filter.open").forEach((other) => {
-      if (other === root) return;
-      other.classList.remove("open");
-      other.querySelector(".multi-filter-menu").hidden = true;
-      other.querySelector(".multi-filter-trigger").setAttribute("aria-expanded", "false");
-    });
-    const willOpen = !root.classList.contains("open");
-    root.classList.toggle("open", willOpen);
-    root.querySelector(".multi-filter-menu").hidden = !willOpen;
-    trigger.setAttribute("aria-expanded", String(willOpen));
-    return;
-  }
-  const clear = event.target.closest(".multi-filter-clear");
-  if (!clear) return;
-  const root = clear.closest(".multi-filter");
-  root.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-    input.checked = false;
-  });
-  updateWaterlooWorksFilterSummary(root);
-  updateWaterlooWorksFilterCount();
-  debouncedLoadWaterlooWorksJobs(100);
-});
-$("#ww-job-filters-sheet")?.addEventListener("change", (event) => {
-  const multiFilter = event.target.closest(".multi-filter");
-  if (multiFilter) updateWaterlooWorksFilterSummary(multiFilter);
-  updateWaterlooWorksFilterCount();
-  debouncedLoadWaterlooWorksJobs(150);
+setupMultiFilterInteractions("#ww-job-filters-sheet", {
+  scope: $("#ww-job-filters-sheet"),
+  onClear: () => {
+    updateWaterlooWorksFilterCount();
+    debouncedLoadWaterlooWorksJobs(100);
+  },
+  onChange: () => {
+    updateWaterlooWorksFilterCount();
+    debouncedLoadWaterlooWorksJobs(150);
+  },
 });
 $("#ww-job-filters-sheet")?.addEventListener("input", (event) => {
   if (!event.target.matches("input[type=text], input[type=date]")) return;
@@ -489,7 +427,7 @@ $("#ww-clear-filters")?.addEventListener("click", () => {
   $("#ww-job-filters-sheet")?.querySelectorAll('.multi-filter input[type="checkbox"]')
     .forEach((input) => { input.checked = false; });
   $("#ww-job-filters-sheet")?.querySelectorAll(".multi-filter")
-    .forEach(updateWaterlooWorksFilterSummary);
+    .forEach(updateMultiFilterSummary);
   WW_TEXT_FILTER_IDS.forEach((id) => {
     const input = $(`#${id}`);
     if (input) input.value = "";
@@ -586,29 +524,22 @@ async function loadWaterlooWorksJobDetail(sourceJobId) {
 }
 
 async function openWaterlooWorksJob(sourceJobId) {
-  const pane = $("#ww-job-detail-pane");
-  const detail = $("#ww-job-detail");
-  detail.innerHTML = `<p class="loading-detail">Loading job details…</p>`;
-  pane.classList.add("open", "has-selection");
-  pane.setAttribute("aria-hidden", "false");
-  document.querySelectorAll("#ww-job-list .ww-job-card").forEach((card) => {
-    card.classList.toggle("selected", card.dataset.sourceJobId === String(sourceJobId));
+  await openJobDetailPane({
+    paneSelector: "#ww-job-detail-pane",
+    detailSelector: "#ww-job-detail",
+    cardsSelector: "#ww-job-list .ww-job-card",
+    selectedId: sourceJobId,
+    getCardId: (card) => card.dataset.sourceJobId,
+    loadDetail: loadWaterlooWorksJobDetail,
+    errorTitle: "WaterlooWorks job details unavailable",
   });
-  try {
-    const result = await loadWaterlooWorksJobDetail(sourceJobId);
-    detail.innerHTML = result.html;
-  } catch (error) {
-    pane.classList.remove("open", "has-selection");
-    pane.setAttribute("aria-hidden", "true");
-    showErrorDialog(error, { title: "WaterlooWorks job details unavailable" });
-  }
 }
 
 function closeWaterlooWorksJobDetail() {
-  const pane = $("#ww-job-detail-pane");
-  pane?.classList.remove("open");
-  pane?.setAttribute("aria-hidden", "true");
-  document.querySelectorAll("#ww-job-list .ww-job-card.selected").forEach((card) => card.classList.remove("selected"));
+  closeJobDetailPane({
+    paneSelector: "#ww-job-detail-pane",
+    selectedCardsSelector: "#ww-job-list .ww-job-card.selected",
+  });
 }
 
 $("#close-ww-job-detail")?.addEventListener("click", closeWaterlooWorksJobDetail);
