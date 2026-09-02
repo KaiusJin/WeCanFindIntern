@@ -147,7 +147,10 @@ End users do not need PostgreSQL or Visual Studio.
 
 `desktop-release.yml` provides a manually triggered macOS/Windows build matrix and
 uploads installers as GitHub Actions artifacts. It does not deploy a server or
-publish to an app store.
+publish to an app store. GitHub Actions caches the platform-specific PostgreSQL
+runtime, native Python sidecar, and Electron downloads. Cache keys include the
+target platform and relevant source/dependency hashes, so unchanged native
+components are reused while version or source changes produce a clean rebuild.
 
 ## Signing and direct distribution
 
