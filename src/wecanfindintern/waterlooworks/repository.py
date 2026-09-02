@@ -439,6 +439,15 @@ class WaterlooWorksRepository:
             ).fetchone()
         return int(row["count"])
 
+    def known_job_ids(self) -> set[str]:
+        """Return immutable WaterlooWorks Job IDs already stored locally."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT source_job_id FROM waterlooworks_jobs"
+            ).fetchall()
+        return {str(row["source_job_id"]) for row in rows}
+
     def finish_run(self, run_id: str, error_summary: str | None = None) -> dict[str, Any]:
         with self._connect() as connection:
             totals = connection.execute(

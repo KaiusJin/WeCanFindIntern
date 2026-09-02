@@ -13,7 +13,7 @@ from wecanfindintern.waterlooworks.browser_scripts import (
 )
 from wecanfindintern.waterlooworks.config import WATERLOOWORKS_BOARDS
 from wecanfindintern.waterlooworks.extractor import (
-    EXTRACT_JOBS_SCRIPT,
+    build_extract_jobs_script,
 )
 from wecanfindintern.waterlooworks.repository import WaterlooWorksRepository
 from wecanfindintern.waterlooworks.state import WaterlooWorksSnapshot
@@ -56,6 +56,7 @@ class WaterlooWorksCollector:
             self.snapshot.run_id = run_id
             board_errors: list[str] = []
             skipped_boards: list[str] = []
+            known_job_ids = await asyncio.to_thread(self.repository.known_job_ids)
             for index, (board_name, board_url) in enumerate(WATERLOOWORKS_BOARDS, start=1):
                 board_state = self._board_state(board_name)
                 board_state.update(
@@ -91,7 +92,8 @@ class WaterlooWorksCollector:
                         f"{board_name.replace('_', ' ').title()}…"
                     )
                     await self._wait_for_board_ready(target, board_name, board_url)
-                    result = await self.session.evaluate(target, EXTRACT_JOBS_SCRIPT, timeout=1800)
+                    extraction_script = build_extract_jobs_script(known_job_ids)
+                    result = await self.session.evaluate(target, extraction_script, timeout=1800)
                     raw_board_jobs = result.get("jobs") if isinstance(result, dict) else None
                     if not isinstance(raw_board_jobs, list):
                         raise RuntimeError("invalid collection result")
@@ -105,6 +107,7 @@ class WaterlooWorksCollector:
                         board_name,
                         raw_board_jobs,
                     )
+                    known_job_ids = await asyncio.to_thread(self.repository.known_job_ids)
                     board_state.update(
                         status="completed",
                         discovered_count=len(raw_board_jobs),

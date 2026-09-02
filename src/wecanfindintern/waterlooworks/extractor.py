@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Iterable
 from datetime import date
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -55,9 +57,13 @@ _BOILERPLATE_VALUES = {
 # same-origin APIs directly. No responsive table/card DOM or simulated clicks are
 # involved. Authentication remains entirely in Chrome; only extracted records cross
 # into the app.
-EXTRACT_JOBS_SCRIPT = WATERLOOWORKS_EXTRACTION_HELPERS + r"""
+_EXTRACT_JOBS_SCRIPT_TEMPLATE = (
+    WATERLOOWORKS_EXTRACTION_HELPERS
+    + r"""
 (async () => {
   const ITEMS_PER_PAGE = 100;
+  const DETAIL_BATCH_SIZE = 6;
+  const knownIds = new Set(__KNOWN_JOB_IDS__.map(String));
 
   function inlineSource() {
     return [...document.scripts]
@@ -235,21 +241,32 @@ EXTRACT_JOBS_SCRIPT = WATERLOOWORKS_EXTRACTION_HELPERS + r"""
   const actions = apiContract();
   const jobs = [];
   const seen = new Set();
+  let detailCount = 0;
+  let reusedCount = 0;
   let page = 0;
   while (true) {
     page += 1;
     const listResult = await listPage(actions, page);
     const rows = listResult.data.map(listRow).filter(Boolean);
     const previousCount = seen.size;
-    for (let i = 0; i < rows.length; i += 3) {
+    const detailRows = [];
+    for (const row of rows) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      if (knownIds.has(String(row.id))) {
+        jobs.push({source: "waterlooworks", ...row, known: true});
+        reusedCount += 1;
+      } else {
+        detailRows.push(row);
+      }
+    }
+    for (let i = 0; i < detailRows.length; i += DETAIL_BATCH_SIZE) {
       const results = await Promise.all(
-        rows.slice(i, i + 3).map((row) => fetchOne(actions, row))
+        detailRows.slice(i, i + DETAIL_BATCH_SIZE).map((row) => fetchOne(actions, row))
       );
       for (const job of results) {
-        if (!seen.has(job.id)) {
-          seen.add(job.id);
-          jobs.push(job);
-        }
+        jobs.push(job);
+        detailCount += 1;
       }
     }
     const totalResults = Number(listResult.totalResults);
@@ -257,9 +274,31 @@ EXTRACT_JOBS_SCRIPT = WATERLOOWORKS_EXTRACTION_HELPERS + r"""
     if (!rows.length || seen.size === previousCount || reachedTotal ||
         rows.length < ITEMS_PER_PAGE) break;
   }
-  return { generatedAt: new Date().toISOString(), pageCount: page, count: jobs.length, jobs };
+  return {
+    generatedAt: new Date().toISOString(),
+    pageCount: page,
+    count: jobs.length,
+    detailCount,
+    reusedCount,
+    jobs,
+  };
 })()
 """
+)
+
+
+def build_extract_jobs_script(known_job_ids: Iterable[str]) -> str:
+    """Build the board extractor while marking immutable local jobs as reusable."""
+
+    encoded_ids = json.dumps(
+        sorted({str(job_id) for job_id in known_job_ids}),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return _EXTRACT_JOBS_SCRIPT_TEMPLATE.replace("__KNOWN_JOB_IDS__", encoded_ids)
+
+
+EXTRACT_JOBS_SCRIPT = build_extract_jobs_script(())
 
 
 def normalize_waterlooworks_job(raw: dict[str, Any]) -> NormalizedJob:
