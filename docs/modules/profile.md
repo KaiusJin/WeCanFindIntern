@@ -37,7 +37,7 @@ PDFs are limited to 8 MB and the configured page range. The parser rejects encry
 
 ### LaTeX behavior
 
-LaTeX is limited to 1 MB, must be UTF-8 text, must not contain NUL bytes, and must look like a document/resume source. Dangerous file-access and executable commands are rejected. The parser strips comments, document commands, formatting wrappers, environments, and simple escaped characters into readable text. It never compiles or executes the source.
+LaTeX is limited to 1 MB, must be UTF-8 text, must not contain NUL bytes, and must look like a document/resume source. The parser strips comments, document commands, formatting wrappers, environments, and simple escaped characters into readable text. It never compiles or executes the source, so file-access and executable commands are retained only as inert text.
 
 The secure validator and the plain PDF extractor intentionally have different minimum-text thresholds: the upload/import path rejects very short or image-only resumes, while the generic ATS extraction endpoint accepts a valid text PDF with a smaller minimum suitable for review feedback.
 
@@ -66,13 +66,12 @@ one transaction.
 
 `profile/repository.py` creates/loads the single local profile, serializes repeated child records, stores resume metadata and extracted text, creates import records, returns draft data, confirms an import, and deletes resume/import data. Deleting a resume also removes its dependent import draft through database ownership rules.
 
-The API returns summaries for the resume history rather than exposing unnecessary full document internals. Export returns the current structured profile suitable for the Agent and career tools.
+The API returns summaries for the resume history rather than exposing unnecessary full document internals. The current structured profile is available to the Agent and career tools through the profile and context endpoints.
 
 ## API
 
 - `GET /api/v1/profile`: current profile.
 - `PUT /api/v1/profile`: save the current profile payload.
-- `GET /api/v1/profile/export`: profile export payload.
 - `GET /api/v1/profile/context`: profile plus the canonical resume-text projection used by AI sections.
 - `POST /api/v1/profile/resumes`: upload, validate, extract, and create an import draft (201).
 - `GET /api/v1/profile/resumes`: list resume summaries.

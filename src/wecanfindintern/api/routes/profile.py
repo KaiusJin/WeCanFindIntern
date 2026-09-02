@@ -35,11 +35,6 @@ async def update_profile(payload: ProfilePayload, repo: ProfileRepoDep) -> UserP
     return await repo.save_profile(payload)
 
 
-@profile_router.get("/export", response_model=UserProfile)
-async def export_profile(repo: ProfileRepoDep) -> UserProfile:
-    return await repo.get_profile()
-
-
 @profile_router.get("/context")
 async def get_profile_context(repo: ProfileRepoDep) -> dict:
     profile = await repo.get_profile()

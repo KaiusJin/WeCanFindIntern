@@ -82,6 +82,14 @@ class AgentRepository:
             row = await result.fetchone()
         return AgentSession.model_validate(row) if row else None
 
+    async def delete_session(self, public_id: UUID) -> bool:
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                "DELETE FROM agent_sessions WHERE public_id=%s RETURNING public_id;",
+                (public_id,),
+            )
+            return await result.fetchone() is not None
+
     async def touch_session(self, public_id: UUID) -> None:
         async with self.pool.connection() as connection:
             await connection.execute(

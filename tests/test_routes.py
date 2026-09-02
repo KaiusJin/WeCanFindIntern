@@ -12,11 +12,10 @@ from fastapi import FastAPI
 from wecanfindintern.agent.tools import ToolError
 from wecanfindintern.api.app import app
 from wecanfindintern.api.models import JobPage
-from wecanfindintern.api.routes.agent import _public_agent_error
+from wecanfindintern.api.routes.agent import _public_agent_error, delete_agent_session
 from wecanfindintern.api.routes.jobs import _repository, jobs_router
 from wecanfindintern.api.routes.profile import (
     delete_resume,
-    export_profile,
     list_resumes,
 )
 from wecanfindintern.api.routes.tracker import build_tracker_csv, export_tracker_csv
@@ -60,13 +59,6 @@ class FakeProfileRepo:
         return self.deleted
 
 
-def test_profile_export_route_returns_profile():
-    repo = FakeProfileRepo()
-    result = asyncio.run(export_profile(repo=repo))
-    assert result.id == repo.profile.id
-    assert result.basics.full_name == "Alex Chen"
-
-
 def test_profile_resume_routes():
     repo = FakeProfileRepo(deleted=True)
     assert asyncio.run(list_resumes(repo=repo)) == []
@@ -81,6 +73,26 @@ def test_profile_resume_routes():
         assert exc.status_code == 404
     else:
         raise AssertionError("expected HTTPException for missing resume")
+
+
+def test_agent_session_delete_route():
+    class FakeAgentRepo:
+        def __init__(self, deleted):
+            self.deleted = deleted
+
+        async def delete_session(self, _session_id):
+            return self.deleted
+
+    assert asyncio.run(delete_agent_session(uuid4(), repo=FakeAgentRepo(True))) == {"deleted": True}
+
+    from fastapi import HTTPException
+
+    try:
+        asyncio.run(delete_agent_session(uuid4(), repo=FakeAgentRepo(False)))
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("expected HTTPException for missing agent session")
 
 
 def test_tracker_csv_export_route():
@@ -102,7 +114,6 @@ def test_openapi_contract_covers_frontend_endpoints():
     spec = app.openapi()
     paths = spec["paths"]
 
-    assert "/api/v1/profile/export" in paths
     assert "get" in paths["/api/v1/profile/resumes"]
     assert "delete" in paths["/api/v1/profile/resumes/{resume_id}"]
     assert "/api/v1/tracker/export.csv" in paths
@@ -112,6 +123,7 @@ def test_openapi_contract_covers_frontend_endpoints():
     assert "delete" in paths["/api/v1/tracker/bookmarks/waterlooworks/{source_job_id}"]
     assert "post" in paths["/api/v1/waterlooworks/applications/sync"]
     assert "post" in paths["/api/v1/agent/sessions"]
+    assert "delete" in paths["/api/v1/agent/sessions/{session_id}"]
     assert "post" in paths["/api/v1/agent/sessions/{session_id}/messages"]
     assert "get" in paths["/api/v1/agent/sessions/{session_id}/tool-calls"]
     assert "post" in paths["/api/v1/agent/approvals/{approval_id}/decision"]

@@ -22,11 +22,6 @@ LATEX_MIME_TYPES = {
     "application/octet-stream",
     "",
 }
-DANGEROUS_LATEX = re.compile(
-    r"\\(?:write18|immediate\s*\\write18|input|include|openin|openout|read|write|"
-    r"directlua|catcode|csname|usepackage\s*\{(?:shellesc|catchfile|verbatim))\b",
-    re.IGNORECASE,
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,8 +227,6 @@ def _extract_latex(content: bytes) -> ValidatedResume:
         source = content.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ValueError("LaTeX source must be valid UTF-8 text.") from exc
-    if DANGEROUS_LATEX.search(source):
-        raise ValueError("The LaTeX source contains file access or executable commands.")
     if not re.search(r"\\(?:documentclass|begin\s*\{document\}|section\*?\s*\{)", source):
         raise ValueError("The .tex file does not look like LaTeX resume source.")
     text = _strip_latex(source)

@@ -57,14 +57,17 @@ def test_latex_resume_is_parsed_without_compilation() -> None:
     assert "never compiled" in result.warnings[0]
 
 
-def test_latex_file_access_commands_are_rejected() -> None:
-    content = _latex_resume() + b"\\input{/etc/passwd}"
-    try:
-        validate_and_extract_resume("resume.tex", "text/plain", content)
-    except ValueError as error:
-        assert "file access or executable" in str(error)
-    else:
-        raise AssertionError("dangerous LaTeX command was accepted")
+def test_latex_file_access_commands_are_kept_as_text_without_execution() -> None:
+    content = _latex_resume() + (
+        b"\\href{https://example.com}{Portfolio}\n"
+        b"\\input{sections/experience.tex}\n"
+        b"\\write18{rm -rf /tmp/example}\n"
+    )
+    result = validate_and_extract_resume("resume.tex", "text/plain", content)
+    assert "https://example.com" in result.extracted_text
+    assert "sections/experience.tex" in result.extracted_text
+    assert "rm -rf /tmp/example" in result.extracted_text
+    assert all("file access or executable" not in warning for warning in result.warnings)
 
 
 def test_extension_disguise_is_rejected() -> None:

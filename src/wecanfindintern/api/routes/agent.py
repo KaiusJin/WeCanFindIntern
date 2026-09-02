@@ -152,6 +152,17 @@ async def rename_agent_session(
     return session
 
 
+@agent_router.delete("/sessions/{session_id}")
+async def delete_agent_session(
+    session_id: UUID,
+    repo: AgentRepoDep,
+) -> dict[str, bool]:
+    deleted = await repo.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Agent session not found")
+    return {"deleted": True}
+
+
 @agent_router.get("/sessions/{session_id}/memory")
 async def agent_memory_status(
     session_id: UUID,
