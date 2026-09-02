@@ -245,10 +245,16 @@ function renderJobCard(job, {
   const bookmarkClass = isWaterlooWorks ? "ww-bookmark-btn" : "job-bookmark-btn";
   const bookmarkAttribute = isWaterlooWorks ? "data-source-job-id" : "data-job-id";
   const cardAttributes = isWaterlooWorks
-    ? `data-source-job-id="${escapeHtml(sourceId)}" data-boards="${escapeHtml(boards.join(","))}"`
+    ? `data-source-job-id="${escapeHtml(sourceId)}" data-boards="${escapeHtml(boards.join(","))}" tabindex="0"`
     : `data-id="${escapeHtml(sourceId)}" tabindex="0"`;
   const visibleDate = dateText || formatDate(job.date_posted || job.published_at);
-  const meta = isWaterlooWorks ? `Job ID ${escapeHtml(sourceId)}` : escapeHtml(visibleDate);
+  const applicationDeadline = job.submitted_application_deadline || job.application_deadline;
+  const cardSideMeta = isWaterlooWorks
+    ? `<div class="ww-card-deadline"><span>Application due</span><strong>${escapeHtml(applicationDeadline || "Not specified")}</strong></div>`
+    : `<div class="job-date">${escapeHtml(visibleDate)}</div>`;
+  const footerMeta = isWaterlooWorks
+    ? `<div class="ww-card-footer-meta"><span class="ww-card-job-id">Job ID ${escapeHtml(sourceId)}</span><span class="salary">${escapeHtml(formatSalary(job.salary))}</span></div>`
+    : `<span class="salary">${escapeHtml(formatSalary(job.salary))}</span>`;
 
   return `<article class="job-card${isWaterlooWorks ? " ww-job-card" : ""}" ${cardAttributes}>
     <div class="job-card-main">
@@ -262,12 +268,12 @@ function renderJobCard(job, {
         <button type="button" class="${bookmarkClass} ${isSaved ? "saved" : ""}" ${bookmarkAttribute}="${escapeHtml(sourceId)}" aria-pressed="${isSaved}" title="${isSaved ? "Tracked in Pipeline" : "Bookmark / Track Job"}>
           ${bookmarkIcon || defaultBookmarkIcon}
         </button>
-        <div class="job-date">${meta}</div>
+        ${cardSideMeta}
       </div>
     </div>
     <div class="job-card-footer">
       <div class="job-tags">${renderJobTags({ primaryTag, secondaryTags, skillTags: job.skill_tags, category: job.job_category })}</div>
-      <span class="salary">${escapeHtml(formatSalary(job.salary))}</span>
+      ${footerMeta}
     </div>
   </article>`;
 }

@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="WeCanFindIntern job search and discovery" />
     <title>WeCanFindIntern · Find your next opportunity</title>
-    <link rel="stylesheet" href="/styles.css?v=20260901-error-dialog-minimal-v1" />
-    <link rel="stylesheet" href="/app-shell.css?v=20260901-error-dialog-minimal-v1" />
+    <link rel="stylesheet" href="/styles.css?v=20260901-loading-layout-v1" />
+    <link rel="stylesheet" href="/app-shell.css?v=20260901-attach-summary-v2" />
   </head>
   <body>
     <div class="app-shell">
@@ -55,60 +55,6 @@
           <button id="open-app-sidebar" class="mobile-menu-button" type="button" aria-label="Open navigation">☰</button>
           <span class="mobile-brand">WeCanFindIntern<span>_</span></span>
         </header>
-
-    <header class="topbar">
-      <div class="topbar-row">
-        <a class="brand" href="/">WeCanFindIntern<span>_</span></a>
-        <nav class="topbar-nav" aria-label="Main Navigation">
-          <button class="nav-tab active" data-tab="tab-jobs" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <span>Jobs</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-heatmap" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-            <span>Heatmap</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-waterlooworks" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 2v4M16 2v4M3 9h18"></path><path d="m9 14 2 2 4-4"></path></svg>
-            <span>WaterlooWorks</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-ats-score" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="m9 15 2 2 4-4"></path></svg>
-            <span>Resume ATS Score</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-ats-match" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4"></circle><path d="M12 3v2M12 19v2M3 12h2M19 12h2"></path></svg>
-            <span>Job Match</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-cover-letter" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-            <span>Cover Letter</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-interview" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-            <span>Interview Coach</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-tracker" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14l2 2 4-4"></path></svg>
-            <span>Tracker</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-agent" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect x="2" y="2" width="20" height="12" rx="2"></rect><path d="M6 2v4M18 2v4"></path><path d="M2 8h20"></path><path d="M8 14v.01M16 14v.01"></path><rect x="8" y="16" width="8" height="4" rx="1"></rect></svg>
-            <span>AI Agent</span>
-          </button>
-          <button class="nav-tab" data-tab="tab-profile" type="button">
-            <svg class="tab-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="7" r="4"></circle></svg>
-            <span>Profile</span>
-          </button>
-        </nav>
-        <div class="topbar-actions">
-          <button id="open-settings" class="settings-trigger-btn" type="button" aria-label="AI Settings">
-            <svg class="gear-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-            <span>AI Settings</span>
-          </button>
-        </div>
-      </div>
-    </header>
 
     <main id="app-main">
       <!-- TAB 1: JOBS SEARCH -->
@@ -228,19 +174,21 @@
                 <button id="refresh" class="icon-button" type="button" title="Refresh">↻</button>
               </div>
             </div>
-            <div id="job-list" class="job-list"></div>
-            <div id="empty-state" class="empty-state" hidden>
-              <div class="empty-icon">⌁</div>
-              <h3>No matching jobs</h3>
-              <p>Try removing a filter or using a broader search term.</p>
-            </div>
-            <div id="infinite-scroll-sentinel" class="infinite-scroll-sentinel">
-              <div id="loading-indicator" class="loading-indicator" hidden>
-                <div class="spinner"></div>
-                <span>Loading more opportunities…</span>
+            <div class="results-scroll-content">
+              <div id="job-list" class="job-list"></div>
+              <div id="empty-state" class="empty-state" hidden>
+                <div class="empty-icon">⌁</div>
+                <h3>No matching jobs</h3>
+                <p>Try removing a filter or using a broader search term.</p>
               </div>
-              <div id="end-of-results" class="end-of-results" hidden>
-                <span>✓ You've reached the end of the results</span>
+              <div id="infinite-scroll-sentinel" class="infinite-scroll-sentinel">
+                <div id="loading-indicator" class="loading-indicator" hidden>
+                  <div class="spinner"></div>
+                  <span>Loading more opportunities…</span>
+                </div>
+                <div id="end-of-results" class="end-of-results" hidden>
+                  <span>✓ You've reached the end of the results</span>
+                </div>
               </div>
             </div>
           </section>
@@ -315,74 +263,121 @@
 
       <div id="tab-waterlooworks" class="tab-pane" hidden>
         <section class="hero ww-hero section-heading">
-          <div class="section-heading-copy">
-            <h1>WaterlooWorks</h1>
-            <p class="hero-copy">Keep WaterlooWorks jobs, board sync, and submitted applications in their own workspace.</p>
+          <div class="section-heading-row">
+            <div class="section-heading-copy">
+              <h1>WaterlooWorks</h1>
+              <p class="hero-copy">Search WaterlooWorks jobs and keep your applications in sync.</p>
+            </div>
+            <div class="ww-heading-actions">
+              <p id="ww-connection-status" class="ww-connection-status">Not connected</p>
+              <button id="ww-launch" class="primary-button" type="button">Log into WaterlooWorks ↗</button>
+            </div>
           </div>
+          <form id="ww-job-search-form" class="searchbar ww-searchbar">
+            <label class="search-input">
+              <span aria-hidden="true">⌕</span>
+              <input id="ww-job-query" type="search" placeholder="Search title, organization, or Job ID" autocomplete="off" />
+            </label>
+            <label class="search-location">
+              <span aria-hidden="true">⌖</span>
+              <input id="ww-job-location" type="text" placeholder="Location, e.g. Toronto" autocomplete="off" />
+            </label>
+            <button id="ww-open-job-filters" class="secondary-button search-filter-button" type="button">Filters</button>
+            <button id="ww-job-search" class="primary-button" type="submit">Search jobs</button>
+          </form>
         </section>
 
+        <button id="ww-job-filters-backdrop" class="filter-sheet-backdrop" type="button" aria-label="Close WaterlooWorks filters" hidden></button>
+        <aside id="ww-job-filters-sheet" class="filters-panel filter-sheet" aria-label="WaterlooWorks job filters" aria-hidden="true">
+          <div class="filter-heading">
+            <h2>Filter jobs</h2>
+            <div class="filter-heading-actions">
+              <button id="ww-clear-filters" class="text-button" type="button">Clear</button>
+              <button id="ww-close-job-filters" class="filter-sheet-close" type="button" aria-label="Close filters">×</button>
+            </div>
+          </div>
+
+          <label class="field-label">Board source</label>
+          <div id="ww-board-source-filter" class="multi-filter" data-placeholder="All board sources"></div>
+
+          <label class="field-label">Opportunity type</label>
+          <div id="ww-opportunity-type-filter" class="multi-filter" data-placeholder="All opportunity types"></div>
+
+          <label class="field-label">Work mode</label>
+          <div id="ww-work-mode-filter" class="multi-filter" data-placeholder="All work modes"></div>
+
+          <label class="field-label" for="ww-filter-category">Job category</label>
+          <select id="ww-filter-category" class="career-select">
+            <option value="">All categories</option>
+            <option value="software_engineering">Software engineering</option>
+            <option value="data_ai">Data &amp; AI</option>
+            <option value="cybersecurity">Cybersecurity</option>
+            <option value="cloud_devops">Cloud &amp; DevOps</option>
+            <option value="qa_testing">QA &amp; testing</option>
+            <option value="product_design">Product design</option>
+            <option value="product_management">Product management</option>
+            <option value="it_support">IT support</option>
+            <option value="hardware_embedded">Hardware &amp; embedded</option>
+            <option value="research">Research</option>
+            <option value="business_operations">Business operations</option>
+            <option value="finance">Finance</option>
+            <option value="marketing_sales">Marketing &amp; sales</option>
+            <option value="human_resources">Human resources</option>
+            <option value="healthcare">Healthcare</option>
+            <option value="education">Education</option>
+            <option value="skilled_trades">Skilled trades</option>
+            <option value="engineering">Engineering</option>
+            <option value="architecture_planning">Architecture &amp; planning</option>
+            <option value="legal">Legal</option>
+            <option value="customer_service">Customer service</option>
+            <option value="supply_chain">Supply chain</option>
+            <option value="administrative">Administrative</option>
+            <option value="other">Other</option>
+          </select>
+
+          <label class="field-label" for="ww-filter-skill">Skill</label>
+          <input id="ww-filter-skill" class="career-input" type="text" placeholder="e.g. Python" autocomplete="off" />
+
+          <label class="field-label" for="ww-filter-company">Company</label>
+          <input id="ww-filter-company" class="career-input" type="text" placeholder="e.g. Shopify" autocomplete="off" />
+
+          <label class="field-label" for="ww-filter-country">Country</label>
+          <input id="ww-filter-country" class="career-input" type="text" placeholder="e.g. Canada" autocomplete="off" />
+
+          <label class="field-label" for="ww-filter-region">State / Province</label>
+          <input id="ww-filter-region" class="career-input" type="text" placeholder="e.g. Ontario" autocomplete="off" />
+
+          <label class="field-label" for="ww-filter-city">City</label>
+          <input id="ww-filter-city" class="career-input" type="text" placeholder="e.g. Waterloo" autocomplete="off" />
+
+          <label class="field-label" for="ww-filter-posted-after">Posted after</label>
+          <input id="ww-filter-posted-after" class="career-input" type="date" />
+        </aside>
+
         <section class="ww-workspace">
-          <div class="ww-control-rail">
-          <article class="ww-connection-card">
-            <div class="ww-card-heading">
-              <div>
-                <h2>Run summary</h2>
-              </div>
-              <div class="ww-update-times" aria-label="Latest updates">
-                <span id="ww-tracker-updated-at" class="muted-copy">Tracker not updated yet</span>
-                <span id="ww-jobs-updated-at" class="muted-copy">Jobs not updated yet</span>
-              </div>
-            </div>
-            <div class="ww-stat-grid">
-              <div><span>Stored jobs</span><strong id="ww-unique-count">0</strong></div>
-              <div><span>Processed in latest import</span><strong id="ww-posting-processed-count">0</strong></div>
-              <div><span>Submitted applications</span><strong id="ww-application-count">0</strong></div>
-              <div><span>Boards failed</span><strong id="ww-board-failed-count">0</strong></div>
-            </div>
-            <div class="ww-actions">
-              <button id="ww-launch" class="primary-button" type="button">Log into WaterlooWorks ↗</button>
-              <button id="ww-collect" class="secondary-button" type="button" disabled>Import all job boards</button>
-              <button id="ww-sync-applications" class="secondary-button" type="button" disabled>Sync submitted applications</button>
-            </div>
-            <p id="ww-status-message" class="muted-copy" aria-live="polite"></p>
-          </article>
-
-          <aside class="ww-side-panel">
-            <div class="ww-side-heading"><p class="eyebrow">INCLUDED BOARDS</p></div>
-            <div class="ww-board-list">
-              <div data-ww-board="full_cycle"><strong>full_cycle</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
-              <div data-ww-board="employer_student_direct"><strong>employer_student_direct</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
-              <div data-ww-board="graduating"><strong>graduating</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
-              <div data-ww-board="contract"><strong>contract</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
-              <div data-ww-board="campus"><strong>campus</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
-            </div>
-          </aside>
-          </div>
-
-          <div id="ww-jobs-card" class="ww-jobs-card">
-            <div class="ww-card-heading">
+          <section id="ww-jobs-card" class="results-panel" aria-live="polite">
+            <div class="results-toolbar">
               <div><h2>WaterlooWorks jobs</h2></div>
-              <span id="ww-jobs-total" class="muted-copy">0 jobs</span>
-            </div>
-            <div class="ww-job-filters">
-              <input id="ww-job-query" type="search" placeholder="Search title, organization, or description" />
-              <select id="ww-job-board">
-                <option value="">All boards</option>
-                <option value="applications">Submitted applications</option>
-              </select>
-              <button id="ww-job-search" class="secondary-button" type="button">Search</button>
-            </div>
-            <div id="ww-job-list" class="ww-job-list"><p class="muted-copy">No WaterlooWorks jobs stored yet.</p></div>
-            <div id="ww-infinite-scroll-sentinel" class="infinite-scroll-sentinel">
-              <div id="ww-loading-indicator" class="loading-indicator" hidden>
-                <div class="spinner"></div>
-                <span>Loading more opportunities…</span>
-              </div>
-              <div id="ww-end-of-results" class="end-of-results" hidden>
-                <span>✓ You've reached the end of the results</span>
+              <div class="results-meta">
+                <span id="ww-jobs-updated-at" class="last-updated-text" title="Last WaterlooWorks job sync time">Not updated yet</span>
+                <span class="meta-dot">·</span>
+                <span id="ww-jobs-total">Loading…</span>
+                <button id="ww-refresh" class="icon-button" type="button" title="Refresh">↻</button>
               </div>
             </div>
-          </div>
+            <div id="ww-jobs-scroll-content" class="results-scroll-content">
+              <div id="ww-job-list" class="job-list ww-job-list"><p class="muted-copy">No WaterlooWorks jobs stored yet.</p></div>
+              <div id="ww-infinite-scroll-sentinel" class="infinite-scroll-sentinel">
+                <div id="ww-loading-indicator" class="loading-indicator" hidden>
+                  <div class="spinner"></div>
+                  <span>Loading more opportunities…</span>
+                </div>
+                <div id="ww-end-of-results" class="end-of-results" hidden>
+                  <span>✓ You've reached the end of the results</span>
+                </div>
+              </div>
+            </div>
+          </section>
 
           <aside id="ww-job-detail-pane" class="job-detail-pane ww-job-detail-pane" aria-label="Selected WaterlooWorks job" aria-hidden="false">
             <div class="job-detail-pane-toolbar">
@@ -398,6 +393,67 @@
             </div>
           </aside>
         </section>
+
+        <dialog id="ww-sync-dialog" class="settings-dialog ww-sync-dialog" aria-labelledby="ww-sync-dialog-title">
+          <div class="settings-dialog-header">
+            <div class="settings-title-wrap">
+              <div class="settings-icon-badge" aria-hidden="true">W</div>
+              <div>
+                <h3 id="ww-sync-dialog-title">Sync WaterlooWorks</h3>
+                <p class="settings-subtitle">Choose what to bring into WeCanFindIntern.</p>
+              </div>
+            </div>
+            <button id="ww-close-sync-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
+          </div>
+
+          <div class="settings-body ww-sync-dialog-body">
+            <div class="ww-sync-choice">
+              <label class="ww-sync-choice-heading" for="ww-sync-jobs">
+                <input id="ww-sync-jobs" type="checkbox" checked />
+                <span><strong>Job postings</strong><small>Import postings from the included WaterlooWorks boards.</small></span>
+              </label>
+              <div class="ww-board-list" aria-label="Included boards">
+                <p class="eyebrow">Included boards</p>
+                <div data-ww-board="full_cycle"><strong>full_cycle</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+                <div data-ww-board="employer_student_direct"><strong>employer_student_direct</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+                <div data-ww-board="graduating"><strong>graduating</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+                <div data-ww-board="contract"><strong>contract</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+                <div data-ww-board="campus"><strong>campus</strong><span class="ww-board-count">0 jobs</span><em class="ww-board-state pending" aria-label="Pending">…</em></div>
+              </div>
+            </div>
+
+            <div class="ww-sync-choice">
+              <label class="ww-sync-choice-heading" for="ww-sync-submitted">
+                <input id="ww-sync-submitted" type="checkbox" checked />
+                <span><strong>Submitted applications</strong><small>Update your application records, statuses, and deadlines.</small></span>
+              </label>
+            </div>
+
+            <section class="ww-run-summary" aria-labelledby="ww-run-summary-title">
+              <div class="ww-run-summary-heading">
+                <p id="ww-run-summary-title" class="eyebrow">Run summary</p>
+                <div class="ww-update-times" aria-label="Latest updates">
+                  <span id="ww-tracker-updated-at" class="muted-copy">Tracker not updated yet</span>
+                </div>
+              </div>
+              <div class="ww-stat-grid">
+                <div><span>Stored jobs</span><strong id="ww-unique-count">0</strong></div>
+                <div><span>Latest import</span><strong id="ww-posting-processed-count">0</strong></div>
+                <div><span>Applications</span><strong id="ww-application-count">0</strong></div>
+                <div><span>Boards failed</span><strong id="ww-board-failed-count">0</strong></div>
+              </div>
+              <p id="ww-status-message" class="muted-copy" aria-live="polite"></p>
+            </section>
+
+            <div class="settings-dialog-footer">
+              <div id="ww-sync-selection-hint" class="muted-copy">Job postings and submitted applications selected</div>
+              <div class="settings-footer-actions">
+                <button id="ww-cancel-sync" class="secondary-button" type="button">Cancel</button>
+                <button id="ww-start-sync" class="primary-button" type="button">Start sync</button>
+              </div>
+            </div>
+          </div>
+        </dialog>
       </div>
 
       <!-- TAB 2: RESUME ATS SCORE -->
@@ -605,7 +661,6 @@
                 <label><input type="radio" name="int-resume-source" value="profile" checked /> Use Profile</label>
                 <label><input type="radio" name="int-resume-source" value="pdf" /> Upload Resume</label>
               </div>
-              <div id="int-profile-source" class="cl-source-panel" hidden></div>
               <div id="int-pdf-source" class="cl-source-panel" hidden>
                 <div class="file-dropzone" id="int-dropzone">
                   <input id="int-resume-pdf" class="file-input" type="file" accept="application/pdf,.pdf" />
@@ -771,7 +826,6 @@
                 <label><input type="radio" name="cl-resume-source" value="profile" checked /> Use Profile</label>
                 <label><input type="radio" name="cl-resume-source" value="pdf" /> Upload Resume</label>
               </div>
-              <div id="cl-profile-source" class="cl-source-panel" hidden></div>
               <div id="cl-pdf-source" class="cl-source-panel" hidden>
                 <div class="file-dropzone" id="cl-dropzone">
                   <input id="cl-resume-pdf" class="file-input" type="file" accept="application/pdf,.pdf" />
@@ -1020,14 +1074,10 @@
                 </div>
               </div>
               <div class="agent-composer-shell">
-                <div id="agent-attachment-preview" class="agent-attachment-preview" hidden>
-                  <span class="agent-attachment-icon" aria-hidden="true">▣</span>
-                  <span class="agent-attachment-copy"><small>Attached job</small><strong id="agent-attached-job-title"></strong></span>
-                  <button id="agent-remove-attachment" type="button" aria-label="Remove attached job" title="Remove attached job">×</button>
-                </div>
+                <div id="agent-attachment-preview" class="agent-attachment-preview" aria-label="Attached jobs" hidden></div>
                 <form id="agent-form" class="agent-composer" autocomplete="off">
-                  <button id="agent-attach-job" class="agent-attach-button" type="button" aria-label="Attach a job" title="Attach a job">
-                    <span aria-hidden="true">＋</span><span>Attach job</span>
+                  <button id="agent-attach-jobs" class="agent-attach-button" type="button" aria-label="Attach jobs" title="Attach jobs">
+                    <span aria-hidden="true">＋</span><span>Attach jobs</span>
                   </button>
                   <textarea id="agent-input" class="career-input" rows="1" maxlength="4000" placeholder="Ask about roles, job descriptions, or your application tracker…"></textarea>
                   <button class="primary-button agent-send-button" type="submit" aria-label="Send message" title="Send message">
@@ -1041,6 +1091,14 @@
             </div>
           </div>
         </section>
+        <button id="agent-job-detail-backdrop" class="agent-job-detail-backdrop" type="button" aria-label="Close job details"></button>
+        <aside id="agent-job-detail-pane" class="agent-job-detail-pane" aria-label="Job details" aria-hidden="true">
+          <div class="agent-job-detail-toolbar">
+            <span>Job details</span>
+            <button id="close-agent-job-detail" class="job-detail-pane-close" type="button" aria-label="Close job details">×</button>
+          </div>
+          <div id="agent-job-detail" class="job-detail-content"></div>
+        </aside>
       </div>
     </main>
       </div>
@@ -1260,27 +1318,44 @@
       </div>
     </dialog>
 
-    <dialog id="agent-attach-dialog" class="settings-dialog agent-attach-dialog">
+    <dialog id="agent-attach-dialog" class="settings-dialog agent-attach-dialog" aria-labelledby="agent-attach-title" aria-describedby="agent-attach-description">
       <div class="settings-dialog-header">
         <div class="settings-title-wrap">
-          <div class="settings-icon-badge" aria-hidden="true">＋</div>
+          <div class="settings-icon-badge agent-attach-icon-badge" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><path d="M9 5.5h6"></path><path d="M8 4h8a1 1 0 0 1 1 1v2H7V5a1 1 0 0 1 1-1Z"></path><rect x="4" y="7" width="16" height="13" rx="2"></rect><path d="M8 13h8M12 9v8"></path></svg>
+          </div>
           <div>
-            <h3>Attach a job</h3>
-            <p class="settings-subtitle">Choose a Job Board or WaterlooWorks role to add as chat context.</p>
+            <h3 id="agent-attach-title">Attach jobs</h3>
+            <p id="agent-attach-description" class="settings-subtitle">Add up to 5 roles so the assistant can compare or act on them together.</p>
           </div>
         </div>
         <button id="close-agent-attach-dialog" class="dialog-close" type="button" aria-label="Close">×</button>
       </div>
       <div class="settings-body agent-attach-dialog-body">
         <div id="agent-current-job-option" class="agent-current-job-option" hidden></div>
-        <div class="agent-attach-search">
-          <input id="agent-attach-query" class="career-input" type="search" placeholder="Search title, company, skill, or WaterlooWorks Job ID" autocomplete="off" />
-          <button id="agent-attach-search-button" class="primary-button" type="button">Search</button>
+        <div class="agent-attach-search-section">
+          <div class="agent-attach-section-label">
+            <label for="agent-attach-query">Find a role</label>
+            <span>Search both sources</span>
+          </div>
+          <div class="agent-attach-search">
+            <div class="agent-attach-input-wrap">
+              <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+              <input id="agent-attach-query" class="career-input" type="search" placeholder="Title, company, skill, or WaterlooWorks Job ID" autocomplete="off" />
+            </div>
+            <button id="agent-attach-search-button" class="primary-button" type="button">Search</button>
+          </div>
+          <p class="agent-attach-search-hint">Search by role, company, skill, or WaterlooWorks Job ID.</p>
         </div>
-        <div id="agent-attach-results" class="agent-attach-results" aria-live="polite"></div>
+        <div class="agent-attach-results-heading">
+          <strong>Available roles</strong>
+          <span id="agent-attach-results-count" aria-live="polite"></span>
+        </div>
+        <div id="agent-attach-results" class="agent-attach-results" aria-live="polite" role="list"></div>
       </div>
       <div class="settings-dialog-footer">
-        <button id="cancel-agent-attach-dialog" class="secondary-button" type="button">Cancel</button>
+        <span class="agent-attach-footer-hint"><span aria-hidden="true">⌘</span> Select multiple roles to use in chat</span>
+        <button id="done-agent-attach-dialog" class="secondary-button" type="button">Done</button>
       </div>
     </dialog>
 
@@ -1311,6 +1386,6 @@
       <span class="text">Top</span>
     </button>
 
-    <script type="module" src="/modules/main.js?v=20260901-coverage-removed-v1"></script>
+    <script type="module" src="/modules/main.js?v=20260901-agent-cards-v1"></script>
   </body>
 </html>

@@ -1,8 +1,8 @@
 import { $, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { loadSettings } from "./settings.js?v=20260901-settings-v1";
-import { initializeNavigation, setTabActivators, switchTab } from "./navigation.js?v=20260901-app-shell-v2";
+import { initializeNavigation, setTabActivators, switchTab } from "./navigation.js?v=20260901-app-shell-v4";
 import { jobContextState } from "./job-context.js?v=20260831-jobboard-parity-v3";
-import { setupInfiniteScroll } from "./pagination.js?v=20260831-jobboard-parity-v3";
+import { setupInfiniteScroll } from "./pagination.js?v=20260901-results-scroll-container-v1";
 import { startDesktopCollectionMonitor } from "./desktop-collection.js?v=20260901-job-sync-v1";
 import {
   state,
@@ -10,7 +10,7 @@ import {
   loadFacets,
   updateSliderFill,
   setupBackToTop,
-} from "./jobs.js?v=20260901-error-dialog-minimal-v1";
+} from "./jobs.js?v=20260901-agent-jd-drawer-v1";
 
 // Settings must be applied before any AI feature runs.
 await loadSettings();
@@ -21,12 +21,12 @@ await loadSettings();
 const tabModules = {
   "tab-tracker": () => import("./tracker.js?v=20260901-error-dialog-minimal-v1"),
   "tab-profile": () => import("./profile.js?v=20260901-error-dialog-minimal-v1"),
-  "tab-waterlooworks": () => import("./waterlooworks.js?v=20260901-error-dialog-minimal-v1"),
-  "tab-agent": () => import("./agent.js?v=20260901-error-dialog-minimal-v1"),
+  "tab-waterlooworks": () => import("./waterlooworks.js?v=20260901-agent-jd-drawer-v1"),
+  "tab-agent": () => import("./agent.js?v=20260901-agent-cards-v1"),
   "tab-heatmap": () => import("./heatmap.js?v=20260901-coverage-removed-v1"),
   "tab-ats-score": () => import("./ats-score.js?v=20260901-error-dialog-minimal-v1"),
   "tab-ats-match": () => import("./ats-match.js?v=20260901-error-dialog-minimal-v1"),
-  "tab-interview": () => import("./interview.js?v=20260901-error-dialog-minimal-v1"),
+  "tab-interview": () => import("./interview.js?v=20260901-interview-answer-flow-v2"),
   "tab-cover-letter": () => import("./cover-letter.js?v=20260901-error-dialog-minimal-v1"),
 };
 
@@ -108,13 +108,12 @@ document.addEventListener("click", (event) => {
       $("#cl-resume-text").focus();
     } else if (targetTab === "tab-agent") {
       switchTab("tab-agent");
-      import("./agent.js?v=20260901-error-dialog-minimal-v1").then((m) => {
+      import("./agent.js?v=20260901-agent-cards-v1").then((m) => {
         m.attachActiveJobContext();
         m.updateContextChip();
       });
       $("#agent-input")?.focus();
     }
-    $("#job-dialog")?.close();
     $("#public-job-detail-pane")?.classList.remove("open");
     $("#ww-job-detail-pane")?.classList.remove("open");
   }
@@ -128,6 +127,7 @@ startDesktopCollectionMonitor({
   refreshJobs: () => Promise.all([loadFacets(), loadJobs()]),
 });
 setupInfiniteScroll({
+  rootSelector: "#tab-jobs .results-scroll-content",
   isLoading: () => state.loading,
   canLoadMore: () => state.hasMore && state.cursor,
   loadMore: () => loadJobs({ append: true }),

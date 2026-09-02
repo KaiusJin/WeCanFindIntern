@@ -1,6 +1,6 @@
 import { $, escapeHtml, showErrorDialog } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
 import { switchTab } from "./navigation.js";
-import { applyRegionFilter } from "./jobs.js?v=20260901-app-shell-v1";
+import { applyRegionFilter } from "./jobs.js?v=20260901-agent-jd-drawer-v1";
 
 // =========================================================
 // JOB DISTRIBUTION HEATMAP — real choropleth (d3-geo).

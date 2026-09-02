@@ -27,13 +27,16 @@ import {
 
 let currentSessionId = null;
 let sessionList = [];
-let attachedJobContext = null;
+let attachedJobContexts = [];
 let pendingDeleteSessionId = null;
+let agentJobDetailTrigger = null;
 const renderedAgentJobs = new Map();
 const attachSearchJobs = new Map();
 
 const SESSION_STORAGE_KEY = "wecanfindintern_agent_session_v1";
 const SIDEBAR_STORAGE_KEY = "wecanfindintern_agent_sidebar_collapsed_v1";
+const MAX_ATTACHED_JOBS = 5;
+const ATTACH_SEARCH_LIMIT = 50;
 const AGENT_TRASH_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 7h17"></path><path d="M8.5 7V5.25c0-.69.56-1.25 1.25-1.25h4.5c.69 0 1.25.56 1.25 1.25V7"></path><path d="M6 7l1 13h10l1-13"></path><path d="M10 11v5M14 11v5"></path></svg>`;
 const AGENT_SEND_ICON = `<svg class="agent-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5"></path><path d="m6 11 6-6 6 6"></path></svg>`;
 const AGENT_STOP_ICON = `<svg class="agent-send-icon agent-stop-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="7" y="7" width="10" height="10" rx="1"></rect></svg>`;
@@ -59,27 +62,56 @@ function restoreSession() {
 
 function updateContextChip() {
   const preview = $("#agent-attachment-preview");
-  const title = $("#agent-attached-job-title");
-  if (!preview || !title) return;
-  preview.hidden = !attachedJobContext;
-  title.textContent = attachedJobContext
-    ? `${attachedJobContext.title} @ ${attachedJobContext.company || "Company"}`
-    : "";
+  if (preview) {
+    // Keep the composer compact. Full attachment details live in the picker.
+    preview.hidden = true;
+    preview.innerHTML = "";
+  }
+  const attachButton = $("#agent-attach-jobs");
+  const count = attachedJobContexts.length;
+  const label = attachButton?.querySelector("span:last-child");
+  if (label) label.textContent = count ? `Attach ${count} ${count === 1 ? "job" : "jobs"}` : "Attach jobs";
+  if (attachButton) {
+    attachButton.setAttribute("aria-label", count ? `Attach ${count} ${count === 1 ? "job" : "jobs"}` : "Attach jobs");
+    attachButton.title = count ? `Attach ${count} ${count === 1 ? "job" : "jobs"}` : "Attach jobs";
+  }
 }
 
-function clearAttachedJob() {
-  attachedJobContext = null;
+function clearAttachedJobs() {
+  attachedJobContexts = [];
   updateContextChip();
+}
+
+function attachedContextKey(job) {
+  return `${job.source || "public"}:${job.id}`;
+}
+
+function isContextAttached(job) {
+  const key = attachedContextKey(job);
+  return attachedJobContexts.some((item) => attachedContextKey(item) === key);
+}
+
+function addAttachedJobContext(job) {
+  if (!job || !job.id || isContextAttached(job)) return true;
+  if (attachedJobContexts.length >= MAX_ATTACHED_JOBS) {
+    showErrorDialog(`You can attach up to ${MAX_ATTACHED_JOBS} jobs at once.`, { title: "Attachment limit reached" });
+    return false;
+  }
+  attachedJobContexts.push({ ...job, source: job.source || "public" });
+  updateContextChip();
+  return true;
 }
 
 function attachActiveJobContext() {
   if (!jobContextState.activeJobContext) return false;
-  attachedJobContext = {
-    ...jobContextState.activeJobContext,
-    source: jobContextState.activeJobContext.source || "public",
-  };
+  return addAttachedJobContext(jobContextState.activeJobContext);
+}
+
+function removeAttachedJob(key) {
+  attachedJobContexts = attachedJobContexts.filter((job) => attachedContextKey(job) !== key);
   updateContextChip();
-  return true;
+  renderCurrentJobOption();
+  renderAttachSearchResults([...attachSearchJobs.values()]);
 }
 
 function appendMessage(role, html) {
@@ -188,7 +220,7 @@ async function confirmDeleteSession() {
     const nextSessionId = sessionList[0]?.id || null;
     currentSessionId = nextSessionId;
     persistSession();
-    clearAttachedJob();
+    clearAttachedJobs();
     clearChat();
     await renderSessionList();
     if (nextSessionId) {
@@ -210,7 +242,7 @@ async function confirmDeleteSession() {
 }
 
 async function switchSession(sessionId) {
-  clearAttachedJob();
+  clearAttachedJobs();
   currentSessionId = sessionId;
   persistSession();
   clearChat();
@@ -251,7 +283,7 @@ async function switchSession(sessionId) {
 }
 
 async function createNewSession() {
-  clearAttachedJob();
+  clearAttachedJobs();
   try {
     const res = await fetch("/api/v1/agent/sessions", { method: "POST" });
     if (!res.ok) throw new Error("Could not create a new conversation");
@@ -277,7 +309,7 @@ function escapeText(text) {
 function renderPreview(preview) {
   if (!preview) return "";
   const rows = [];
-  if (preview.action === "add_interested" && Array.isArray(preview.jobs)) {
+  if (preview.action === "add_into_tracker" && Array.isArray(preview.jobs)) {
     rows.push("<h4>Add to Interested</h4>");
     preview.jobs.forEach((job) => {
       const already = job.already_tracked ? '<span class="tag">already tracked</span>' : "";
@@ -292,14 +324,19 @@ function renderPreview(preview) {
         `<div class="agent-preview-row">${escapeHtml(record.title)} @ ${escapeHtml(record.company)} — ${escapeHtml(record.current_stage)} → ${escapeHtml(record.new_stage)}</div>`
       );
     });
-  } else if (preview.action === "remove_interested" && Array.isArray(preview.jobs)) {
-    rows.push("<h4>Remove from Interested</h4>");
-    preview.jobs.forEach((job) => {
-      const protect = job.protected
-        ? `<span class="tag">protected (${escapeHtml(job.tracked_stage)})</span>`
-        : "";
+  } else if (
+    (preview.action === "remove_from_tracker" || preview.action === "remove_interested") &&
+    (Array.isArray(preview.records) || Array.isArray(preview.jobs))
+  ) {
+    rows.push("<h4>Remove from Tracker</h4>");
+    (preview.records || preview.jobs).forEach((record) => {
+      const status = record.status === "not_found"
+        ? '<span class="tag">not found</span>'
+        : record.stage
+          ? `<span class="tag">${escapeHtml(record.stage)}</span>`
+          : "";
       rows.push(
-        `<div class="agent-preview-row">${escapeHtml(job.source)} · ${escapeHtml(job.title || job.job_id)} ${protect}</div>`
+        `<div class="agent-preview-row">${escapeHtml(record.source || "tracker")} · ${escapeHtml(record.title || record.job_id || record.application_id)} ${status}</div>`
       );
     });
   } else if (preview.action === "update_profile" && Array.isArray(preview.changes)) {
@@ -346,8 +383,9 @@ function renderApprovalCard(approval) {
 }
 
 const TRACKER_WRITE_TOOLS = new Set([
-  "add_interested",
+  "add_into_tracker",
   "update_tracker_stage",
+  "remove_from_tracker",
   "remove_interested",
 ]);
 
@@ -401,13 +439,14 @@ function renderRecommendationCards(toolCalls, afterElement = null) {
       jobs.push(...(data?.recommendations || []));
     } else if (call.tool_name === "search_jobs") {
       jobs.push(...(data?.waterloo_work || []), ...(data?.public || []));
-    } else if (call.tool_name === "get_job_details" && data?.job_id) {
-      jobs.push(data);
     }
   });
-  const uniqueJobs = [...new Map(
-    jobs.filter((job) => job?.job_id).map((job) => [agentJobKey(job), job])
-  ).values()];
+  const jobsByKey = new Map();
+  jobs.filter((job) => job?.job_id).forEach((job) => {
+    const key = agentJobKey(job);
+    jobsByKey.set(key, { ...(jobsByKey.get(key) || {}), ...job });
+  });
+  const uniqueJobs = [...jobsByKey.values()];
   if (!uniqueJobs.length) return;
 
   const wrapper = document.createElement("div");
@@ -423,8 +462,9 @@ function renderRecommendationCards(toolCalls, afterElement = null) {
     const deadline = job.application_deadline
       ? `<span class="agent-job-deadline">Due ${escapeHtml(job.application_deadline)}</span>`
       : "";
-    const score = job.match_score != null
-      ? `<span class="agent-job-score">${escapeHtml(job.match_score)}% match</span>`
+    const matchScore = job.match_score ?? job.fit_score;
+    const score = matchScore != null
+      ? `<span class="agent-job-score">${escapeHtml(matchScore)}% match</span>`
       : "";
     const skills = (job.matched_skills || []).slice(0, 4);
     const skillTags = skills.length
@@ -484,10 +524,9 @@ async function ensureSession() {
 }
 
 function buildContext() {
-  const ctx = attachedJobContext;
-  if (!ctx) return null;
+  if (!attachedJobContexts.length) return null;
   return {
-    job: {
+    jobs: attachedJobContexts.map((ctx) => ({
       id: ctx.id,
       source: ctx.source || "public",
       title: ctx.title,
@@ -496,7 +535,7 @@ function buildContext() {
       work_mode: ctx.workMode,
       application_deadline: ctx.applicationDeadline,
       jd: ctx.jd,
-    },
+    })),
   };
 }
 
@@ -685,18 +724,40 @@ async function deleteMemory(memoryId) {
   }
 }
 
-async function viewAgentJob(key) {
+function setAgentJobDetailOpen(open) {
+  const pane = $("#agent-job-detail-pane");
+  if (!pane) return;
+  document.body.classList.toggle("agent-job-detail-open", open);
+  pane.setAttribute("aria-hidden", String(!open));
+  if (!open) {
+    agentJobDetailTrigger?.focus();
+    agentJobDetailTrigger = null;
+  }
+}
+
+function closeAgentJobDetail() {
+  setAgentJobDetailOpen(false);
+}
+
+async function viewAgentJob(key, trigger = null) {
   const job = renderedAgentJobs.get(key);
   if (!job) return;
+  const detail = $("#agent-job-detail");
+  agentJobDetailTrigger = trigger;
+  detail.innerHTML = `<p class="loading-detail">Loading job details…</p>`;
+  setAgentJobDetailOpen(true);
   try {
     if (job.source === "waterloo_work") {
-      const module = await import("./waterlooworks.js?v=20260901-app-shell-v1");
-      await module.openWaterlooWorksJob(String(job.job_id));
+      const module = await import("./waterlooworks.js?v=20260901-agent-jd-drawer-v1");
+      const result = await module.loadWaterlooWorksJobDetail(String(job.job_id));
+      detail.innerHTML = result.html;
     } else {
-      const module = await import("./jobs.js?v=20260901-error-dialog-minimal-v1");
-      await module.openJob(String(job.job_id));
+      const module = await import("./jobs.js?v=20260901-agent-jd-drawer-v1");
+      const result = await module.loadPublicJobDetail(String(job.job_id));
+      detail.innerHTML = result.html;
     }
   } catch (error) {
+    closeAgentJobDetail();
     showErrorDialog(error, { title: "Job details unavailable" });
   }
 }
@@ -747,37 +808,61 @@ function renderCurrentJobOption() {
   const option = $("#agent-current-job-option");
   if (!option) return;
   const job = jobContextState.activeJobContext;
-  option.hidden = !job;
+  const attached = job ? isContextAttached(job) : false;
+  // An attached current job is already shown in the pinned list above it.
+  option.hidden = !job || attached;
   option.innerHTML = job
     ? `<p>Currently viewed job</p>
        <div class="agent-attach-result">
          <div class="agent-attach-result-copy">
-           <strong>${escapeHtml(job.title || "Untitled role")}</strong>
-           <span>${escapeHtml(job.company || "Company not specified")}</span>
+           <div class="agent-attach-result-title-row">
+             <strong>${escapeHtml(job.title || "Untitled role")}</strong>
+           </div>
+           <span class="agent-attach-result-meta"><span class="agent-attach-result-meta-text">${escapeHtml(job.company || "Company not specified")}</span></span>
          </div>
-         <button type="button" class="primary-button compact-button" data-attach-current-job>Attach</button>
+         <button type="button" class="primary-button compact-button agent-attach-result-action" data-attach-current-job aria-label="${attached ? "Job already attached" : "Attach current job"}" title="${attached ? "Already attached" : "Attach current job"}" ${attached ? "disabled" : ""}>${attached ? "✓" : "+"}</button>
        </div>`
     : "";
 }
 
 function renderAttachSearchResults(jobs, message = "") {
   const results = $("#agent-attach-results");
+  const count = $("#agent-attach-results-count");
   if (!results) return;
-  if (!jobs.length) {
+  const attachedKeys = new Set(attachedJobContexts.map(attachedContextKey));
+  const attachedJobs = attachedJobContexts.map((job) => ({
+    source: job.source || "public",
+    job_id: String(job.id),
+    title: job.title,
+    company: job.company,
+    location: job.location,
+  }));
+  const availableJobs = jobs.filter((job) => !attachedKeys.has(agentJobKey(job)));
+  const visibleJobs = [...attachedJobs, ...availableJobs];
+  if (!visibleJobs.length) {
+    if (count) count.textContent = "";
     results.innerHTML = `<p class="muted-copy">${escapeHtml(message || "No matching jobs found.")}</p>`;
     return;
   }
-  results.innerHTML = jobs.map((job) => {
+  if (count) count.textContent = `${visibleJobs.length} ${visibleJobs.length === 1 ? "role" : "roles"}`;
+  results.innerHTML = visibleJobs.map((job) => {
     const key = agentJobKey(job);
     attachSearchJobs.set(key, job);
     const source = job.source === "waterloo_work" ? "WaterlooWorks" : "Job Board";
     const meta = [job.company, job.location].filter(Boolean).join(" · ");
-    return `<div class="agent-attach-result">
+    const attached = isContextAttached({ id: job.job_id, source: job.source });
+    const action = attached
+      ? `<button type="button" class="agent-attach-result-action" data-remove-attached-job="${escapeHtml(key)}" aria-label="Detach ${escapeHtml(job.title || "attached job")}" title="Detach job">✓</button>`
+      : `<button type="button" class="agent-attach-result-action" data-attach-job-key="${escapeHtml(key)}" aria-label="Attach this job" title="Attach this job">+</button>`;
+    return `<div class="agent-attach-result" role="listitem">
       <div class="agent-attach-result-copy">
-        <strong>${escapeHtml(job.title || "Untitled role")}</strong>
-        <span><span class="tag">${escapeHtml(source)}</span>${escapeHtml(meta || "Company not specified")}</span>
+        <div class="agent-attach-result-title-row">
+          <strong>${escapeHtml(job.title || "Untitled role")}</strong>
+          <span class="agent-attach-result-arrow" aria-hidden="true">↗</span>
+        </div>
+        <span class="agent-attach-result-meta"><span class="tag">${escapeHtml(source)}</span><span class="agent-attach-result-meta-text">${escapeHtml(meta || "Company not specified")}</span></span>
       </div>
-      <button type="button" class="secondary-button compact-button" data-attach-job-key="${escapeHtml(key)}">Attach</button>
+      ${action}
     </div>`;
   }).join("");
 }
@@ -814,8 +899,8 @@ async function searchAttachJobs() {
     button.textContent = "Searching…";
   }
   renderAttachSearchResults([], "Searching Job Board and WaterlooWorks…");
-  const publicParams = new URLSearchParams({ limit: "8" });
-  const waterlooParams = new URLSearchParams({ limit: "8" });
+  const publicParams = new URLSearchParams({ limit: String(ATTACH_SEARCH_LIMIT) });
+  const waterlooParams = new URLSearchParams({ limit: String(ATTACH_SEARCH_LIMIT) });
   if (query) {
     publicParams.set("query", query);
     waterlooParams.set("query", query);
@@ -845,7 +930,7 @@ async function attachSelectedJob(key, button) {
   const summary = attachSearchJobs.get(key);
   if (!summary) return;
   button.disabled = true;
-  button.textContent = "Adding…";
+  button.textContent = "…";
   try {
     const endpoint = summary.source === "waterloo_work"
       ? `/api/v1/waterlooworks/jobs/${encodeURIComponent(summary.job_id)}`
@@ -853,16 +938,19 @@ async function attachSelectedJob(key, button) {
     const response = await fetch(endpoint);
     const job = await response.json();
     if (!response.ok) throw new Error(job.detail || "Could not attach this job.");
-    attachedJobContext = summary.source === "waterloo_work"
+    const context = summary.source === "waterloo_work"
       ? waterlooWorksJobContext(job)
       : publicJobContext(job);
-    updateContextChip();
-    closeAttachDialog();
-    $("#agent-input")?.focus();
+    if (addAttachedJobContext(context)) {
+      renderAttachSearchResults([...attachSearchJobs.values()]);
+    } else {
+      button.textContent = "+";
+      button.disabled = false;
+    }
   } catch (error) {
     showErrorDialog(error, { title: "Job could not be attached" });
     button.disabled = false;
-    button.textContent = "Attach";
+    button.textContent = "+";
   }
 }
 
@@ -871,6 +959,8 @@ function openAttachDialog() {
   if (!dialog) return;
   renderCurrentJobOption();
   $("#agent-attach-query").value = "";
+  const count = $("#agent-attach-results-count");
+  if (count) count.textContent = "";
   renderAttachSearchResults([], "Loading recent jobs…");
   dialog.showModal();
   syncDialogScrollLock();
@@ -913,10 +1003,9 @@ $("#agent-form")?.addEventListener("submit", (event) => {
 });
 
 $("#agent-new-session")?.addEventListener("click", createNewSession);
-$("#agent-attach-job")?.addEventListener("click", openAttachDialog);
-$("#agent-remove-attachment")?.addEventListener("click", clearAttachedJob);
+$("#agent-attach-jobs")?.addEventListener("click", openAttachDialog);
 $("#close-agent-attach-dialog")?.addEventListener("click", closeAttachDialog);
-$("#cancel-agent-attach-dialog")?.addEventListener("click", closeAttachDialog);
+$("#done-agent-attach-dialog")?.addEventListener("click", closeAttachDialog);
 $("#agent-attach-dialog")?.addEventListener("click", (event) => {
   if (event.target === $("#agent-attach-dialog")) closeAttachDialog();
 });
@@ -930,11 +1019,24 @@ $("#agent-attach-query")?.addEventListener("keydown", (event) => {
 $("#agent-current-job-option")?.addEventListener("click", (event) => {
   if (!event.target.closest("[data-attach-current-job]")) return;
   if (attachActiveJobContext()) {
-    closeAttachDialog();
-    $("#agent-input")?.focus();
+    const context = jobContextState.activeJobContext;
+    attachSearchJobs.set(agentJobKey({ source: context.source, job_id: context.id }), {
+      source: context.source,
+      job_id: context.id,
+      title: context.title,
+      company: context.company,
+      location: context.location,
+    });
+    renderCurrentJobOption();
+    renderAttachSearchResults([...attachSearchJobs.values()]);
   }
 });
 $("#agent-attach-results")?.addEventListener("click", (event) => {
+  const detachButton = event.target.closest("[data-remove-attached-job]");
+  if (detachButton) {
+    removeAttachedJob(detachButton.dataset.removeAttachedJob);
+    return;
+  }
   const button = event.target.closest("[data-attach-job-key]");
   if (button) attachSelectedJob(button.dataset.attachJobKey, button);
 });
@@ -973,10 +1075,23 @@ $("#agent-chat")?.addEventListener("click", (event) => {
     resizeAgentInput();
     $("#agent-input").focus();
   } else if (viewButton) {
-    viewAgentJob(viewButton.dataset.agentViewJob);
+    viewAgentJob(viewButton.dataset.agentViewJob, viewButton);
   } else if (saveButton) {
     saveAgentJob(saveButton.dataset.agentSaveJob, saveButton);
   }
+});
+$("#close-agent-job-detail")?.addEventListener("click", closeAgentJobDetail);
+$("#agent-job-detail-backdrop")?.addEventListener("click", closeAgentJobDetail);
+$("#agent-job-detail-pane")?.addEventListener("click", (event) => {
+  if (event.target.closest("[data-ai-target]")) closeAgentJobDetail();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && document.body.classList.contains("agent-job-detail-open")) {
+    closeAgentJobDetail();
+  }
+});
+document.querySelectorAll(".nav-tab").forEach((button) => {
+  button.addEventListener("click", closeAgentJobDetail);
 });
 
 restoreSession();

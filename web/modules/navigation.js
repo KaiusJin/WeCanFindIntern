@@ -50,7 +50,20 @@ function openSidebar() {
   if (backdrop) backdrop.hidden = false;
 }
 
+function closeAgentDialogsWhenLeaving(targetTabId) {
+  const activeTabId = document.querySelector(".tab-pane.active:not([hidden])")?.id;
+  if (activeTabId !== "tab-agent" || targetTabId === "tab-agent") return;
+
+  document.querySelectorAll("#agent-attach-dialog[open], #agent-delete-session-dialog[open]")
+    .forEach((dialog) => dialog.close());
+  if (!document.querySelector("dialog[open]")) {
+    document.body.classList.remove("modal-open");
+    document.documentElement.classList.remove("modal-open");
+  }
+}
+
 export function switchTab(targetTabId, { updateLocation = true } = {}) {
+  closeAgentDialogsWhenLeaving(targetTabId);
   const navTarget = navTabFor(targetTabId);
   document.querySelectorAll(".nav-tab").forEach((button) => {
     const active = button.dataset.tab === navTarget;

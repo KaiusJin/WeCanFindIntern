@@ -168,7 +168,7 @@ function applyRegionFilter(countryCode, regionCode) {
   setFilterSelections("country", [countryCode]);
   setFilterSelections("region", [`${regionCode},${countryCode}`]);
   loadJobs();
-  $("#tab-jobs .results-panel")?.scrollTo({ top: 0, behavior: "smooth" });
+  $("#tab-jobs .results-scroll-content")?.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 async function loadJobs({ append = false } = {}) {
@@ -183,7 +183,7 @@ async function loadJobs({ append = false } = {}) {
   if (!append) {
     state.cursor = null;
     list.innerHTML = "";
-    $("#tab-jobs .results-panel")?.scrollTo({ top: 0, behavior: "instant" });
+    $("#tab-jobs .results-scroll-content")?.scrollTo({ top: 0, behavior: "instant" });
     $("#empty-state").hidden = true;
     if (loadingIndicator) loadingIndicator.hidden = true;
     if (endOfResults) endOfResults.hidden = true;
@@ -270,22 +270,14 @@ async function loadFacets() {
   }
 }
 
-async function openJob(jobId) {
-  const pane = $("#public-job-detail-pane");
-  const detail = $("#public-job-detail");
-  detail.innerHTML = `<p class="loading-detail">Loading job details…</p>`;
-  pane.classList.add("open", "has-selection");
-  pane.setAttribute("aria-hidden", "false");
-  document.querySelectorAll("#job-list .job-card").forEach((card) => {
-    card.classList.toggle("selected", card.dataset.id === String(jobId));
-  });
-  try {
-    const response = await fetch(`/api/v1/jobs/${jobId}`);
-    if (!response.ok) throw new Error("Could not load job details");
-    const job = await response.json();
-    setActiveJobContext(publicJobContext(job));
-
-    detail.innerHTML = renderJobDetail(job, {
+async function loadPublicJobDetail(jobId) {
+  const response = await fetch(`/api/v1/jobs/${jobId}`);
+  if (!response.ok) throw new Error("Could not load job details");
+  const job = await response.json();
+  setActiveJobContext(publicJobContext(job));
+  return {
+    job,
+    html: renderJobDetail(job, {
       eyebrow: `${label(job.opportunity_type)} · ${workModeLabel(job.work_mode)}`,
       company: job.company_name,
       location: job.location?.display_name,
@@ -296,7 +288,22 @@ async function openJob(jobId) {
         { label: "Recruiting term", value: job.recruiting_term?.display_name || "Term not specified" },
       ],
       links: (job.sources || []).map((source) => source.direct_url || source.url),
-    });
+    }),
+  };
+}
+
+async function openJob(jobId) {
+  const pane = $("#public-job-detail-pane");
+  const detail = $("#public-job-detail");
+  detail.innerHTML = `<p class="loading-detail">Loading job details…</p>`;
+  pane.classList.add("open", "has-selection");
+  pane.setAttribute("aria-hidden", "false");
+  document.querySelectorAll("#job-list .job-card").forEach((card) => {
+    card.classList.toggle("selected", card.dataset.id === String(jobId));
+  });
+  try {
+    const result = await loadPublicJobDetail(jobId);
+    detail.innerHTML = result.html;
   } catch (requestError) {
     pane.classList.remove("open", "has-selection");
     pane.setAttribute("aria-hidden", "true");
@@ -337,7 +344,7 @@ function updateSliderFill() {
 function setupBackToTop() {
   const backToTopBtn = $("#back-to-top");
   if (!backToTopBtn) return;
-  const scrollRoot = $("#tab-jobs .results-panel");
+  const scrollRoot = $("#tab-jobs .results-scroll-content");
   scrollRoot?.addEventListener(
     "scroll",
     () => {
@@ -489,6 +496,7 @@ export {
   state,
   loadJobs,
   loadFacets,
+  loadPublicJobDetail,
   openJob,
   updateSliderFill,
   setupBackToTop,

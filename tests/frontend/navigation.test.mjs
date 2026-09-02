@@ -52,8 +52,17 @@ test("Public Jobs owns List and Map while WaterlooWorks keeps a separate dataset
 
   assert.match(indexSource, /id="job-list"/);
   assert.match(indexSource, /id="ww-job-list"/);
+  assert.match(indexSource, /class="results-scroll-content">[\s\S]*id="job-list"/);
+  assert.match(indexSource, /id="ww-jobs-scroll-content" class="results-scroll-content"/);
   assert.match(indexSource, /id="public-job-detail-pane"/);
   assert.match(indexSource, /id="ww-job-detail-pane"/);
+});
+
+test("leaving the AI Agent closes only its open dialogs", () => {
+  assert.match(navigationSource, /function closeAgentDialogsWhenLeaving\(targetTabId\)/);
+  assert.match(navigationSource, /activeTabId !== "tab-agent" \|\| targetTabId === "tab-agent"/);
+  assert.match(navigationSource, /#agent-attach-dialog\[open\], #agent-delete-session-dialog\[open\]/);
+  assert.match(navigationSource, /closeAgentDialogsWhenLeaving\(targetTabId\);\s*const navTarget/);
 });
 
 test("desktop workspaces are bounded and narrow screens switch to overlays", () => {
@@ -64,6 +73,7 @@ test("desktop workspaces are bounded and narrow screens switch to overlays", () 
   assert.match(shellSource, /@media \(max-width: 900px\)/);
   assert.match(shellSource, /body\.sidebar-open \.app-sidebar/);
   assert.match(shellSource, /\.job-detail-pane\.open/);
+  assert.match(shellSource, /\.results-scroll-content/);
 });
 
 test("Profile exposes explicit resume imports without JSON export", () => {

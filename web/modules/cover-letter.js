@@ -11,17 +11,12 @@ let coverLetterProfile = null;
 let coverLetterProgressTimer = null;
 
 async function loadCoverLetterProfile() {
-  const status = $("#cl-profile-source-status");
   try {
     const context = await loadProfileContext();
     coverLetterProfile = context.profile;
     const text = context.resume_text || "";
     $("#cl-resume-text").value = text;
-    if (status) {
-      status.textContent = text ? "Using saved Profile as candidate context" : "Your Profile is empty. Add Profile data or upload a resume.";
-    }
   } catch (error) {
-    if (status) status.textContent = "Profile could not be loaded.";
     $("#cl-resume-text").value = "";
     showErrorDialog(error, { title: "Could not load Profile" });
   }

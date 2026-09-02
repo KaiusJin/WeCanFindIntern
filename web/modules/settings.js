@@ -313,7 +313,6 @@ async function openSettingsDialog() {
   syncDialogScrollLock();
 }
 
-$("#open-settings")?.addEventListener("click", openSettingsDialog);
 $("#sidebar-open-settings")?.addEventListener("click", openSettingsDialog);
 $("#close-settings")?.addEventListener("click", () => $("#settings-dialog")?.close());
 $("#btn-save-settings")?.addEventListener("click", () => { saveSettings(); });

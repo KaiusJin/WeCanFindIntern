@@ -12,9 +12,11 @@ const interviewState = {
   currentIndex: 0,
   sessionId: null,
   answered: new Set(),
+  responses: new Map(),
+  analyzing: new Set(),
   mediaRecorder: null,
-  recordedChunks: [],
-  recordedBlob: null,
+  recordingQuestionIndex: null,
+  stopRecordingPromise: null,
   stream: null,
   timerInterval: null,
   secondsElapsed: 0,
@@ -36,15 +38,134 @@ function stepLabel(question, index) {
   );
 }
 
+function responseFor(index) {
+  if (!interviewState.responses.has(index)) {
+    interviewState.responses.set(index, {
+      text: "",
+      recordedBlob: null,
+      recordingDurationSeconds: 0,
+      analysis: null,
+    });
+  }
+  return interviewState.responses.get(index);
+}
+
+function saveVisibleAnswer() {
+  if (!interviewState.questions[interviewState.currentIndex]) return;
+  responseFor(interviewState.currentIndex).text = $("#interview-answer-text").value;
+}
+
+function isRecording() {
+  return Boolean(
+    interviewState.mediaRecorder
+    && interviewState.mediaRecorder.state !== "inactive",
+  );
+}
+
+function renderAnalysisReport(data) {
+  const reportCard = $("#interview-report-card");
+  if (!data) {
+    reportCard.hidden = true;
+    return;
+  }
+
+  const interviewScore = Number(data.score) || 0;
+  $("#interview-score-num").textContent = interviewScore;
+  $("#interview-level-pill").textContent = interviewScore >= 80
+    ? "Strong Performance"
+    : interviewScore >= 60 ? "Solid Performance" : "Needs Practice";
+  $("#interview-summary-text").textContent = data.summary || "";
+
+  if (data.star_feedback) {
+    $("#star-feedback-block").hidden = false;
+    $("#star-feedback-text").textContent = data.star_feedback;
+  } else {
+    $("#star-feedback-block").hidden = true;
+  }
+
+  const transcriptBlock = $("#transcript-block");
+  if (data.transcript) {
+    transcriptBlock.hidden = false;
+    const duration = Number(data.answer_duration_seconds) || 0;
+    const lang = data.transcript_language ? ` (${data.transcript_language})` : "";
+    const durationNote = duration ? ` — ${Math.round(duration)}s` : "";
+    $("#interview-transcript-text").textContent =
+      `${data.transcript}${lang}${durationNote}`;
+  } else {
+    transcriptBlock.hidden = true;
+  }
+
+  const criteriaBlock = $("#criteria-results-block");
+  const criteriaList = $("#interview-criteria-wrap");
+  const results = data.criteria_results || [];
+  if (results.length) {
+    criteriaBlock.hidden = false;
+    criteriaList.innerHTML = criteriaResultsMarkup(results);
+  } else {
+    criteriaBlock.hidden = true;
+  }
+
+  const timelineWrap = $("#interview-timeline-wrap");
+  timelineWrap.innerHTML = (data.timeline || []).map((item) => {
+    const section = item.section || item.type || "Observation";
+    return `
+      <div class="timeline-event-item">
+        <span class="timeline-ts">${escapeHtml(section)}</span>
+        <span class="timeline-obs">${escapeHtml(item.observation)}</span>
+      </div>
+    `;
+  }).join("") || "<p class='detail-description'>No specific answer-phase notes.</p>";
+
+  $("#interview-advice-wrap").innerHTML = (data.advice || [])
+    .map((advice) => `<li>${escapeHtml(advice)}</li>`)
+    .join("");
+  reportCard.hidden = false;
+}
+
+function syncRecordingControls() {
+  const response = responseFor(interviewState.currentIndex);
+  const recordingCurrentQuestion = isRecording()
+    && interviewState.recordingQuestionIndex === interviewState.currentIndex;
+  const isAnalyzing = interviewState.analyzing.has(interviewState.currentIndex);
+  const startButton = $("#btn-start-record");
+  const stopButton = $("#btn-stop-record");
+  const analyzeButton = $("#btn-analyze-answer");
+  const timer = $("#recording-timer");
+  const status = $("#recording-inline-status");
+
+  startButton.hidden = recordingCurrentQuestion;
+  startButton.disabled = isAnalyzing;
+  startButton.textContent = response.recordedBlob ? "↺ Re-record" : "🎙 Start recording";
+  stopButton.hidden = !recordingCurrentQuestion;
+  timer.hidden = !recordingCurrentQuestion;
+  analyzeButton.disabled = isAnalyzing;
+  analyzeButton.textContent = isAnalyzing
+    ? "Analyzing…"
+    : recordingCurrentQuestion ? "Stop & analyze ↗" : "Analyze answer ↗";
+
+  if (recordingCurrentQuestion) {
+    status.textContent = "Recording — click Analyze when you finish.";
+    status.hidden = false;
+  } else if (response.recordedBlob) {
+    status.textContent = "Recording saved for this question.";
+    status.hidden = false;
+  } else {
+    status.textContent = "";
+    status.hidden = true;
+  }
+}
+
 function renderActiveQuestion(index) {
   if (!interviewState.questions[index]) return;
+  saveVisibleAnswer();
   interviewState.currentIndex = index;
   const q = interviewState.questions[index];
   $("#interview-q-category").textContent = q.category_label || `Question ${index + 1}`;
   $("#interview-q-text").textContent = q.question;
+  $("#interview-answer-text").value = responseFor(index).text;
   renderStepper();
-  $("#interview-report-card").hidden = true;
-  $("#interview-answer-text").value = "";
+  renderAnalysisReport(responseFor(index).analysis);
+  syncRecordingControls();
 }
 
 function renderStepper() {
@@ -59,7 +180,10 @@ function renderStepper() {
     })
     .join("");
   stepper.querySelectorAll(".step-badge").forEach((badge) => {
-    badge.addEventListener("click", () => renderActiveQuestion(Number(badge.dataset.q)));
+    badge.addEventListener("click", async () => {
+      await stopActiveRecording();
+      renderActiveQuestion(Number(badge.dataset.q));
+    });
   });
 }
 
@@ -76,18 +200,11 @@ function criteriaResultsMarkup(results) {
 // Candidate source: saved Profile or uploaded resume PDF (same flow as the
 // Cover Letter section).
 async function loadInterviewProfile() {
-  const status = $("#int-profile-source-status");
   try {
     const context = await loadProfileContext();
     const text = context.resume_text || "";
     $("#int-resume-text").value = text;
-    if (status) {
-      status.textContent = text
-        ? "Using saved Profile as candidate context"
-        : "Your Profile is empty. Add Profile data or upload a resume.";
-    }
   } catch (error) {
-    if (status) status.textContent = "Profile could not be loaded.";
     $("#int-resume-text").value = "";
     showErrorDialog(error, { title: "Could not load Profile" });
   }
@@ -159,6 +276,7 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
     return;
   }
 
+  await stopActiveRecording();
   $("#interview-empty").hidden = true;
   $("#interview-loading").hidden = false;
   $("#interview-active-card").hidden = true;
@@ -167,6 +285,9 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
   interviewState.currentIndex = 0;
   interviewState.sessionId = null;
   interviewState.answered = new Set();
+  interviewState.responses = new Map();
+  interviewState.analyzing = new Set();
+  $("#interview-answer-text").value = "";
 
   try {
     const res = await fetchWithTimeout(
@@ -197,6 +318,8 @@ $("#btn-generate-questions")?.addEventListener("click", async () => {
           if (questions.length === 1) {
             interviewState.sessionId = null;
             interviewState.answered = new Set();
+            interviewState.responses = new Map();
+            interviewState.analyzing = new Set();
             $("#interview-loading").hidden = true;
             $("#interview-active-card").hidden = false;
             renderActiveQuestion(0);
@@ -246,34 +369,65 @@ function setRecordStatus(text) {
   }
 }
 
+function clearRecordingTimer() {
+  clearInterval(interviewState.timerInterval);
+  interviewState.timerInterval = null;
+}
+
+async function stopActiveRecording() {
+  const recorder = interviewState.mediaRecorder;
+  if (!recorder) return null;
+  const pendingStop = interviewState.stopRecordingPromise;
+  if (recorder.state !== "inactive") recorder.stop();
+  clearRecordingTimer();
+  syncRecordingControls();
+  return pendingStop || null;
+}
+
 $("#btn-start-record")?.addEventListener("click", async () => {
   try {
+    if (isRecording()) await stopActiveRecording();
     const stream = await initMicrophone();
-    interviewState.recordedChunks = [];
+    const questionIndex = interviewState.currentIndex;
+    const response = responseFor(questionIndex);
+    const recordedChunks = [];
     const mimeType = MediaRecorder.isTypeSupported("audio/webm")
       ? "audio/webm"
       : "";
-    interviewState.mediaRecorder = new MediaRecorder(
+    const recorder = new MediaRecorder(
       stream,
       mimeType ? { mimeType } : undefined,
     );
-    interviewState.mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) interviewState.recordedChunks.push(e.data);
+    interviewState.mediaRecorder = recorder;
+    interviewState.recordingQuestionIndex = questionIndex;
+    response.recordedBlob = null;
+    response.recordingDurationSeconds = 0;
+
+    let resolveStop;
+    interviewState.stopRecordingPromise = new Promise((resolve) => {
+      resolveStop = resolve;
+    });
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) recordedChunks.push(event.data);
     };
-    interviewState.mediaRecorder.onstop = () => {
-      interviewState.recordedBlob = new Blob(interviewState.recordedChunks, {
+    recorder.onstop = () => {
+      const recordedBlob = new Blob(recordedChunks, {
         type: mimeType || "audio/webm",
       });
+      response.recordedBlob = recordedBlob;
+      response.recordingDurationSeconds = interviewState.secondsElapsed;
       stream.getTracks().forEach((t) => t.stop());
-      interviewState.stream = null;
-      setRecordStatus("Recording saved — analyze when ready, or re-record.");
+      if (interviewState.stream === stream) interviewState.stream = null;
+      if (interviewState.mediaRecorder === recorder) {
+        interviewState.mediaRecorder = null;
+        interviewState.recordingQuestionIndex = null;
+        interviewState.stopRecordingPromise = null;
+      }
+      clearRecordingTimer();
+      syncRecordingControls();
+      resolveStop(recordedBlob);
     };
-    interviewState.mediaRecorder.start();
-
-    setRecordStatus("Recording — speak your answer, then stop.");
-    $("#btn-start-record").hidden = true;
-    $("#btn-stop-record").hidden = false;
-    $("#recording-timer").hidden = false;
+    recorder.start();
 
     interviewState.secondsElapsed = 0;
     $("#recording-time-text").textContent = "00:00";
@@ -283,34 +437,40 @@ $("#btn-start-record")?.addEventListener("click", async () => {
       const s = String(interviewState.secondsElapsed % 60).padStart(2, "0");
       $("#recording-time-text").textContent = `${m}:${s}`;
     }, 1000);
+    syncRecordingControls();
   } catch (err) {
     setRecordStatus("You can type your answer in the text box instead.");
     showErrorDialog(err, { title: "Microphone unavailable", guidance: "Allow microphone access in your browser settings, or type your answer instead." });
   }
 });
 
-$("#btn-stop-record")?.addEventListener("click", () => {
-  if (interviewState.mediaRecorder && interviewState.mediaRecorder.state !== "inactive") {
-    interviewState.mediaRecorder.stop();
-  }
-  clearInterval(interviewState.timerInterval);
-  $("#recording-timer").hidden = true;
-  $("#btn-start-record").hidden = false;
-  $("#btn-stop-record").hidden = true;
-  $("#btn-start-record").textContent = "↺ Re-record";
+$("#btn-stop-record")?.addEventListener("click", async () => {
+  await stopActiveRecording();
 });
 
 $("#btn-analyze-answer")?.addEventListener("click", async () => {
   const jdText = $("#interview-jd-text").value.trim();
-  const q = interviewState.questions[interviewState.currentIndex];
-  const answerText = $("#interview-answer-text").value.trim();
+  const questionIndex = interviewState.currentIndex;
+  const q = interviewState.questions[questionIndex];
+  const response = responseFor(questionIndex);
+  saveVisibleAnswer();
 
   if (!jdText) {
     showErrorDialog("The job description for this practice session is missing.", { title: "Job description required" });
     return;
   }
-  if (!answerText && !interviewState.recordedBlob) {
+
+  const btn = $("#btn-analyze-answer");
+  if (isRecording() && interviewState.recordingQuestionIndex === questionIndex) {
+    btn.disabled = true;
+    btn.textContent = "Finishing recording…";
+    await stopActiveRecording();
+  }
+
+  const answerText = response.text.trim();
+  if (!answerText && !response.recordedBlob) {
     showErrorDialog("No answer was provided.", { title: "Answer required", guidance: "Record an audio answer or type your response before requesting analysis." });
+    syncRecordingControls();
     return;
   }
 
@@ -331,12 +491,12 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
   formData.append("api_key", config.api_key || "");
   formData.append("api_base", config.api_base || "");
 
-  if (interviewState.recordedBlob) {
-    formData.append("audio_file", interviewState.recordedBlob, "answer.webm");
+  if (response.recordedBlob) {
+    formData.append("audio_file", response.recordedBlob, `answer-${questionIndex + 1}.webm`);
   }
   if (interviewState.sessionId) {
     formData.append("session_id", interviewState.sessionId);
-    formData.append("question_index", String(interviewState.currentIndex));
+    formData.append("question_index", String(questionIndex));
   }
   const evaluationCriteria = q?.evaluation_criteria || q?.eval_criteria || [];
   if (evaluationCriteria.length) {
@@ -346,11 +506,8 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
     );
   }
 
-  const btn = $("#btn-analyze-answer");
-  btn.disabled = true;
-  btn.textContent = answerText
-    ? "Analyzing Performance with AI…"
-    : "Transcribing audio locally, then analyzing…";
+  interviewState.analyzing.add(questionIndex);
+  syncRecordingControls();
 
   try {
     const res = await fetchWithTimeout("/api/v1/interview/analyze", { method: "POST", body: formData }, 180000);
@@ -358,74 +515,31 @@ $("#btn-analyze-answer")?.addEventListener("click", async () => {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Analysis failed");
 
-    const interviewScore = Number(data.score) || 0;
-    $("#interview-score-num").textContent = interviewScore;
-    $("#interview-level-pill").textContent = interviewScore >= 80 ? "Strong Performance" : interviewScore >= 60 ? "Solid Performance" : "Needs Practice";
-    $("#interview-summary-text").textContent = data.summary;
-
-    if (data.star_feedback) {
-      $("#star-feedback-block").hidden = false;
-      $("#star-feedback-text").textContent = data.star_feedback;
-    } else {
-      $("#star-feedback-block").hidden = true;
-    }
-
-    const transcriptBlock = $("#transcript-block");
-    if (data.transcript) {
-      transcriptBlock.hidden = false;
-      const duration = Number(data.answer_duration_seconds) || 0;
-      const lang = data.transcript_language ? ` (${data.transcript_language})` : "";
-      const durationNote = duration ? ` — ${Math.round(duration)}s` : "";
-      $("#interview-transcript-text").textContent =
-        `${data.transcript}${lang}${durationNote}`;
-      if (!answerText) {
-        // Surface the locally transcribed answer so the user can correct it
-        // for the next round.
-        $("#interview-answer-text").value = data.transcript;
-      }
-    } else {
-      transcriptBlock.hidden = true;
-    }
-
-    const criteriaBlock = $("#criteria-results-block");
-    const criteriaList = $("#interview-criteria-wrap");
-    if (criteriaBlock && criteriaList) {
-      const results = data.criteria_results || [];
-      if (results.length) {
-        criteriaBlock.hidden = false;
-        criteriaList.innerHTML = criteriaResultsMarkup(results);
-      } else {
-        criteriaBlock.hidden = true;
-      }
-    }
-
-    const timelineWrap = $("#interview-timeline-wrap");
-    timelineWrap.innerHTML = (data.timeline || []).map((t) => {
-      const section = t.section || t.type || "Observation";
-      return `
-      <div class="timeline-event-item">
-        <span class="timeline-ts">${escapeHtml(section)}</span>
-        <span class="timeline-obs">${escapeHtml(t.observation)}</span>
-      </div>
-    `;
-    }).join("") || "<p class='detail-description'>No specific answer-phase notes.</p>";
-
-    const adviceWrap = $("#interview-advice-wrap");
-    adviceWrap.innerHTML = (data.advice || []).map((a) => `<li>${escapeHtml(a)}</li>`).join("");
-
-    $("#interview-report-card").hidden = false;
-    interviewState.answered.add(interviewState.currentIndex);
+    response.analysis = data;
+    if (!answerText && data.transcript) response.text = data.transcript;
+    interviewState.answered.add(questionIndex);
     renderStepper();
-    $("#btn-next-question").scrollIntoView({ behavior: "smooth" });
+    if (interviewState.currentIndex === questionIndex) {
+      $("#interview-answer-text").value = response.text;
+      renderAnalysisReport(data);
+      $("#btn-next-question").scrollIntoView({ behavior: "smooth" });
+    }
   } catch (err) {
     showErrorDialog(err, { title: "Answer analysis failed" });
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Analyze Answer Performance ↗";
+    interviewState.analyzing.delete(questionIndex);
+    syncRecordingControls();
   }
 });
 
-$("#btn-next-question")?.addEventListener("click", () => {
+$("#interview-answer-text")?.addEventListener("input", (event) => {
+  if (!interviewState.questions[interviewState.currentIndex]) return;
+  responseFor(interviewState.currentIndex).text = event.target.value;
+});
+
+$("#btn-next-question")?.addEventListener("click", async () => {
+  saveVisibleAnswer();
+  await stopActiveRecording();
   if (interviewState.currentIndex < interviewState.questions.length - 1) {
     renderActiveQuestion(interviewState.currentIndex + 1);
     $("#interview-active-card").scrollIntoView({ behavior: "smooth" });
@@ -543,7 +657,8 @@ async function deleteSession(sessionId) {
 }
 
 $("#btn-refresh-history")?.addEventListener("click", refreshHistory);
-$("#clear-interview")?.addEventListener("click", () => {
+$("#clear-interview")?.addEventListener("click", async () => {
+  await stopActiveRecording();
   const profileRadio = $("input[name='int-resume-source'][value='profile']");
   if (profileRadio) profileRadio.checked = true;
   $("#int-pdf-source").hidden = true;
@@ -557,6 +672,13 @@ $("#clear-interview")?.addEventListener("click", () => {
   $("#interview-empty").hidden = false;
   $("#interview-active-card").hidden = true;
   $("#interview-report-card").hidden = true;
+  interviewState.questions = [];
+  interviewState.currentIndex = 0;
+  interviewState.sessionId = null;
+  interviewState.answered = new Set();
+  interviewState.responses = new Map();
+  interviewState.analyzing = new Set();
+  clearRecordingTimer();
   if (interviewState.stream) {
     interviewState.stream.getTracks().forEach((t) => t.stop());
     interviewState.stream = null;
