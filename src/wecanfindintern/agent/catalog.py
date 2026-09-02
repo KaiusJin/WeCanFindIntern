@@ -5,13 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 from wecanfindintern.agent.models import (
-    AddInterestedArgs,
+    AddIntoTrackerArgs,
+    AnalyseJobArgs,
+    CompareJobsArgs,
     GenerateInterviewQuestionsArgs,
     GetJobDetailsArgs,
     ListTrackerArgs,
     ProposeProfileUpdateArgs,
     RecommendJobsArgs,
-    RemoveInterestedArgs,
+    RemoveTrackerArgs,
     SearchJobsArgs,
     UpdateProfileArgs,
     UpdateTrackerStageArgs,
@@ -46,6 +48,30 @@ TOOL_CATALOG: list[dict[str, Any]] = [
         "mutates": False,
     },
     {
+        "name": "analyse_job",
+        "description": (
+            "Deeply analyse one job's complete JD against the user's confirmed Profile. "
+            "Extracts responsibilities and hiring priorities; separates must-have, "
+            "preferred, and implicit requirements; assesses Profile evidence item by "
+            "item; identifies skill, experience, and education gaps; checks seniority, "
+            "work authorization, location, and deadline risks; and recommends whether "
+            "the role is worth applying to. Never writes data."
+        ),
+        "parameters": AnalyseJobArgs.model_json_schema(),
+        "mutates": False,
+    },
+    {
+        "name": "compare_jobs",
+        "description": (
+            "Compare 2 to 5 explicit jobs against the user's confirmed Profile and "
+            "saved preferences. Returns a ranked comparison, trade-offs, evidence "
+            "quality, and the job that is the best overall fit. Use the source-aware "
+            "job references from attached jobs or search results. Never writes data."
+        ),
+        "parameters": CompareJobsArgs.model_json_schema(),
+        "mutates": False,
+    },
+    {
         "name": "list_tracker",
         "description": "List Tracker records, optionally filtered by stage or query.",
         "parameters": ListTrackerArgs.model_json_schema(),
@@ -56,7 +82,8 @@ TOOL_CATALOG: list[dict[str, Any]] = [
         "description": (
             "Recommend jobs with hybrid RAG recall over Profile, job descriptions and "
             "preferences, followed by deterministic evidence scoring and an optional "
-            "bounded LLM review. Never writes user data."
+            "bounded LLM review. The top two results, or the top one when only one "
+            "exists, receive a full job analysis. Never writes user data."
         ),
         "parameters": RecommendJobsArgs.model_json_schema(),
         "mutates": False,
@@ -81,30 +108,31 @@ TOOL_CATALOG: list[dict[str, Any]] = [
         "mutates": False,
     },
     {
-        "name": "add_interested",
+        "name": "add_into_tracker",
         "description": (
-            "Plan to add one or more jobs to the Tracker's Interested stage. Requires "
-            "user confirmation before it runs."
+            "Add one or more jobs directly to the Tracker at the initial Interested "
+            "stage. This action does not require confirmation."
         ),
-        "parameters": AddInterestedArgs.model_json_schema(),
-        "mutates": True,
+        "parameters": AddIntoTrackerArgs.model_json_schema(),
+        "mutates": False,
     },
     {
         "name": "update_tracker_stage",
         "description": (
-            "Plan to change one or more Tracker records to a new stage (interested, "
-            "applied, interview, offer, rejected). Requires user confirmation."
+            "Change one or more Tracker records to a new stage (interested, applied, "
+            "interview, offer, rejected) immediately without confirmation."
         ),
         "parameters": UpdateTrackerStageArgs.model_json_schema(),
-        "mutates": True,
+        "mutates": False,
     },
     {
-        "name": "remove_interested",
+        "name": "remove_from_tracker",
         "description": (
-            "Plan to remove one or more jobs from Interested. Records past Interested "
-            "are protected and will not be removed. Requires user confirmation."
+            "Plan to permanently remove one or more records from the Tracker, including "
+            "records in Applied, Interview, Offer, or Rejected stages. Requires user "
+            "confirmation."
         ),
-        "parameters": RemoveInterestedArgs.model_json_schema(),
+        "parameters": RemoveTrackerArgs.model_json_schema(),
         "mutates": True,
     },
     {

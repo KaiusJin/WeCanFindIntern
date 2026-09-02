@@ -33,18 +33,27 @@ from wecanfindintern.agent.job_access import (
 from wecanfindintern.agent.job_access import (
     waterlooworks_job_summary as _ww_job_summary,
 )
+from wecanfindintern.agent.job_analysis import (
+    analysis_for_llm,
+    deterministic_job_evidence,
+    merge_semantic_analysis,
+    semantic_analyse_job,
+)
 from wecanfindintern.agent.models import (
-    AddInterestedArgs,
+    AddIntoTrackerArgs,
+    AnalyseJobArgs,
+    CompareJobsArgs,
     GenerateInterviewQuestionsArgs,
     GetJobDetailsArgs,
     JobReference,
     ListTrackerArgs,
     ProposeProfileUpdateArgs,
-    RemoveInterestedArgs,
+    RemoveTrackerArgs,
     SearchJobsArgs,
     UpdateProfileArgs,
     UpdateTrackerStageArgs,
 )
+from wecanfindintern.agent.recommend.scoring import is_expired, score_candidate
 from wecanfindintern.agent.recommend.tool import tool_recommend_jobs
 from wecanfindintern.application.job_models import JobListFilters
 from wecanfindintern.application.profile_context import profile_resume_text
@@ -126,10 +135,7 @@ async def tool_search_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) ->
             opportunity_types=parsed.opportunity_types,
             recruiting_terms=parsed.recruiting_terms,
             posted_after=parsed.posted_after,
-            cursor=(
-                parsed.public_cursor
-                or (parsed.cursor if parsed.source == "public" else None)
-            ),
+            cursor=(parsed.public_cursor or (parsed.cursor if parsed.source == "public" else None)),
             sort_by_relevance=bool(parsed.query),
             limit=parsed.limit,
         )
@@ -161,18 +167,14 @@ async def tool_search_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) ->
                 country=parsed.country,
                 work_modes=parsed.work_modes,
                 opportunity_types=parsed.opportunity_types,
-                posted_after=(
-                    parsed.posted_after.isoformat() if parsed.posted_after else None
-                ),
+                posted_after=(parsed.posted_after.isoformat() if parsed.posted_after else None),
                 limit=parsed.limit,
                 cursor=(
                     parsed.waterloo_cursor
                     or (parsed.cursor if parsed.source == "waterloo_work" else None)
                 ),
             )
-            results["waterloo_work"] = [
-                _ww_job_summary(item) for item in ww["items"]
-            ]
+            results["waterloo_work"] = [_ww_job_summary(item) for item in ww["items"]]
             pagination["waterloo_work"] = {
                 "total": ww.get("total_count", len(ww["items"])),
                 "has_more": bool(ww.get("has_more")),
@@ -198,13 +200,9 @@ async def tool_search_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) ->
     }
 
 
-async def tool_get_job_details(
-    args: dict[str, Any], deps: AgentDeps, phase: str
-) -> dict[str, Any]:
+async def tool_get_job_details(args: dict[str, Any], deps: AgentDeps, phase: str) -> dict[str, Any]:
     parsed = GetJobDetailsArgs.model_validate(args)
-    job = await _resolve_job(
-        JobReference(job_id=parsed.job_id, source=parsed.source), deps
-    )
+    job = await _resolve_job(JobReference(job_id=parsed.job_id, source=parsed.source), deps)
     if job is None:
         raise ToolError("job_not_found", f"Job {parsed.source}:{parsed.job_id} was not found.")
     return {
@@ -212,6 +210,251 @@ async def tool_get_job_details(
         "data": job,
         "used": [parsed.source],
         "summary": f"Loaded {job['title']} at {job.get('company') or 'unknown company'}.",
+    }
+
+
+async def tool_analyse_job(args: dict[str, Any], deps: AgentDeps, phase: str) -> dict[str, Any]:
+    parsed = AnalyseJobArgs.model_validate(args)
+
+    async def load_preferences() -> dict[str, str]:
+        if deps.memory is None:
+            return {}
+        try:
+            return dict(await deps.memory.get_preferences())
+        except Exception:  # pragma: no cover - preferences are advisory
+            return {}
+
+    job, profile, preferences = await asyncio.gather(
+        _resolve_job(parsed.job, deps),
+        deps.profile_repo.get_profile(),
+        load_preferences(),
+    )
+    if job is None:
+        raise ToolError(
+            "job_not_found",
+            f"Job {parsed.job.source}:{parsed.job.job_id} was not found.",
+        )
+    analysis = deterministic_job_evidence(
+        job_id=parsed.job.job_id,
+        source=parsed.job.source,
+        job=job,
+        profile_skills=_profile_skills_for_comparison(profile),
+        preferences=preferences,
+        early_career=_is_early_career_for_comparison(profile),
+    )
+    if not analysis["description_available"]:
+        analysis["analysis_status"] = "fallback_missing_jd"
+    elif deps.llm_config is None:
+        analysis["analysis_status"] = "fallback_unconfigured"
+    else:
+        try:
+            semantic, usage = await asyncio.to_thread(
+                semantic_analyse_job,
+                job=job,
+                profile=profile,
+                preferences=preferences,
+                llm_config=deps.llm_config,
+                deterministic_score=analysis["fit_score"],
+                response_language=parsed.response_language,
+            )
+        except Exception as error:  # Model/validation failures degrade safely.
+            analysis["analysis_status"] = "fallback_failed"
+            analysis["analysis_error_type"] = type(error).__name__
+        else:
+            analysis = merge_semantic_analysis(
+                analysis,
+                semantic,
+                provider=deps.llm_config.provider,
+                model=deps.llm_config.model_name,
+                usage=usage,
+            )
+    return {
+        "ok": True,
+        "data": {"analysis": analysis},
+        "used": [
+            "profile",
+            *(["preferences"] if preferences else []),
+            parsed.job.source,
+            *(["llm_semantic_analysis"] if analysis["analysis_status"] == "completed" else []),
+        ],
+        "summary": (
+            f"Analysed {analysis.get('title') or 'job'} at "
+            f"{analysis.get('company') or 'unknown company'}: "
+            f"recommendation {analysis['recommendation']} "
+            f"({analysis['analysis_status']})."
+        ),
+        "for_llm": analysis_for_llm(analysis),
+    }
+
+
+def _profile_skills_for_comparison(profile: UserProfile) -> set[str]:
+    skills = {entry.name.strip().lower() for entry in profile.skills if entry.name}
+    for entry in profile.projects:
+        skills.update(skill.strip().lower() for skill in entry.skills if skill.strip())
+    for entry in profile.work_experience:
+        skills.update(skill.strip().lower() for skill in entry.skills if skill.strip())
+    return skills
+
+
+def _is_early_career_for_comparison(profile: UserProfile) -> bool:
+    return any(
+        entry.expected_graduation or entry.status == "studying" for entry in profile.education
+    ) or (bool(profile.education) and len(profile.work_experience) <= 3)
+
+
+async def tool_compare_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) -> dict[str, Any]:
+    """Rank explicit jobs with the same explainable fit signals as recommendations."""
+
+    parsed = CompareJobsArgs.model_validate(args)
+    unique_refs: list[JobReference] = []
+    seen: set[tuple[str, str]] = set()
+    for ref in parsed.jobs:
+        key = (ref.source, ref.job_id)
+        if key not in seen:
+            unique_refs.append(ref)
+            seen.add(key)
+    if len(unique_refs) < 2:
+        raise ToolError(
+            "not_enough_jobs",
+            "Compare jobs requires at least two distinct job references.",
+        )
+
+    async def load_preferences() -> dict[str, str]:
+        if deps.memory is None:
+            return {}
+        try:
+            return dict(await deps.memory.get_preferences())
+        except Exception:  # pragma: no cover - preferences are advisory
+            return {}
+
+    resolved_jobs, profile, preferences = await asyncio.gather(
+        asyncio.gather(*(_resolve_job(ref, deps) for ref in unique_refs)),
+        deps.profile_repo.get_profile(),
+        load_preferences(),
+    )
+    missing = [
+        ref.display() for ref, job in zip(unique_refs, resolved_jobs, strict=True) if job is None
+    ]
+    if missing:
+        raise ToolError(
+            "job_not_found",
+            "Could not compare missing job(s): " + ", ".join(missing),
+        )
+
+    skills = _profile_skills_for_comparison(profile)
+    early_career = _is_early_career_for_comparison(profile)
+    rows: list[dict[str, Any]] = []
+    for ref, job in zip(unique_refs, resolved_jobs, strict=True):
+        assert job is not None
+        scored = score_candidate(
+            skills,
+            job,
+            preferences=preferences,
+            early_career=early_career,
+        )
+        rows.append(
+            {
+                "job_id": ref.job_id,
+                "source": ref.source,
+                "title": job.get("title"),
+                "company": job.get("company"),
+                "location": job.get("location"),
+                "work_mode": job.get("work_mode"),
+                "application_deadline": job.get("application_deadline"),
+                "salary_text": job.get("salary_text"),
+                "fit_score": scored.score,
+                "matched_skills": scored.matched_skills[:12],
+                "matched_signals": scored.signals.get("components", {}),
+                "gaps": scored.signals.get("unmatched_requirement_tags", [])[:10],
+                "penalties": scored.signals.get("penalties", {}),
+                "expired": is_expired(job),
+                "description_available": bool(job.get("description")),
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            not row["expired"],
+            row["fit_score"],
+            row["description_available"],
+        ),
+        reverse=True,
+    )
+    for rank, row in enumerate(rows, start=1):
+        row["rank"] = rank
+    winner = rows[0]
+    runner_up = rows[1]
+    # Expired jobs remain visible for trade-off transparency, but are not a
+    # meaningful score-margin comparator for an open-job recommendation.
+    margin: int | None = (
+        winner["fit_score"] - runner_up["fit_score"]
+        if winner["expired"] == runner_up["expired"]
+        else None
+    )
+    evidence_count = sum(bool(row["description_available"]) for row in rows)
+    confidence = (
+        "high"
+        if margin is not None and margin >= 15 and evidence_count == len(rows)
+        else "medium"
+        if (margin is not None and margin >= 5 and evidence_count >= 2)
+        or (not winner["expired"] and runner_up["expired"])
+        else "low"
+    )
+    close_call = margin is not None and margin < 5
+    margin_text = str(margin) if margin is not None else "not comparable (runner-up expired)"
+    conclusion = (
+        f"Best overall fit: {winner['title']} at {winner.get('company') or 'unknown company'} "
+        f"(fit score {winner['fit_score']}; margin {margin_text})."
+    )
+    decision_reasons = []
+    if winner["matched_skills"]:
+        decision_reasons.append("Matches profile skills: " + ", ".join(winner["matched_skills"]))
+    if not winner["expired"] and runner_up["expired"]:
+        decision_reasons.append("The runner-up is expired; this role is still actionable.")
+    if not decision_reasons:
+        decision_reasons.append(
+            "It has the strongest available fit signals, though direct evidence is limited."
+        )
+    lines = [conclusion]
+    for row in rows:
+        lines.append(
+            f"#{row['rank']} [{row['source']}:{row['job_id']}] {row['title']} at "
+            f"{row.get('company') or 'unknown company'} | fit {row['fit_score']} | "
+            f"skills {', '.join(row['matched_skills']) or 'none'} | "
+            f"gaps {', '.join(row['gaps']) or 'none'} | location "
+            f"{row.get('location') or 'unknown'} | mode {row.get('work_mode') or 'unknown'} | "
+            f"deadline {row.get('application_deadline') or 'unknown'} | "
+            f"salary {row.get('salary_text') or 'unknown'} | "
+            f"description {'available' if row['description_available'] else 'missing'}"
+        )
+    if close_call:
+        lines.append(
+            "This is a close call; the winner is tentative and the final choice should "
+            "weigh the user's priorities and unknown compensation/team details."
+        )
+    return {
+        "ok": True,
+        "data": {
+            "recommended_job": {
+                "job_id": winner["job_id"],
+                "source": winner["source"],
+                "title": winner["title"],
+                "company": winner["company"],
+            },
+            "ranked_jobs": rows,
+            "score_margin": margin,
+            "close_call": close_call,
+            "confidence": confidence,
+            "decision_reasons": decision_reasons,
+            "comparison_version": "compare.v1",
+        },
+        "used": [
+            "profile",
+            *(["preferences"] if preferences else []),
+            *sorted({ref.source for ref in unique_refs}),
+        ],
+        "summary": conclusion,
+        "for_llm": "\n".join(lines),
     }
 
 
@@ -255,14 +498,14 @@ async def tool_list_tracker(args: dict[str, Any], deps: AgentDeps, phase: str) -
 
 
 # ---------------------------------------------------------------------------
-# Write tools (plan -> preview, execute -> mutation)
+# Tracker mutations: adding and stage changes are immediate; removals require approval.
 # ---------------------------------------------------------------------------
 
 
-async def tool_add_interested(
+async def tool_add_into_tracker(
     args: dict[str, Any], deps: AgentDeps, phase: str
 ) -> dict[str, Any]:
-    parsed = AddInterestedArgs.model_validate(args)
+    parsed = AddIntoTrackerArgs.model_validate(args)
     public_tracked = await _tracked_public_map(deps)
     external_tracked = await _tracked_external_map(deps)
 
@@ -270,9 +513,7 @@ async def tool_add_interested(
     for ref in parsed.jobs:
         job = await _resolve_job(ref, deps)
         if job is None:
-            resolved.append(
-                {"job_id": ref.job_id, "source": ref.source, "error": "job_not_found"}
-            )
+            resolved.append({"job_id": ref.job_id, "source": ref.source, "error": "job_not_found"})
             continue
         tracked = (
             ref.job_id in public_tracked
@@ -288,26 +529,6 @@ async def tool_add_interested(
                 "already_tracked": tracked,
             }
         )
-
-    if phase == "plan":
-        return {
-            "ok": True,
-            "requires_approval": True,
-            "preview": {
-                "action": "add_interested",
-                "jobs": resolved,
-                "count": len(resolved),
-            },
-            "summary": (
-                f"Adding {len(resolved)} job(s) to Interested"
-                + (
-                    f" ({sum(1 for r in resolved if r.get('already_tracked'))} already tracked)"
-                    if any(r.get("already_tracked") for r in resolved)
-                    else ""
-                )
-                + "."
-            ),
-        }
 
     results: list[dict[str, Any]] = []
     for entry in resolved:
@@ -409,9 +630,7 @@ async def tool_update_tracker_stage(
     parsed = UpdateTrackerStageArgs.model_validate(args)
     if not parsed.application_ids and not parsed.job_references:
         raise ToolError("missing_targets", "No tracker records or job references were provided.")
-    targets = await _resolve_tracker_targets(
-        parsed.application_ids, parsed.job_references, deps
-    )
+    targets = await _resolve_tracker_targets(parsed.application_ids, parsed.job_references, deps)
     rows = [
         {
             "application_id": str(item.id),
@@ -429,22 +648,6 @@ async def tool_update_tracker_stage(
             "used": ["tracker"],
             "summary": "No matching tracker records were found.",
         }
-    if phase == "plan":
-        return {
-            "ok": True,
-            "requires_approval": True,
-            "preview": {
-                "action": "update_tracker_stage",
-                "stage": parsed.stage.value,
-                "records": rows,
-                "count": len(rows),
-            },
-            "summary": (
-                f"Changing {len(rows)} tracker record(s) to stage "
-                f"'{parsed.stage.value}'."
-            ),
-        }
-
     to_change = [row for row in rows if row["current_stage"] != row["new_stage"]]
     changed_ids = [UUID(row["application_id"]) for row in to_change]
     updated = 0
@@ -455,11 +658,7 @@ async def tool_update_tracker_stage(
             "application_id": row["application_id"],
             "title": row["title"],
             "company": row["company"],
-            "status": (
-                "updated"
-                if row["current_stage"] != row["new_stage"]
-                else "unchanged"
-            ),
+            "status": ("updated" if row["current_stage"] != row["new_stage"] else "unchanged"),
         }
         for row in rows
     ]
@@ -470,129 +669,162 @@ async def tool_update_tracker_stage(
     }
 
 
-async def tool_remove_interested(
+async def tool_remove_from_tracker(
     args: dict[str, Any], deps: AgentDeps, phase: str
 ) -> dict[str, Any]:
-    parsed = RemoveInterestedArgs.model_validate(args)
-    public_tracked = await _tracked_public_map(deps)
-    external_tracked = await _tracked_external_map(deps)
+    # Accept the old {"jobs": [...]} shape for persisted approvals and clients
+    # created before this tool was generalized to the whole Tracker.
+    normalized_args = dict(args)
+    legacy_jobs = normalized_args.pop("jobs", None)
+    if legacy_jobs is not None:
+        normalized_args.setdefault("job_references", legacy_jobs)
+    parsed = RemoveTrackerArgs.model_validate(normalized_args)
+    if not parsed.application_ids and not parsed.job_references:
+        raise ToolError(
+            "missing_targets",
+            "Provide application_ids or job_references to remove Tracker records.",
+        )
 
     resolved: list[dict[str, Any]] = []
-    for ref in parsed.jobs:
-        stage = (
-            public_tracked.get(ref.job_id)
-            if ref.source == "public"
-            else external_tracked.get(ref.job_id)
-        )
-        job = await _resolve_job(ref, deps)
+    seen: set[str] = set()
+    for raw_id in parsed.application_ids:
+        try:
+            application = await deps.tracker_repo.get_application(UUID(raw_id))
+        except (TypeError, ValueError):
+            application = None
+        if application is None:
+            resolved.append(
+                {
+                    "application_id": raw_id,
+                    "status": "not_found",
+                    "title": None,
+                    "company": None,
+                    "stage": None,
+                }
+            )
+            continue
+        application_id = str(application.id)
+        if application_id in seen:
+            continue
+        seen.add(application_id)
+        application_source = getattr(application.source, "value", application.source)
         resolved.append(
             {
+                "application_id": application_id,
+                "job_id": (
+                    str(application.job_id) if application.job_id else application.external_job_id
+                ),
+                "source": application_source,
+                "title": application.title,
+                "company": application.company_name,
+                "stage": application.stage.value,
+                "status": "ready",
+            }
+        )
+
+    for ref in parsed.job_references:
+        application = await _tracked_application_by_ref(ref, deps)
+        if application is None:
+            resolved.append(
+                {
+                    "job_id": ref.job_id,
+                    "source": ref.source,
+                    "status": "not_found",
+                    "title": None,
+                    "company": None,
+                    "stage": None,
+                }
+            )
+            continue
+        application_id = str(application.id)
+        if application_id in seen:
+            continue
+        seen.add(application_id)
+        resolved.append(
+            {
+                "application_id": application_id,
                 "job_id": ref.job_id,
                 "source": ref.source,
-                "title": (job or {}).get("title"),
-                "company": (job or {}).get("company"),
-                "tracked_stage": stage,
-                "protected": stage is not None and stage != "interested",
-                "not_tracked": stage is None,
+                "title": application.title,
+                "company": application.company_name,
+                "stage": application.stage.value,
+                "status": "ready",
             }
         )
 
     if phase == "plan":
-        protected = [r for r in resolved if r["protected"]]
+        ready_count = sum(item["status"] == "ready" for item in resolved)
+        if ready_count == 0:
+            return {
+                "ok": True,
+                "data": {"results": resolved},
+                "summary": "No matching Tracker records were found.",
+            }
         return {
             "ok": True,
             "requires_approval": True,
             "preview": {
-                "action": "remove_interested",
-                "jobs": resolved,
-                "protected_count": len(protected),
+                "action": "remove_from_tracker",
+                "records": resolved,
             },
-            "summary": (
-                f"Removing {len(resolved)} job(s) from Interested"
-                + (
-                    f"; {len(protected)} protected because they are past Interested"
-                    if protected
-                    else ""
-                )
-                + "."
-            ),
+            "summary": (f"Removing {ready_count} record(s) from the Tracker after confirmation."),
         }
 
     results: list[dict[str, Any]] = []
     for entry in resolved:
-        if entry["not_tracked"]:
+        if entry["status"] == "not_found":
             results.append(
                 {
-                    "job_id": entry["job_id"],
-                    "source": entry["source"],
+                    "application_id": entry.get("application_id"),
+                    "job_id": entry.get("job_id"),
+                    "source": entry.get("source"),
                     "status": "not_found",
                 }
             )
             continue
-        if entry["protected"]:
-            results.append(
-                {
-                    "job_id": entry["job_id"],
-                    "source": entry["source"],
-                    "title": entry.get("title"),
-                    "status": "protected",
-                    "stage": entry["tracked_stage"],
-                }
-            )
-            continue
         try:
-            if entry["source"] == "public":
-                deleted, stage = await deps.tracker_repo.unbookmark_job(
-                    UUID(entry["job_id"])
-                )
-            else:
-                deleted, stage = await deps.tracker_repo.unbookmark_waterlooworks_job(
-                    entry["job_id"]
-                )
+            deleted = await deps.tracker_repo.delete_application(UUID(entry["application_id"]))
             if deleted:
                 results.append(
                     {
-                        "job_id": entry["job_id"],
-                        "source": entry["source"],
+                        "application_id": entry["application_id"],
+                        "job_id": entry.get("job_id"),
+                        "source": entry.get("source"),
                         "title": entry.get("title"),
+                        "stage": entry.get("stage"),
                         "status": "removed",
                     }
                 )
             else:
                 results.append(
                     {
-                        "job_id": entry["job_id"],
-                        "source": entry["source"],
+                        "application_id": entry["application_id"],
+                        "job_id": entry.get("job_id"),
+                        "source": entry.get("source"),
                         "title": entry.get("title"),
-                        "status": "protected" if stage else "failed",
-                        "stage": stage,
+                        "status": "not_found",
                     }
                 )
         except Exception as error:  # pragma: no cover - defensive
             results.append(
                 {
-                    "job_id": entry["job_id"],
-                    "source": entry["source"],
+                    "application_id": entry.get("application_id"),
+                    "job_id": entry.get("job_id"),
+                    "source": entry.get("source"),
                     "status": "failed",
                     "error": str(error),
                 }
             )
     removed = sum(1 for r in results if r["status"] == "removed")
-    protected = sum(1 for r in results if r["status"] == "protected")
     missing = sum(1 for r in results if r["status"] == "not_found")
     return {
         "ok": True,
         "data": {"results": results},
-        "summary": (
-            f"Interested removal: {removed} removed, {protected} protected, "
-            f"{missing} not found."
-        ),
+        "summary": f"Tracker removal: {removed} removed, {missing} not found.",
     }
 
 
-def _basics_diff(
-    current: UserProfile, proposed: ProfilePayload
-) -> list[dict[str, Any]]:
+def _basics_diff(current: UserProfile, proposed: ProfilePayload) -> list[dict[str, Any]]:
     changes: list[dict[str, Any]] = []
     for field in ProfileBasics.model_fields:
         old = getattr(current.basics, field)
@@ -676,10 +908,7 @@ def _merge_profile(current: UserProfile, proposed: ProfilePayload) -> ProfilePay
         "awards",
     ):
         if section in proposed.model_fields_set:
-            merged[section] = [
-                item.model_dump(mode="json")
-                for item in getattr(proposed, section)
-            ]
+            merged[section] = [item.model_dump(mode="json") for item in getattr(proposed, section)]
     if "basics" in proposed.model_fields_set:
         basics = proposed.basics
         for field, value in basics.model_dump(mode="json").items():
@@ -688,16 +917,12 @@ def _merge_profile(current: UserProfile, proposed: ProfilePayload) -> ProfilePay
     return ProfilePayload.model_validate(merged)
 
 
-async def tool_update_profile(
-    args: dict[str, Any], deps: AgentDeps, phase: str
-) -> dict[str, Any]:
+async def tool_update_profile(args: dict[str, Any], deps: AgentDeps, phase: str) -> dict[str, Any]:
     parsed = UpdateProfileArgs.model_validate(args)
     tolerated_meta = {"id", "completion_percent", "created_at", "updated_at"}
     try:
         payload_data = {
-            key: value
-            for key, value in parsed.payload.items()
-            if key not in tolerated_meta
+            key: value for key, value in parsed.payload.items() if key not in tolerated_meta
         }
         proposed = ProfilePayload.model_validate(payload_data)
     except Exception as error:
@@ -772,8 +997,8 @@ async def tool_propose_profile_update(
             api_key=deps.llm_config.api_key,
             system_prompt=(
                 "You draft structured Profile changes for a job-seeker workspace. "
-                "Output JSON only: {\"changes\": [{\"section\", \"field\", \"old_value\", "
-                "\"new_value\", \"evidence\", \"confidence\"}], \"payload\": <full profile.v1 "
+                'Output JSON only: {"changes": [{"section", "field", "old_value", '
+                '"new_value", "evidence", "confidence"}], "payload": <full profile.v1 '
                 "payload with the proposed changes applied>}. Keep the payload schema exactly "
                 "profile.v1. Never invent personal facts without evidence; when the user's "
                 "request is unsupported by the current profile, leave fields unchanged and "
@@ -802,9 +1027,7 @@ async def tool_propose_profile_update(
             "note": "This is a draft. Ask the agent to save it to apply changes.",
         },
         "used": ["profile"],
-        "summary": (
-            f"Drafted {len(changes)} profile change(s); review before saving."
-        ),
+        "summary": (f"Drafted {len(changes)} profile change(s); review before saving."),
     }
 
 
@@ -824,12 +1047,9 @@ async def tool_generate_interview_questions(
         if not parsed.job_id:
             raise ToolError(
                 "invalid_arguments",
-                "Provide job_id (resolved via search_jobs/get_job_details) or a "
-                "job_description.",
+                "Provide job_id (resolved via search_jobs/get_job_details) or a job_description.",
             )
-        job = await _resolve_job(
-            JobReference(job_id=parsed.job_id, source=parsed.source), deps
-        )
+        job = await _resolve_job(JobReference(job_id=parsed.job_id, source=parsed.source), deps)
         if job is None:
             raise ToolError("job_not_found", f"Job {parsed.source}:{parsed.job_id} was not found.")
         description = job.get("description") or ""
@@ -866,12 +1086,9 @@ async def tool_generate_interview_questions(
         "ok": True,
         "data": {"questions": questions, "job": resolved_label},
         "used": [parsed.source if parsed.job_id else "description"],
-        "summary": (
-            f"Generated {len(questions)} mock interview question(s) for {resolved_label}."
-        ),
+        "summary": (f"Generated {len(questions)} mock interview question(s) for {resolved_label}."),
         "for_llm": "\n".join(
-            f"- [{question['category_label']}] {question['question']}"
-            for question in questions
+            f"- [{question['category_label']}] {question['question']}" for question in questions
         )
         or "No questions generated.",
     }
@@ -881,13 +1098,17 @@ TOOL_HANDLERS: dict[str, Any] = {
     "get_profile": tool_get_profile,
     "search_jobs": tool_search_jobs,
     "get_job_details": tool_get_job_details,
+    "analyse_job": tool_analyse_job,
+    "compare_jobs": tool_compare_jobs,
     "list_tracker": tool_list_tracker,
     "recommend_jobs": tool_recommend_jobs,
     "propose_profile_update": tool_propose_profile_update,
     "generate_interview_questions": tool_generate_interview_questions,
-    "add_interested": tool_add_interested,
+    "add_into_tracker": tool_add_into_tracker,
     "update_tracker_stage": tool_update_tracker_stage,
-    "remove_interested": tool_remove_interested,
+    "remove_from_tracker": tool_remove_from_tracker,
+    # Compatibility for approvals created before the tool was generalized.
+    "remove_interested": tool_remove_from_tracker,
     "update_profile": tool_update_profile,
 }
 

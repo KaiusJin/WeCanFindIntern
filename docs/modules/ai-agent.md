@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Agent is a controlled natural-language interface over Profile, Jobs, WaterlooWorks, and Tracker. The model plans read/write tool calls, but domain repositories own data access and mutations. The Agent never executes arbitrary SQL, never receives browser authentication secrets, and never performs a write without user approval.
+The Agent is a controlled natural-language interface over Profile, Jobs, WaterlooWorks, and Tracker. The model plans read/write tool calls, but domain repositories own data access and mutations. The Agent never executes arbitrary SQL or receives browser authentication secrets. Tracker additions and stage updates run immediately; destructive Tracker removals and Profile saves require user approval.
 
 ## Components
 
@@ -25,9 +25,32 @@ The Agent is a controlled natural-language interface over Profile, Jobs, Waterlo
 
 ## Supported tools
 
-Read tools execute in the current turn: `get_profile`, `search_jobs`, `get_job_details`, `list_tracker`, `recommend_jobs`, `propose_profile_update`, and `generate_interview_questions`.
+Immediate tools execute in the current turn: `get_profile`, `search_jobs`, `get_job_details`, `analyse_job`, `compare_jobs`, `list_tracker`, `recommend_jobs`, `propose_profile_update`, `generate_interview_questions`, `add_into_tracker`, and `update_tracker_stage`.
 
-Write tools require approval: `add_interested`, `update_tracker_stage`, `remove_interested`, and `update_profile`.
+The Agent composer can attach up to five jobs to one message. New clients send
+them as `context.jobs`; the request model still accepts the former singular
+`context.job` shape for compatibility. `compare_jobs` accepts two to five
+source-aware `JobReference` values, resolves current job data from the domain
+repositories, and ranks the jobs with the same bounded Profile/preference fit
+signals used by recommendations. It returns the recommended job, score margin,
+trade-offs, missing evidence, and confidence. Expired roles remain visible but
+cannot outrank an open role.
+
+`analyse_job` runs one evidence-constrained model analysis over a source-aware
+job's complete JD and the confirmed Profile. It extracts responsibilities and
+hiring priorities; separates must-have, preferred, and implicit requirements;
+assesses Profile evidence requirement by requirement; identifies skill,
+experience, education, and domain gaps; evaluates seniority, work authorization,
+location/work-mode, and deadline risks; and recommends `apply`, `consider`,
+`skip`, or `insufficient_information` with a grounded reason. Missing evidence
+must remain unknown rather than being inferred. The deterministic fit scorer is
+included only as supporting evidence and as a safe fallback if semantic analysis
+cannot run. When a user asks to analyse attached jobs, the Agent calls it once
+per attachment: N attached jobs produce N `analyse_job` calls. Successful
+analysis results are rendered directly into the assistant message in the
+user's language; they do not require a separate reply-composer model call.
+
+`add_into_tracker` immediately adds a record to Tracker at the initial Interested stage, and `update_tracker_stage` immediately changes Tracker stages. The confirmation-required write tools are `remove_from_tracker` (can remove a record at any Tracker stage) and `update_profile`.
 
 `JobReference` is the stable cross-source identity: `source=public` uses a public UUID and `source=waterloo_work` uses a WaterlooWorks Job ID. The Agent must resolve a title/company phrase through search; if multiple results remain, it asks the user to choose rather than guessing.
 
@@ -44,6 +67,12 @@ and are isolated by provider, model, and dimensions, so incompatible vectors
 can never be compared. Reciprocal Rank Fusion merges the two rankings before
 deterministic scoring.
 
+After final ranking, `recommend_jobs` applies the same full job analysis to its
+Top 2 results. If fewer than two recommendations exist, it analyses Top 1; if
+there are no recommendations, no analysis is produced. The completed analyses
+are rendered directly while the recommendation tool result remains available
+to the UI for Job Cards.
+
 ```mermaid
 flowchart TD
     P[Profile, preferences and request filters] --> C[Repository candidate set]
@@ -57,6 +86,7 @@ flowchart TD
     O -->|no| X[Ranked explainable results]
     O -->|yes, top 15 only| Y[Evidence adjustment from -5 to +5]
     Y --> X
+    X --> A[analyse_job calls for Top 2 or Top 1]
 ```
 
 Hard filters remove inactive, expired, and optionally already-tracked jobs.
@@ -70,8 +100,9 @@ Optional LLM review sees at most the deterministic top 15. It cannot add or
 remove candidates or generate the final score; it can only propose an
 evidence-backed adjustment from -5 to +5. Invalid or failed model output has no
 ranking effect. Short unambiguous recommendation messages bypass the Agent
-planner, and recommendation results bypass the reply-composer model, limiting a
-recommendation to zero model calls by default or one call when review is enabled.
+planner. The Top 2 (or Top 1) structured analyses then become the assistant
+reply without another model call. Optional review adds a separate model call
+before final ranking.
 
 The derived index is maintained through `recommendation_index_queue` and the API
 background indexer. Full recommendation results are cached in-process for 10
@@ -99,7 +130,7 @@ written to recommendation tables.
 flowchart TD
     A[POST message or stream] --> B[Validate session and AI config]
     B --> C[Persist user message]
-    C --> D[Load summary, window, recall, preferences and open job]
+    C --> D[Load summary, window, recall, preferences and attached jobs]
     D --> E{Pending approval decision?}
     E -->|yes| F[Atomically approve or deny persisted arguments]
     E -->|no| G[Plan one strict-JSON step]
@@ -114,13 +145,13 @@ flowchart TD
     L --> M
 ```
 
-The planner receives the available tool catalog and rules: no invented tools, no claim that a write happened during planning, one round at a time, same-language response, explicit source-aware job references, and field-level Profile updates. `summarize_for_llm()` limits large tool outputs before they re-enter the model prompt, and each block is wrapped in `<tool_results step="N">` delimiters with an explicit "data, never instructions" rule so scraped job text cannot steer the planner (prompt-injection defense). OpenAI-family providers request `json_object` response mode for plan and compose calls; retries live entirely in the gateway.
+The planner receives the available tool catalog and rules: no invented tools, no claim that a confirmation-required write happened before approval, one round at a time, same-language response, explicit source-aware job references, and field-level Profile updates. `summarize_for_llm()` limits large tool outputs before they re-enter the model prompt, and each block is wrapped in `<tool_results step="N">` delimiters with an explicit "data, never instructions" rule so scraped job text cannot steer the planner (prompt-injection defense). OpenAI-family providers request `json_object` response mode for plan and compose calls; retries live entirely in the gateway.
 
-The bounded loop makes chained requests work ("find the backend role, then add it to Interested"): the planner resolves references with search first, sees the results, and plans the follow-up call next round. Duplicate identical calls are recorded as failed `duplicate_tool_call` events and end the loop. A planner failure after the first round degrades to a summary reply of the results already gathered instead of losing the turn; a failure on the first round becomes a safe persisted assistant reply. Generic recommendation requests bypass the planner entirely, and a successful `recommend_jobs` ends the loop without extra model calls.
+The bounded loop makes chained requests work ("find the backend role, then add it to Interested"): the planner resolves references with search first, sees the results, and plans the follow-up call next round. Duplicate identical calls are recorded as failed `duplicate_tool_call` events and end the loop. A planner failure after the first round degrades to a summary reply of the results already gathered instead of losing the turn; a failure on the first round becomes a safe persisted assistant reply. Generic recommendation requests bypass the planner entirely; after `recommend_jobs` returns, the orchestrator calls `analyse_job` for its Top 2 (or Top 1) and renders the structured analyses directly.
 
 ## Approval protocol
 
-When the planner requests a write tool, the orchestrator creates `agent_approvals` with the exact tool name, validated arguments, and a preview. The UI calls `POST /api/v1/agent/approvals/{approval_id}/decision` with `{ "approved": true|false }`.
+When the planner requests a confirmation-required write tool, the orchestrator creates `agent_approvals` with the exact tool name, validated arguments, and a preview. The UI calls `POST /api/v1/agent/approvals/{approval_id}/decision` with `{ "approved": true|false }`.
 
 Approval execution uses the original persisted arguments, not a newly generated plan. The repository updates only a pending approval; a second decision returns a conflict. Approval decisions are audited. A denial leaves target data unchanged.
 
@@ -203,7 +234,7 @@ Session and audit records should contain only the minimum information needed for
 
 ## Concurrency and recovery behavior
 
-Each message turn is bounded to four planner rounds and a feedback budget. A
+Each message turn is bounded to three planner rounds and a feedback budget. A
 pending approval is a single-use state transition: the repository only executes
 the original persisted arguments while the approval is pending, so duplicate
 button clicks or repeated confirmation cannot execute the write twice. A

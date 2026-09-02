@@ -60,8 +60,7 @@ class FakeJobRepo:
             items = [
                 job
                 for job in items
-                if lowered in job.title.lower()
-                or lowered in (job.description or "").lower()
+                if lowered in job.title.lower() or lowered in (job.description or "").lower()
             ]
         if filters.company:
             items = [job for job in items if job.company_name == filters.company]
@@ -92,6 +91,35 @@ class FakeTrackerRepo:
     async def get_application(self, public_id):
         return next((app for app in self.applications if app.id == public_id), None)
 
+    async def get_application_for_public_job(self, job_id):
+        state = next((s for s in self.job_states if s.job_id == job_id), None)
+        if state is None:
+            return None
+        return SimpleNamespace(
+            id=state.application_id,
+            job_id=state.job_id,
+            external_job_id=None,
+            title="Tracked job",
+            company_name="Tracked company",
+            stage=SimpleNamespace(value=state.stage),
+        )
+
+    async def get_application_for_external_job(self, source, external_job_id):
+        state = next(
+            (s for s in self.external_states if s["external_job_id"] == external_job_id),
+            None,
+        )
+        if state is None:
+            return None
+        return SimpleNamespace(
+            id=state["application_id"],
+            job_id=None,
+            external_job_id=external_job_id,
+            title="Tracked job",
+            company_name="Tracked company",
+            stage=SimpleNamespace(value=state["stage"]),
+        )
+
     async def list_applications(self, *, query=None, stage=None, **kwargs):
         return self.applications, len(self.applications)
 
@@ -120,11 +148,7 @@ class FakeTrackerRepo:
     async def unbookmark_waterlooworks_job(self, source_job_id):
         self.deleted_external.append(source_job_id)
         stage = next(
-            (
-                s["stage"]
-                for s in self.external_states
-                if s["external_job_id"] == source_job_id
-            ),
+            (s["stage"] for s in self.external_states if s["external_job_id"] == source_job_id),
             None,
         )
         if stage is None:
@@ -139,6 +163,23 @@ class FakeTrackerRepo:
     async def bulk_update(self, ids, *, stage):
         self.bulk_updated.extend(ids)
         return len(ids)
+
+    async def delete_application(self, public_id):
+        for index, application in enumerate(self.applications):
+            if application.id == public_id:
+                self.applications.pop(index)
+                return True
+        for index, state in enumerate(self.job_states):
+            if state.application_id == public_id:
+                self.deleted_public.append(str(state.job_id))
+                self.job_states.pop(index)
+                return True
+        for index, state in enumerate(self.external_states):
+            if state["application_id"] == public_id:
+                self.deleted_external.append(state["external_job_id"])
+                self.external_states.pop(index)
+                return True
+        return False
 
 
 class FakeProfileRepo:
@@ -189,9 +230,7 @@ class FakeWaterlooWorks:
         return {"items": items, "total": len(items)}
 
     async def get_job(self, source_job_id):
-        return next(
-            (job for job in self.jobs if job["source_job_id"] == source_job_id), None
-        )
+        return next((job for job in self.jobs if job["source_job_id"] == source_job_id), None)
 
 
 def _empty_profile():
@@ -303,9 +342,7 @@ def test_search_jobs_delegates_complete_waterloo_filters():
             phase="plan",
         )
     )
-    assert [item["job_id"] for item in result["data"]["waterloo_work"]] == [
-        "WW-MATCH"
-    ]
+    assert [item["job_id"] for item in result["data"]["waterloo_work"]] == ["WW-MATCH"]
     assert result["data"]["waterloo_work"][0]["opportunity_type"] == "co_op"
     assert waterloo.last_filters["skill"] == "python"
     assert waterloo.last_filters["category"] == "software_engineering"
@@ -326,29 +363,221 @@ def test_get_job_details_missing_raises():
     assert exc.value.error_type == "job_not_found"
 
 
-def test_add_interested_plan_and_execute_idempotent():
+def test_analyse_job_without_model_returns_explicit_fallback_evidence():
+    job = make_job(
+        title="Python Backend Intern",
+        company="Acme",
+        skills=("python", "fastapi"),
+        description="Build Python APIs with FastAPI.",
+    )
+    deps = _deps(job_repo=FakeJobRepo([job]))
+
+    result = asyncio.run(
+        run_tool(
+            "analyse_job",
+            {"job": {"job_id": str(job.id), "source": "public"}},
+            deps,
+            phase="plan",
+        )
+    )
+
+    analysis = result["data"]["analysis"]
+    assert analysis["job_id"] == str(job.id)
+    assert analysis["analysis_version"] == "analyse.v2"
+    assert analysis["analysis_status"] == "fallback_unconfigured"
+    assert analysis["fit_score"] > 0
+    assert {"python", "fastapi"} <= set(analysis["matched_skills"])
+    assert analysis["profile_strengths"]
+    assert analysis["recommendation"] == "consider"
+
+
+def test_analyse_job_uses_full_jd_for_deep_semantic_analysis():
+    from unittest.mock import patch
+
+    from wecanfindintern.agent.tools import LlmConfig
+
+    full_jd = (
+        "Own Python API delivery with FastAPI. PostgreSQL is required. "
+        + "Detailed responsibility context. " * 1000
+        + "Docker is preferred. Candidates must be eligible to work in Canada."
+    )
+    job = make_job(
+        title="Python Backend Intern",
+        company="Acme",
+        skills=("python", "fastapi"),
+        description=full_jd,
+    )
+    deps = _deps(job_repo=FakeJobRepo([job]))
+    deps.llm_config = LlmConfig(
+        provider="OpenAI", model_name="gpt-analysis", api_key="key"
+    )
+    semantic_payload = {
+        "role_summary": "Backend internship focused on owning Python API delivery.",
+        "core_responsibilities": ["Build and maintain Python APIs"],
+        "hiring_priorities": ["Python API delivery", "PostgreSQL"],
+        "must_have_requirements": [
+            {
+                "requirement": "PostgreSQL",
+                "jd_evidence": "The JD explicitly says PostgreSQL is required.",
+                "profile_match": "gap",
+                "profile_evidence": [],
+                "rationale": "No PostgreSQL evidence appears in the Profile.",
+            }
+        ],
+        "preferred_requirements": [
+            {
+                "requirement": "Docker",
+                "jd_evidence": "The JD identifies Docker as preferred.",
+                "profile_match": "unknown",
+                "profile_evidence": [],
+                "rationale": "Docker is not present in the confirmed Profile.",
+            }
+        ],
+        "implicit_requirements": [
+            {
+                "requirement": "API ownership",
+                "jd_evidence": "The role owns Python API delivery.",
+                "profile_match": "matched",
+                "profile_evidence": ["Python", "FastAPI"],
+                "rationale": "The Profile contains directly relevant API skills.",
+            }
+        ],
+        "profile_strengths": ["Python and FastAPI directly match the core work."],
+        "gaps": [
+            {
+                "area": "skill",
+                "gap": "PostgreSQL",
+                "impact": "high",
+                "evidence": "It is mandatory in the JD and absent from the Profile.",
+            }
+        ],
+        "risks": {
+            "seniority": {
+                "status": "clear",
+                "severity": "low",
+                "finding": "The internship level aligns with the Profile.",
+                "evidence": "The title explicitly says Intern.",
+            },
+            "work_authorization": {
+                "status": "concern",
+                "severity": "high",
+                "finding": "Canadian work eligibility is required.",
+                "evidence": "The JD explicitly requires eligibility to work in Canada.",
+            },
+            "location": {
+                "status": "unknown",
+                "severity": "unknown",
+                "finding": "No reliable location conclusion is available.",
+                "evidence": "The JD does not specify location expectations.",
+            },
+            "deadline": {
+                "status": "unknown",
+                "severity": "unknown",
+                "finding": "No deadline is supplied.",
+                "evidence": "The deadline field is absent.",
+            },
+        },
+        "recommendation": "consider",
+        "recommendation_reason": (
+            "The core stack fits, but the mandatory PostgreSQL gap and work authorization "
+            "requirement should be resolved before applying."
+        ),
+        "unknowns": ["location", "application deadline"],
+    }
+    fake_result = SimpleNamespace(
+        data=semantic_payload,
+        usage={"input_tokens": 900, "output_tokens": 500},
+    )
+    with patch(
+        "wecanfindintern.agent.job_analysis.complete_json", return_value=fake_result
+    ) as mock_complete:
+        result = asyncio.run(
+            run_tool(
+                "analyse_job",
+                {
+                    "job": {"job_id": str(job.id), "source": "public"},
+                    "response_language": "zh",
+                },
+                deps,
+                phase="plan",
+            )
+        )
+
+    analysis = result["data"]["analysis"]
+    assert analysis["analysis_status"] == "completed"
+    assert analysis["role_summary"].startswith("Backend internship")
+    assert analysis["must_have_requirements"][0]["profile_match"] == "gap"
+    assert analysis["preferred_requirements"][0]["requirement"] == "Docker"
+    assert analysis["implicit_requirements"][0]["profile_match"] == "matched"
+    assert analysis["risks"]["work_authorization"]["status"] == "concern"
+    assert analysis["recommendation"] == "consider"
+    prompt = mock_complete.call_args.kwargs["user_prompt"]
+    system_prompt = mock_complete.call_args.kwargs["system_prompt"]
+    assert "Own Python API delivery" in prompt
+    assert "Candidates must be eligible to work in Canada" in prompt
+    assert "fastapi" in prompt.lower()
+    assert "Simplified Chinese" in system_prompt
+    assert "must-have" in result["for_llm"]
+
+
+def test_compare_jobs_ranks_profile_fit_and_returns_winner():
+    python_job = make_job(
+        title="Python Backend Intern",
+        company="Acme",
+        skills=("python", "fastapi"),
+        description="Build Python APIs with FastAPI.",
+    )
+    java_job = make_job(
+        title="Java Platform Intern",
+        company="OtherCo",
+        skills=("java", "spring"),
+        description="Build Java services with Spring.",
+    )
+    deps = _deps(job_repo=FakeJobRepo([java_job, python_job]))
+
+    result = asyncio.run(
+        run_tool(
+            "compare_jobs",
+            {
+                "jobs": [
+                    {"job_id": str(java_job.id), "source": "public"},
+                    {"job_id": str(python_job.id), "source": "public"},
+                ]
+            },
+            deps,
+            phase="plan",
+        )
+    )
+
+    assert result["data"]["recommended_job"]["job_id"] == str(python_job.id)
+    assert (
+        result["data"]["ranked_jobs"][0]["fit_score"]
+        > result["data"]["ranked_jobs"][1]["fit_score"]
+    )
+    assert "Best overall fit" in result["summary"]
+    assert "python" in result["for_llm"].lower()
+
+
+def test_add_into_tracker_plan_and_execute_idempotent():
     job = make_job(title="Backend Intern")
     tracker = FakeTrackerRepo()
     deps = _deps(job_repo=FakeJobRepo([job]), tracker=tracker)
     args = {"jobs": [{"job_id": str(job.id), "source": "public"}]}
 
-    planned = asyncio.run(run_tool("add_interested", args, deps, phase="plan"))
-    assert planned["requires_approval"] is True
-    assert planned["preview"]["jobs"][0]["already_tracked"] is False
-
-    executed = asyncio.run(run_tool("add_interested", args, deps, phase="execute"))
-    assert executed["data"]["results"][0]["status"] == "added"
+    planned = asyncio.run(run_tool("add_into_tracker", args, deps, phase="plan"))
+    assert "requires_approval" not in planned
+    assert planned["data"]["results"][0]["status"] == "added"
     assert tracker.bookmarked == [("public", str(job.id))]
 
     tracker.job_states = [
         SimpleNamespace(job_id=job.id, application_id=uuid4(), stage="interested")
     ]
-    executed_again = asyncio.run(run_tool("add_interested", args, deps, phase="execute"))
+    executed_again = asyncio.run(run_tool("add_into_tracker", args, deps, phase="execute"))
     assert executed_again["data"]["results"][0]["status"] == "already_interested"
     assert tracker.bookmarked == [("public", str(job.id))]
 
 
-def test_add_interested_waterlooworks_job():
+def test_add_into_tracker_waterlooworks_job():
     ww_job = {
         "source_job_id": "WW-7",
         "title": "QA Intern",
@@ -358,7 +587,7 @@ def test_add_interested_waterlooworks_job():
     deps = _deps(tracker=tracker, ww=FakeWaterlooWorks([ww_job]))
     executed = asyncio.run(
         run_tool(
-            "add_interested",
+            "add_into_tracker",
             {"jobs": [{"job_id": "WW-7", "source": "waterloo_work"}]},
             deps,
             phase="execute",
@@ -381,7 +610,7 @@ def test_update_tracker_stage_skips_unchanged():
     ]
     deps = _deps(tracker=tracker)
 
-    planned = asyncio.run(
+    updated = asyncio.run(
         run_tool(
             "update_tracker_stage",
             {"application_ids": [str(app_id)], "stage": "applied"},
@@ -389,18 +618,8 @@ def test_update_tracker_stage_skips_unchanged():
             phase="plan",
         )
     )
-    assert planned["requires_approval"] is True
-    assert planned["preview"]["records"][0]["current_stage"] == "interested"
-
-    executed = asyncio.run(
-        run_tool(
-            "update_tracker_stage",
-            {"application_ids": [str(app_id)], "stage": "applied"},
-            deps,
-            phase="execute",
-        )
-    )
-    assert executed["data"]["results"][0]["status"] == "updated"
+    assert "requires_approval" not in updated
+    assert updated["data"]["results"][0]["status"] == "updated"
     assert tracker.bulk_updated == [app_id]
 
     tracker.bulk_updated = []
@@ -430,28 +649,36 @@ def test_update_tracker_stage_missing_targets_returns_gracefully():
     assert "No matching tracker records" in result["summary"]
 
 
-def test_remove_interested_protects_applied_records():
+def test_remove_from_tracker_removes_applied_records_after_approval():
     job = make_job(title="Backend Intern")
     tracker = FakeTrackerRepo()
-    tracker.job_states = [
-        SimpleNamespace(job_id=job.id, application_id=uuid4(), stage="applied")
-    ]
+    tracker.job_states = [SimpleNamespace(job_id=job.id, application_id=uuid4(), stage="applied")]
     deps = _deps(job_repo=FakeJobRepo([job]), tracker=tracker)
+    planned = asyncio.run(
+        run_tool(
+            "remove_from_tracker",
+            {"job_references": [{"job_id": str(job.id), "source": "public"}]},
+            deps,
+            phase="plan",
+        )
+    )
+    assert planned["requires_approval"] is True
+    assert planned["preview"]["records"][0]["stage"] == "applied"
     executed = asyncio.run(
         run_tool(
-            "remove_interested",
-            {"jobs": [{"job_id": str(job.id), "source": "public"}]},
+            "remove_from_tracker",
+            {"job_references": [{"job_id": str(job.id), "source": "public"}]},
             deps,
             phase="execute",
         )
     )
     result = executed["data"]["results"][0]
-    assert result["status"] == "protected"
+    assert result["status"] == "removed"
     assert result["stage"] == "applied"
-    assert tracker.deleted_public == []
+    assert tracker.deleted_public == [str(job.id)]
 
 
-def test_remove_interested_interested_is_removed():
+def test_remove_from_tracker_interested_is_removed():
     job = make_job(title="Backend Intern")
     tracker = FakeTrackerRepo()
     tracker.job_states = [
@@ -460,14 +687,52 @@ def test_remove_interested_interested_is_removed():
     deps = _deps(job_repo=FakeJobRepo([job]), tracker=tracker)
     executed = asyncio.run(
         run_tool(
-            "remove_interested",
-            {"jobs": [{"job_id": str(job.id), "source": "public"}]},
+            "remove_from_tracker",
+            {"job_references": [{"job_id": str(job.id), "source": "public"}]},
             deps,
             phase="execute",
         )
     )
     assert executed["data"]["results"][0]["status"] == "removed"
     assert tracker.deleted_public == [str(job.id)]
+
+
+def test_remove_from_tracker_accepts_tracker_application_id():
+    application_id = uuid4()
+    tracker = FakeTrackerRepo()
+    tracker.applications = [
+        SimpleNamespace(
+            id=application_id,
+            job_id=None,
+            external_job_id=None,
+            source=SimpleNamespace(value="other"),
+            title="Custom application",
+            company_name="Acme",
+            stage=SimpleNamespace(value="offer"),
+        )
+    ]
+    deps = _deps(tracker=tracker)
+    planned = asyncio.run(
+        run_tool(
+            "remove_from_tracker",
+            {"application_ids": [str(application_id)]},
+            deps,
+            phase="plan",
+        )
+    )
+    assert planned["requires_approval"] is True
+    assert planned["preview"]["records"][0]["stage"] == "offer"
+
+    executed = asyncio.run(
+        run_tool(
+            "remove_from_tracker",
+            {"application_ids": [str(application_id)]},
+            deps,
+            phase="execute",
+        )
+    )
+    assert executed["data"]["results"][0]["status"] == "removed"
+    assert tracker.applications == []
 
 
 def test_recommend_jobs_ranks_by_profile_skills():
@@ -546,11 +811,7 @@ def test_update_profile_partial_payload_plans_and_executes():
     current = _empty_profile()
     repo = FakeProfileRepo(profile=current)
     deps = _deps(profile=repo)
-    args = {
-        "payload": {
-            "basics": {"email": "alex.chen@example.com", "city": "Toronto"}
-        }
-    }
+    args = {"payload": {"basics": {"email": "alex.chen@example.com", "city": "Toronto"}}}
     planned = asyncio.run(run_tool("update_profile", args, deps, phase="plan"))
     assert planned["requires_approval"] is True
     fields = {c["field"] for c in planned["preview"]["changes"]}
@@ -631,9 +892,7 @@ def test_generate_interview_questions_requires_job_or_description():
     deps = _deps()
     deps.llm_config = LlmConfig(provider="OpenAI", model_name="gpt-4o", api_key="key")
     with pytest.raises(ToolError) as exc:
-        asyncio.run(
-            run_tool("generate_interview_questions", {}, deps, phase="plan")
-        )
+        asyncio.run(run_tool("generate_interview_questions", {}, deps, phase="plan"))
     assert exc.value.error_type == "invalid_arguments"
 
 

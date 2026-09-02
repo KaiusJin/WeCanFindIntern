@@ -113,11 +113,7 @@ class FakeAgentRepo:
         return approval
 
     async def list_pending_approvals(self, session_id):
-        return [
-            a
-            for a in self.approvals
-            if a.session_id == session_id and a.status == "pending"
-        ]
+        return [a for a in self.approvals if a.session_id == session_id and a.status == "pending"]
 
     async def get_approval(self, public_id):
         return next((a for a in self.approvals if a.id == public_id), None)
@@ -149,6 +145,8 @@ class FakeAgentRepo:
 class FakeDomain:
     def __init__(self):
         self.bookmarked = []
+        self.tracker_applications = []
+        self.deleted_applications = []
 
     async def list_tracked_job_states(self):
         return []
@@ -174,6 +172,20 @@ class FakeDomain:
     async def bookmark_job(self, job_id):
         self.bookmarked.append(str(job_id))
         return SimpleNamespace(id=uuid4())
+
+    async def get_application(self, application_id):
+        return next(
+            (item for item in self.tracker_applications if item.id == application_id),
+            None,
+        )
+
+    async def delete_application(self, application_id):
+        for index, item in enumerate(self.tracker_applications):
+            if item.id == application_id:
+                self.tracker_applications.pop(index)
+                self.deleted_applications.append(application_id)
+                return True
+        return False
 
     async def list_jobs(self, filters=None, **kwargs):
         if filters is not None:
@@ -238,9 +250,7 @@ def fake_stream_reply(reply):
 
 
 def test_personalized_waterlooworks_question_uses_recommendations():
-    plan = orchestrator_module._fast_recommend_plan(
-        "你觉得哪个岗位最适合我 为什么呢 WaterlooWorks"
-    )
+    plan = orchestrator_module._fast_recommend_plan("你觉得哪个岗位最适合我 为什么呢 WaterlooWorks")
 
     assert plan is not None
     call = plan["tool_calls"][0]
@@ -250,36 +260,146 @@ def test_personalized_waterlooworks_question_uses_recommendations():
     assert call["arguments"]["use_llm_rerank"] is False
 
 
-def test_recommendation_reply_names_top_role_and_explains_why():
-    reply = orchestrator_module.recommendation_reply(
-        {
+def test_reply_prompt_does_not_require_a_condensed_answer():
+    system_prompt, _ = orchestrator_module._compose_prompts(
+        user_message="recommend jobs for me",
+        tool_summaries=["recommend_jobs: ranked evidence"],
+        context=None,
+        awaiting_approval=False,
+    )
+
+    assert "concise" not in system_prompt.lower()
+    assert "one-line" not in system_prompt.lower()
+    assert "summarize tool results" not in system_prompt.lower()
+
+
+def test_recommendation_analysis_reply_does_not_use_extra_model_call(monkeypatch):
+    repo, session = make_repo_with_session()
+    deps = make_deps(FakeDomain())
+
+    async def fake_run_tool(name, arguments, deps, *, phase):
+        if name == "analyse_job":
+            job = arguments["job"]
+            return {
+                "ok": True,
+                "summary": "Analysed Backend Intern.",
+                "data": {
+                    "analysis": {
+                        **job,
+                        "title": "Backend Intern",
+                        "company": "Acme",
+                        "fit_score": 88,
+                    }
+                },
+                "for_llm": "Backend Intern is a strong fit.",
+            }
+        assert name == "recommend_jobs"
+        return {
+            "ok": True,
+            "summary": "Recommended 2 jobs.",
             "data": {
                 "recommendations": [
                     {
-                        "title": "QTS - Software Developer",
-                        "company": "RBC Financial Group",
+                        "source": "public",
+                        "job_id": JOB_ID,
+                        "title": "Backend Intern",
+                        "company": "Acme",
                         "match_score": 88,
-                        "matched_skills": ["Python", "SQL"],
-                        "preference_matches": ["Canada"],
-                        "description_available": True,
-                    },
-                    {
-                        "title": "Software Developer",
-                        "company": "RBC Financial Group",
-                        "match_score": 80,
-                        "matched_skills": ["Python"],
-                    },
-                ]
-            }
-        },
-        "哪个岗位最适合我？为什么？",
+                    }
+                ],
+                "analysis_targets": [{"source": "public", "job_id": JOB_ID}],
+            },
+            "for_llm": "Backend Intern at Acme matches Python and SQL.",
+        }
+
+    monkeypatch.setattr(orchestrator_module, "run_tool", fake_run_tool)
+    def unexpected_stream(self, **kwargs):
+        raise AssertionError("analysed recommendations must render without a composer call")
+
+    monkeypatch.setattr(
+        orchestrator_module.AgentOrchestrator,
+        "_stream_reply_events",
+        unexpected_stream,
     )
 
-    assert "QTS - Software Developer" in reply
-    assert "88/100" in reply
-    assert "Python, SQL" in reply
-    assert "Software Developer" in reply
-    assert "80/100" in reply
+    result = asyncio.run(
+        AgentOrchestrator(repo, deps).process_message(session.id, "recommend jobs for me")
+    )
+
+    assert "Backend Intern" in result.message.content
+    assert "88/100" in result.message.content
+    assert [call.tool_name for call in repo.tool_calls] == [
+        "recommend_jobs",
+        "analyse_job",
+    ]
+
+
+def test_recommendations_call_analysis_for_top_two_only(monkeypatch):
+    repo, session = make_repo_with_session()
+    deps = make_deps(FakeDomain())
+    job_ids = [str(uuid4()) for _ in range(3)]
+
+    async def fake_run_tool(name, arguments, deps, *, phase):
+        if name == "recommend_jobs":
+            recommendations = [
+                {
+                    "source": "public",
+                    "job_id": job_id,
+                    "title": f"Role {index}",
+                    "company": "Acme",
+                }
+                for index, job_id in enumerate(job_ids)
+            ]
+            return {
+                "ok": True,
+                "summary": "Recommended 3 jobs.",
+                "data": {
+                    "recommendations": recommendations,
+                    "analysis_targets": [
+                        {"source": "public", "job_id": job_id} for job_id in job_ids[:2]
+                    ],
+                },
+                "for_llm": "Three ranked jobs.",
+            }
+        job = arguments["job"]
+        role_index = job_ids.index(job["job_id"])
+        return {
+            "ok": True,
+            "summary": f"Analysed {job['job_id']}.",
+            "data": {
+                "analysis": {
+                    **job,
+                    "title": f"Role {role_index}",
+                    "company": "Acme",
+                    "fit_score": 50,
+                }
+            },
+            "for_llm": f"Analysis for {job['job_id']}.",
+        }
+
+    monkeypatch.setattr(orchestrator_module, "run_tool", fake_run_tool)
+    def unexpected_stream(self, **kwargs):
+        raise AssertionError("top recommendation analyses must render directly")
+
+    monkeypatch.setattr(
+        orchestrator_module.AgentOrchestrator,
+        "_stream_reply_events",
+        unexpected_stream,
+    )
+
+    result = asyncio.run(
+        AgentOrchestrator(repo, deps).process_message(session.id, "recommend jobs for me")
+    )
+
+    assert "Role 0" in result.message.content
+    assert "Role 1" in result.message.content
+    assert "Role 2" not in result.message.content
+    assert [call.tool_name for call in result.tool_calls] == [
+        "recommend_jobs",
+        "analyse_job",
+        "analyse_job",
+    ]
+    assert [call.arguments["job"]["job_id"] for call in result.tool_calls[1:]] == job_ids[:2]
 
 
 def test_add_this_job_reuses_top_prior_recommendation_without_planner(monkeypatch):
@@ -318,19 +438,15 @@ def test_add_this_job_reuses_top_prior_recommendation_without_planner(monkeypatc
 
     monkeypatch.setattr(orchestrator_module, "plan_turn", unexpected_plan)
     result = asyncio.run(
-        AgentOrchestrator(repo, deps).process_message(
-            session.id, "帮我把这个工作添加到interested"
-        )
+        AgentOrchestrator(repo, deps).process_message(session.id, "帮我把这个工作添加到interested")
     )
 
-    assert result.pending_approval is not None
-    assert result.pending_approval.tool_name == "add_interested"
-    assert result.pending_approval.arguments == {
-        "jobs": [{"job_id": JOB_ID, "source": "public"}]
-    }
-    assert domain.bookmarked == []
-    current_calls = [call for call in repo.tool_calls if call.status == "awaiting_approval"]
-    assert [call.tool_name for call in current_calls] == ["add_interested"]
+    assert result.pending_approval is None
+    assert domain.bookmarked == [JOB_ID]
+    assert (repo.tool_calls[-1].tool_name, repo.tool_calls[-1].status) == (
+        "add_into_tracker",
+        "succeeded",
+    )
 
 
 def test_named_prior_job_is_resolved_without_another_search(monkeypatch):
@@ -377,10 +493,10 @@ def test_named_prior_job_is_resolved_without_another_search(monkeypatch):
         )
     )
 
-    assert result.pending_approval is not None
-    assert result.pending_approval.arguments["jobs"][0]["job_id"] == JOB_ID
+    assert result.pending_approval is None
+    assert domain.bookmarked == [JOB_ID]
     new_calls = repo.tool_calls[prior_call_count:]
-    assert [call.tool_name for call in new_calls] == ["add_interested"]
+    assert [call.tool_name for call in new_calls] == ["add_into_tracker"]
 
 
 def test_unresolved_this_job_asks_for_context_without_recalling_jobs(monkeypatch):
@@ -392,14 +508,189 @@ def test_unresolved_this_job_asks_for_context_without_recalling_jobs(monkeypatch
 
     monkeypatch.setattr(orchestrator_module, "plan_turn", unexpected_plan)
     result = asyncio.run(
-        AgentOrchestrator(repo, deps).process_message(
-            session.id, "把这个岗位添加到interested"
-        )
+        AgentOrchestrator(repo, deps).process_message(session.id, "把这个岗位添加到interested")
     )
 
     assert result.pending_approval is None
     assert "Attach" in result.message.content
     assert repo.tool_calls == []
+
+
+def test_fast_compare_plan_uses_all_attached_job_references():
+    context = {
+        "jobs": [
+            {"id": JOB_ID, "source": "public", "title": "Backend Intern"},
+            {"id": "WW-42", "source": "waterloo_work", "title": "Data Intern"},
+        ]
+    }
+
+    plan = orchestrator_module._fast_compare_jobs_plan(
+        "比较这两个岗位，哪个更好？", context=context
+    )
+
+    assert plan == {
+        "reply": "",
+        "tool_calls": [
+            {
+                "name": "compare_jobs",
+                "arguments": {
+                    "jobs": [
+                        {"job_id": JOB_ID, "source": "public"},
+                        {"job_id": "WW-42", "source": "waterloo_work"},
+                    ]
+                },
+            }
+        ],
+    }
+    assert orchestrator_module._fast_compare_jobs_plan("哪个更好？", context=context) == plan
+
+
+def test_fast_analyse_plan_calls_once_for_every_attached_job():
+    context = {
+        "jobs": [
+            {"id": JOB_ID, "source": "public", "title": "Backend Intern"},
+            {"id": "WW-42", "source": "waterloo_work", "title": "Data Intern"},
+            {"id": str(uuid4()), "source": "public", "title": "ML Intern"},
+        ]
+    }
+
+    plan = orchestrator_module._fast_analyse_jobs_plan("分析这些岗位", context=context)
+
+    assert plan is not None
+    assert [call["name"] for call in plan["tool_calls"]] == [
+        "analyse_job",
+        "analyse_job",
+        "analyse_job",
+    ]
+    assert [call["arguments"]["job"] for call in plan["tool_calls"]] == [
+        {"job_id": JOB_ID, "source": "public"},
+        {"job_id": "WW-42", "source": "waterloo_work"},
+        {"job_id": context["jobs"][2]["id"], "source": "public"},
+    ]
+
+
+def test_attached_jobs_execute_one_analysis_tool_call_each(monkeypatch):
+    repo, session = make_repo_with_session()
+    deps = make_deps(FakeDomain())
+    second_job_id = str(uuid4())
+    context = {
+        "jobs": [
+            {"id": JOB_ID, "source": "public", "title": "Backend Intern"},
+            {"id": second_job_id, "source": "public", "title": "Data Intern"},
+        ]
+    }
+
+    def unexpected_stream(self, **kwargs):
+        raise AssertionError("attached job analyses must render directly")
+
+    monkeypatch.setattr(
+        orchestrator_module.AgentOrchestrator,
+        "_stream_reply_events",
+        unexpected_stream,
+    )
+
+    result = asyncio.run(
+        AgentOrchestrator(repo, deps).process_message(session.id, "分析这两个岗位", context=context)
+    )
+
+    assert "已完成 2 个职位的深度分析" in result.message.content
+    assert "Backend Intern" in result.message.content
+    assert [call.tool_name for call in result.tool_calls] == [
+        "analyse_job",
+        "analyse_job",
+    ]
+    assert [call.arguments["job"]["job_id"] for call in result.tool_calls] == [
+        JOB_ID,
+        second_job_id,
+    ]
+    assert all(call.arguments["response_language"] == "zh" for call in result.tool_calls)
+
+
+def test_analysis_reply_renders_deep_semantic_evidence():
+    result = {
+        "data": {
+            "analysis": {
+                "title": "Backend Intern",
+                "company": "Acme",
+                "analysis_status": "completed",
+                "fit_score": 84,
+                "recommendation": "consider",
+                "recommendation_reason": "核心技术匹配，但需要确认工作授权。",
+                "role_summary": "负责 Python API 的开发与维护。",
+                "core_responsibilities": ["构建 API"],
+                "hiring_priorities": ["Python", "PostgreSQL"],
+                "profile_strengths": ["Profile 中有 Python 项目证据。"],
+                "must_have_requirements": [
+                    {
+                        "requirement": "PostgreSQL",
+                        "jd_evidence": "JD 明确要求 PostgreSQL。",
+                        "profile_match": "gap",
+                        "profile_evidence": [],
+                        "rationale": "Profile 中没有 PostgreSQL 证据。",
+                    }
+                ],
+                "preferred_requirements": [],
+                "implicit_requirements": [],
+                "gaps": [
+                    {
+                        "gap": "PostgreSQL",
+                        "impact": "high",
+                        "evidence": "这是明确的 must-have。",
+                    }
+                ],
+                "risks": {
+                    "work_authorization": {
+                        "status": "concern",
+                        "severity": "high",
+                        "finding": "需要加拿大工作授权。",
+                        "evidence": "JD 明确说明。",
+                    }
+                },
+                "unknowns": ["截止时间"],
+            }
+        }
+    }
+
+    reply = orchestrator_module.analysis_reply([result], "帮我分析这个工作")
+
+    assert "Backend Intern — Acme" in reply
+    assert "可以考虑" in reply
+    assert "PostgreSQL" in reply
+    assert "签证／工作授权" in reply
+    assert "不是录用概率" in reply
+
+
+def test_comparison_reply_names_winner_without_an_extra_model_call():
+    result = {
+        "data": {
+            "confidence": "high",
+            "close_call": False,
+            "ranked_jobs": [
+                {
+                    "rank": 1,
+                    "title": "Backend Intern",
+                    "company": "Acme",
+                    "fit_score": 82,
+                    "matched_skills": ["python", "fastapi"],
+                    "expired": False,
+                },
+                {
+                    "rank": 2,
+                    "title": "Java Intern",
+                    "company": "OtherCo",
+                    "fit_score": 41,
+                    "matched_skills": [],
+                    "expired": False,
+                },
+            ],
+        }
+    }
+
+    reply = orchestrator_module.comparison_reply(result, "哪个更好？")
+
+    assert "Backend Intern" in reply
+    assert "82/100" in reply
+    assert "python" in reply
 
 
 def test_final_planner_reply_skips_redundant_reply_composer(monkeypatch):
@@ -445,9 +736,7 @@ def test_read_only_turn_records_tool_call_and_reply(monkeypatch):
         "plan_turn",
         lambda **kwargs: {
             "reply": "planned",
-            "tool_calls": [
-                {"name": "search_jobs", "arguments": {"query": "python", "limit": 5}}
-            ],
+            "tool_calls": [{"name": "search_jobs", "arguments": {"query": "python", "limit": 5}}],
         },
     )
     monkeypatch.setattr(
@@ -465,9 +754,21 @@ def test_read_only_turn_records_tool_call_and_reply(monkeypatch):
     assert repo.audit
 
 
-def test_write_turn_creates_approval_without_executing(monkeypatch):
+def test_remove_turn_creates_approval_without_executing(monkeypatch):
     repo, session = make_repo_with_session()
     domain = FakeDomain()
+    application_id = uuid4()
+    domain.tracker_applications = [
+        SimpleNamespace(
+            id=application_id,
+            job_id=None,
+            external_job_id=None,
+            source=SimpleNamespace(value="other"),
+            title="Saved application",
+            company_name="Acme",
+            stage=SimpleNamespace(value="applied"),
+        )
+    ]
     deps = make_deps(domain)
 
     monkeypatch.setattr(
@@ -477,34 +778,46 @@ def test_write_turn_creates_approval_without_executing(monkeypatch):
             "reply": "planned",
             "tool_calls": [
                 {
-                    "name": "add_interested",
-                    "arguments": {"jobs": [{"job_id": JOB_ID, "source": "public"}]},
+                    "name": "remove_from_tracker",
+                    "arguments": {"application_ids": [str(application_id)]},
                 }
             ],
         },
     )
     orchestrator = AgentOrchestrator(repo, deps)
-    result = asyncio.run(orchestrator.process_message(session.id, "add this job"))
+    result = asyncio.run(orchestrator.process_message(session.id, "remove this tracker record"))
     assert result.pending_approval is not None
     assert result.pending_approval.status == "pending"
-    assert domain.bookmarked == []
+    assert domain.deleted_applications == []
     assert any(
-        c.tool_name == "add_interested" and c.status == "awaiting_approval"
+        c.tool_name == "remove_from_tracker" and c.status == "awaiting_approval"
         for c in repo.tool_calls
     )
 
     decision = asyncio.run(orchestrator.decide_approval(result.pending_approval.id, True))
     assert decision.approval.status == "approved"
-    assert domain.bookmarked == [JOB_ID]
-    assert "added" in decision.message.content.lower()
+    assert domain.deleted_applications == [application_id]
+    assert "removed" in decision.message.content.lower()
 
     with pytest.raises(ToolError):
         asyncio.run(orchestrator.decide_approval(result.pending_approval.id, True))
 
 
-def test_denying_approval_does_not_execute(monkeypatch):
+def test_denying_removal_approval_does_not_execute(monkeypatch):
     repo, session = make_repo_with_session()
     domain = FakeDomain()
+    application_id = uuid4()
+    domain.tracker_applications = [
+        SimpleNamespace(
+            id=application_id,
+            job_id=None,
+            external_job_id=None,
+            source=SimpleNamespace(value="other"),
+            title="Saved application",
+            company_name="Acme",
+            stage=SimpleNamespace(value="applied"),
+        )
+    ]
     deps = make_deps(domain)
 
     monkeypatch.setattr(
@@ -514,22 +827,34 @@ def test_denying_approval_does_not_execute(monkeypatch):
             "reply": "planned",
             "tool_calls": [
                 {
-                    "name": "add_interested",
-                    "arguments": {"jobs": [{"job_id": JOB_ID, "source": "public"}]},
+                    "name": "remove_from_tracker",
+                    "arguments": {"application_ids": [str(application_id)]},
                 }
             ],
         },
     )
     orchestrator = AgentOrchestrator(repo, deps)
-    result = asyncio.run(orchestrator.process_message(session.id, "add this job"))
+    result = asyncio.run(orchestrator.process_message(session.id, "remove this tracker record"))
     decision = asyncio.run(orchestrator.decide_approval(result.pending_approval.id, False))
     assert decision.approval.status == "denied"
-    assert domain.bookmarked == []
+    assert domain.deleted_applications == []
 
 
-def test_keyword_yes_auto_approves(monkeypatch):
+def test_keyword_yes_auto_approves_removal(monkeypatch):
     repo, session = make_repo_with_session()
     domain = FakeDomain()
+    application_id = uuid4()
+    domain.tracker_applications = [
+        SimpleNamespace(
+            id=application_id,
+            job_id=None,
+            external_job_id=None,
+            source=SimpleNamespace(value="other"),
+            title="Saved application",
+            company_name="Acme",
+            stage=SimpleNamespace(value="applied"),
+        )
+    ]
     deps = make_deps(domain)
 
     monkeypatch.setattr(
@@ -539,24 +864,36 @@ def test_keyword_yes_auto_approves(monkeypatch):
             "reply": "planned",
             "tool_calls": [
                 {
-                    "name": "add_interested",
-                    "arguments": {"jobs": [{"job_id": JOB_ID, "source": "public"}]},
+                    "name": "remove_from_tracker",
+                    "arguments": {"application_ids": [str(application_id)]},
                 }
             ],
         },
     )
     orchestrator = AgentOrchestrator(repo, deps)
-    asyncio.run(orchestrator.process_message(session.id, "add this job"))
-    assert domain.bookmarked == []
+    asyncio.run(orchestrator.process_message(session.id, "remove this tracker record"))
+    assert domain.deleted_applications == []
 
     result = asyncio.run(orchestrator.process_message(session.id, "yes"))
-    assert domain.bookmarked == [JOB_ID]
-    assert "added" in result.message.content.lower()
+    assert domain.deleted_applications == [application_id]
+    assert "removed" in result.message.content.lower()
 
 
 def test_keyword_yes_streams_tool_reply_and_done(monkeypatch):
     repo, session = make_repo_with_session()
     domain = FakeDomain()
+    application_id = uuid4()
+    domain.tracker_applications = [
+        SimpleNamespace(
+            id=application_id,
+            job_id=None,
+            external_job_id=None,
+            source=SimpleNamespace(value="other"),
+            title="Saved application",
+            company_name="Acme",
+            stage=SimpleNamespace(value="applied"),
+        )
+    ]
     deps = make_deps(domain)
 
     monkeypatch.setattr(
@@ -566,26 +903,23 @@ def test_keyword_yes_streams_tool_reply_and_done(monkeypatch):
             "reply": "planned",
             "tool_calls": [
                 {
-                    "name": "add_interested",
-                    "arguments": {"jobs": [{"job_id": JOB_ID, "source": "public"}]},
+                    "name": "remove_from_tracker",
+                    "arguments": {"application_ids": [str(application_id)]},
                 }
             ],
         },
     )
     orchestrator = AgentOrchestrator(repo, deps)
-    asyncio.run(orchestrator.process_message(session.id, "add this job"))
+    asyncio.run(orchestrator.process_message(session.id, "remove this tracker record"))
 
     async def collect_events():
-        return [
-            event
-            async for event in orchestrator.process_message_stream(session.id, "yes")
-        ]
+        return [event async for event in orchestrator.process_message_stream(session.id, "yes")]
 
     events = asyncio.run(collect_events())
 
     assert [event["type"] for event in events] == ["tool", "text_delta", "done"]
     assert events[0]["tool_call"]["status"] == "succeeded"
-    assert "added" in events[1]["delta"].lower()
+    assert "removed" in events[1]["delta"].lower()
     assert events[2]["result"]["message"]["content"] == events[1]["delta"]
 
 
@@ -623,9 +957,7 @@ def test_memory_context_flows_into_plan_and_maintenance_is_scheduled(monkeypatch
     memory = FakeMemory()
     deps = make_deps(domain)
     deps.memory = memory
-    deps.llm_config = SimpleNamespace(
-        provider="DeepSeek", model_name="deepseek-chat", api_key="x"
-    )
+    deps.llm_config = SimpleNamespace(provider="DeepSeek", model_name="deepseek-chat", api_key="x")
     memory.due = True
 
     captured = {}
@@ -673,7 +1005,7 @@ def test_iterative_loop_resolves_reference_then_plans_write(monkeypatch):
             "reply": "",
             "tool_calls": [
                 {
-                    "name": "add_interested",
+                    "name": "add_into_tracker",
                     "arguments": {"jobs": [{"job_id": JOB_ID, "source": "public"}]},
                 }
             ],
@@ -685,11 +1017,11 @@ def test_iterative_loop_resolves_reference_then_plans_write(monkeypatch):
         orchestrator.process_message(session.id, "find the backend intern job and add it")
     )
     assert calls["count"] == 2
-    assert result.pending_approval is not None
-    assert domain.bookmarked == []
+    assert result.pending_approval is None
+    assert domain.bookmarked == [JOB_ID]
     statuses = {c.tool_name: c.status for c in repo.tool_calls}
     assert statuses["search_jobs"] == "succeeded"
-    assert statuses["add_interested"] == "awaiting_approval"
+    assert statuses["add_into_tracker"] == "succeeded"
 
 
 def test_loop_stops_at_round_cap(monkeypatch):
@@ -730,9 +1062,7 @@ def test_duplicate_calls_are_recorded_and_stop_the_loop(monkeypatch):
     def fake_plan(**kwargs):
         return {
             "reply": "",
-            "tool_calls": [
-                {"name": "search_jobs", "arguments": {"query": "same", "limit": 3}}
-            ],
+            "tool_calls": [{"name": "search_jobs", "arguments": {"query": "same", "limit": 3}}],
         }
 
     monkeypatch.setattr(orchestrator_module, "plan_turn", fake_plan)
@@ -786,9 +1116,7 @@ def test_continuation_round_invalid_shape_preserves_tool_results(monkeypatch):
         if calls["count"] == 1:
             return {
                 "reply": "",
-                "tool_calls": [
-                    {"name": "search_jobs", "arguments": {"query": "RBC", "limit": 3}}
-                ],
+                "tool_calls": [{"name": "search_jobs", "arguments": {"query": "RBC", "limit": 3}}],
             }
         raise ToolError(
             "planner_invalid_output",
@@ -807,8 +1135,7 @@ def test_continuation_round_invalid_shape_preserves_tool_results(monkeypatch):
     assert calls["count"] == 2
     assert "strongest match" in result.message.content
     assert any(
-        call.tool_name == "search_jobs" and call.status == "succeeded"
-        for call in repo.tool_calls
+        call.tool_name == "search_jobs" and call.status == "succeeded" for call in repo.tool_calls
     )
 
 
@@ -876,9 +1203,7 @@ def test_plan_turn_sends_json_mode_feedback_and_injection_guard(monkeypatch):
 def test_plan_turn_repairs_array_output_before_returning(monkeypatch):
     responses = iter(
         [
-            SimpleNamespace(
-                data=[{"reply": "comparison complete", "tool_calls": []}]
-            ),
+            SimpleNamespace(data=[{"reply": "comparison complete", "tool_calls": []}]),
             SimpleNamespace(data={"reply": "comparison complete", "tool_calls": []}),
         ]
     )
@@ -913,9 +1238,7 @@ def test_plan_turn_rejects_output_when_repair_is_still_invalid(monkeypatch):
     monkeypatch.setattr(
         orchestrator_module,
         "complete_json",
-        lambda **kwargs: SimpleNamespace(
-            data=[{"reply": "comparison complete", "tool_calls": []}]
-        ),
+        lambda **kwargs: SimpleNamespace(data=[{"reply": "comparison complete", "tool_calls": []}]),
     )
     deps = make_deps(FakeDomain())
     deps.llm_config = SimpleNamespace(

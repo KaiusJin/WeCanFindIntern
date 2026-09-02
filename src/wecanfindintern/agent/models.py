@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from wecanfindintern.domain.classification import OpportunityType
 from wecanfindintern.llm.providers import ProviderName
@@ -71,7 +71,20 @@ class AgentJobContext(BaseModel):
 
 
 class AgentContext(BaseModel):
-    job: AgentJobContext
+    """Jobs explicitly attached to the current Agent message.
+
+    ``job`` is retained for older clients. New clients send ``jobs`` so one
+    turn can carry several roles into comparison and batch tools.
+    """
+
+    jobs: list[AgentJobContext] = Field(default_factory=list, max_length=5)
+    job: AgentJobContext | None = None
+
+    @model_validator(mode="after")
+    def require_job_context(self) -> AgentContext:
+        if not self.jobs and self.job is None:
+            raise ValueError("At least one attached job is required.")
+        return self
 
 
 class AgentMessageRequest(BaseModel):
@@ -150,13 +163,26 @@ class GetJobDetailsArgs(BaseModel):
     source: Literal["public", "waterloo_work"] = "public"
 
 
+class AnalyseJobArgs(BaseModel):
+    """Analyse one explicit job against the confirmed Profile and preferences."""
+
+    job: JobReference
+    response_language: Literal["en", "zh"] = "en"
+
+
+class CompareJobsArgs(BaseModel):
+    """Compare explicit jobs against the confirmed Profile and preferences."""
+
+    jobs: list[JobReference] = Field(..., min_length=2, max_length=5)
+
+
 class ListTrackerArgs(BaseModel):
     query: str | None = Field(default=None, max_length=200)
     stage: ApplicationStage | None = None
     limit: int = Field(default=50, ge=1, le=100)
 
 
-class AddInterestedArgs(BaseModel):
+class AddIntoTrackerArgs(BaseModel):
     jobs: list[JobReference] = Field(..., min_length=1, max_length=25)
 
 
@@ -166,8 +192,16 @@ class UpdateTrackerStageArgs(BaseModel):
     stage: ApplicationStage = ApplicationStage.APPLIED
 
 
-class RemoveInterestedArgs(BaseModel):
-    jobs: list[JobReference] = Field(..., min_length=1, max_length=25)
+class RemoveTrackerArgs(BaseModel):
+    """Targets that can be removed from the Tracker after approval."""
+
+    application_ids: list[str] = Field(default_factory=list, max_length=100)
+    job_references: list[JobReference] = Field(default_factory=list, max_length=25)
+
+
+# Kept as an import-compatible name for callers that used the old Interested-only
+# tool contract. The Agent catalog exposes RemoveTrackerArgs instead.
+RemoveInterestedArgs = RemoveTrackerArgs
 
 
 class ProposeProfileUpdateArgs(BaseModel):

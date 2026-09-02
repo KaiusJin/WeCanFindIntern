@@ -36,7 +36,7 @@ from wecanfindintern.domain.location import clean_location_display
 from wecanfindintern.profile.models import UserProfile
 from wecanfindintern.waterlooworks.taxonomy import resolve_waterloo_opportunity_type
 
-RECOMMENDATION_RANKING_VERSION = "recommend.v3"
+RECOMMENDATION_RANKING_VERSION = "recommend.v4"
 
 
 def _profile_skill_set(profile: UserProfile) -> set[str]:
@@ -61,10 +61,7 @@ def _education_stage(profile: UserProfile) -> str:
 
 
 def _is_early_career_profile(profile: UserProfile) -> bool:
-    if any(
-        entry.expected_graduation or entry.status == "studying"
-        for entry in profile.education
-    ):
+    if any(entry.expected_graduation or entry.status == "studying" for entry in profile.education):
         return True
     senior_pattern = re.compile(
         r"\b(?:senior|sr\.?|staff|principal|lead|manager|director|architect|head)\b",
@@ -107,9 +104,7 @@ def _cap_candidates_by_source(
     return selected[:limit]
 
 
-def _preference_matches(
-    preferences: dict[str, str], candidate: dict[str, Any]
-) -> list[str]:
+def _preference_matches(preferences: dict[str, str], candidate: dict[str, Any]) -> list[str]:
     """Return stated preferences this candidate satisfies (boost signals)."""
 
     matches: list[str] = []
@@ -137,9 +132,7 @@ def _preference_matches(
     return matches
 
 
-async def tool_recommend_jobs(
-    args: dict[str, Any], deps: AgentDeps, phase: str
-) -> dict[str, Any]:
+async def tool_recommend_jobs(args: dict[str, Any], deps: AgentDeps, phase: str) -> dict[str, Any]:
     parsed = RecommendJobsArgs.model_validate(args)
     started = time.perf_counter()
 
@@ -162,14 +155,12 @@ async def tool_recommend_jobs(
             rag_version = "unavailable"
         return f"{jobs_version}|rag:{rag_version}"
 
-    profile, preferences, public_tracked, external_tracked, library_version = (
-        await asyncio.gather(
-            deps.profile_repo.get_profile(),
-            load_preferences(),
-            tracked_public_map(deps),
-            tracked_external_map(deps),
-            load_library_version(),
-        )
+    profile, preferences, public_tracked, external_tracked, library_version = await asyncio.gather(
+        deps.profile_repo.get_profile(),
+        load_preferences(),
+        tracked_public_map(deps),
+        tracked_external_map(deps),
+        load_library_version(),
     )
     skills = _profile_skill_set(profile)
     preferences = dict(preferences)
@@ -219,9 +210,7 @@ async def tool_recommend_jobs(
     cached = recommendation_cache.get(cache_key)
     if cached is not None:
         cached["data"]["cache_hit"] = True
-        cached["data"]["timings_ms"] = {
-            "total": round((time.perf_counter() - started) * 1000, 1)
-        }
+        cached["data"]["timings_ms"] = {"total": round((time.perf_counter() - started) * 1000, 1)}
         return cached
 
     recall_started = time.perf_counter()
@@ -229,9 +218,7 @@ async def tool_recommend_jobs(
     candidate_limit = max(120, parsed.limit * 12)
     candidates: list[dict[str, Any]] = []
     retrieval_mode = "recent_fallback"
-    requested_sources = (
-        ["public", "waterloo_work"] if parsed.source == "all" else [parsed.source]
-    )
+    requested_sources = ["public", "waterloo_work"] if parsed.source == "all" else [parsed.source]
     retrieval_modes = {source: "recent_fallback" for source in requested_sources}
     retrieval_filters = RecommendationFilters(
         target_roles=expand_target_roles(parsed.target_roles),
@@ -247,9 +234,7 @@ async def tool_recommend_jobs(
             if embedding_config is not None:
                 readiness = await asyncio.gather(
                     *(
-                        deps.recommendation_repo.has_embeddings(
-                            embedding_config, source=source
-                        )
+                        deps.recommendation_repo.has_embeddings(embedding_config, source=source)
                         for source in requested_sources
                     )
                 )
@@ -277,9 +262,7 @@ async def tool_recommend_jobs(
                     skills=sorted(skills),
                     exclude_public_ids=exclude_ids,
                     query_embedding=embedding if embedding_ready.get("public") else None,
-                    embedding_config=(
-                        embedding_config if embedding_ready.get("public") else None
-                    ),
+                    embedding_config=(embedding_config if embedding_ready.get("public") else None),
                     limit=candidate_limit,
                     filters=retrieval_filters,
                 )
@@ -324,13 +307,9 @@ async def tool_recommend_jobs(
                         "work_mode": item.work_mode,
                         "opportunity_type": item.opportunity_type,
                         "recruiting_term": (
-                            item.recruiting_term.display_name
-                            if item.recruiting_term
-                            else None
+                            item.recruiting_term.display_name if item.recruiting_term else None
                         ),
-                        "date_posted": (
-                            item.date_posted.isoformat() if item.date_posted else None
-                        ),
+                        "date_posted": (item.date_posted.isoformat() if item.date_posted else None),
                         "application_deadline": None,
                         "application_url": row.get("url"),
                         "skill_tags": item.skill_tags + item.display_tags,
@@ -362,17 +341,13 @@ async def tool_recommend_jobs(
                         "location": location,
                         "location_text": location,
                         "work_mode": item.work_mode,
-                        "date_posted": (
-                            item.date_posted.isoformat() if item.date_posted else None
-                        ),
+                        "date_posted": (item.date_posted.isoformat() if item.date_posted else None),
                         "application_deadline": None,
                         "application_url": (
                             (sources[0].direct_url or sources[0].url) if sources else None
                         ),
                         "skill_tags": item.skill_tags + item.display_tags,
-                        "requirement_tags": (
-                            getattr(valid_detail, "requirement_tags", None) or []
-                        ),
+                        "requirement_tags": (getattr(valid_detail, "requirement_tags", None) or []),
                         "description": (
                             valid_detail.description if valid_detail is not None else None
                         ),
@@ -388,16 +363,10 @@ async def tool_recommend_jobs(
                 waterloo_rows = await deps.recommendation_repo.recall_waterloo(
                     query_text=query_text,
                     skills=sorted(skills),
-                    exclude_external_ids=(
-                        list(external_tracked) if parsed.exclude_tracked else []
-                    ),
-                    query_embedding=(
-                        embedding if embedding_ready.get("waterloo_work") else None
-                    ),
+                    exclude_external_ids=(list(external_tracked) if parsed.exclude_tracked else []),
+                    query_embedding=(embedding if embedding_ready.get("waterloo_work") else None),
                     embedding_config=(
-                        embedding_config
-                        if embedding_ready.get("waterloo_work")
-                        else None
+                        embedding_config if embedding_ready.get("waterloo_work") else None
                     ),
                     limit=min(candidate_limit, 200),
                     filters=retrieval_filters,
@@ -438,23 +407,18 @@ async def tool_recommend_jobs(
                     ),
                     "date_posted": item.get("date_posted"),
                     "application_deadline": item.get("application_deadline"),
-                    "application_url": item.get("application_url")
-                    or item.get("source_url"),
-                    "skill_tags": item.get("skill_tags")
-                    or [item.get("division") or ""],
+                    "application_url": item.get("application_url") or item.get("source_url"),
+                    "skill_tags": item.get("skill_tags") or [item.get("division") or ""],
                     "requirement_tags": item.get("requirement_tags") or [],
                     "description": item.get("description"),
                     "retrieval": item.get("retrieval") or {},
-                    "retrieval_sources": item.get("retrieval_sources")
-                    or ["waterloo_recent"],
+                    "retrieval_sources": item.get("retrieval_sources") or ["waterloo_recent"],
                 }
             )
         used.append("waterloo_work")
     candidates = _cap_candidates_by_source(candidates, limit=candidate_limit)
     unique_modes = set(retrieval_modes.values())
-    retrieval_mode = (
-        next(iter(unique_modes)) if len(unique_modes) == 1 else "mixed"
-    )
+    retrieval_mode = next(iter(unique_modes)) if len(unique_modes) == 1 else "mixed"
     recall_ms = (time.perf_counter() - recall_started) * 1000
 
     rank_started = time.perf_counter()
@@ -469,8 +433,7 @@ async def tool_recommend_jobs(
         ):
             continue
         if parsed.locations and not any(
-            normalize_for_matching(location) in location_text
-            for location in parsed.locations
+            normalize_for_matching(location) in location_text for location in parsed.locations
         ):
             continue
         if parsed.work_modes and candidate.get("work_mode") not in parsed.work_modes:
@@ -569,54 +532,48 @@ async def tool_recommend_jobs(
             confidence = "medium"
         else:
             confidence = "low"
-        public_candidate = {
-            key: value
-            for key, value in candidate.items()
-            if key != "description"
+        public_candidate = {key: value for key, value in candidate.items() if key != "description"}
+        recommendation = {
+            **public_candidate,
+            "match_score": max(0, min(100, score)),
+            "confidence": confidence,
+            "matched_signals": [
+                {"signal": name, "value": value}
+                for name, value in (candidate.get("signals", {}).get("components", {})).items()
+                if value > 0
+            ],
+            "gaps": [
+                {"signal": "requirement", "value": value}
+                for value in candidate.get("signals", {}).get("unmatched_requirement_tags", [])
+            ]
+            + [
+                {"signal": "penalty", "value": name, "weight": value}
+                for name, value in candidate.get("signals", {}).get("penalties", {}).items()
+            ],
+            "unknowns": [
+                {"signal": value}
+                for value, unknown in (
+                    ("job_description", not candidate["description_available"]),
+                    (
+                        "application_deadline",
+                        not candidate.get("application_deadline"),
+                    ),
+                )
+                if unknown
+            ],
+            "reasons": reasons,
         }
-        recommendations.append(
-            {
-                **public_candidate,
-                "match_score": max(0, min(100, score)),
-                "confidence": confidence,
-                "matched_signals": [
-                    {"signal": name, "value": value}
-                    for name, value in (
-                        candidate.get("signals", {}).get("components", {})
-                    ).items()
-                    if value > 0
-                ],
-                "gaps": [
-                    {"signal": "requirement", "value": value}
-                    for value in candidate.get("signals", {}).get(
-                        "unmatched_requirement_tags", []
-                    )
-                ]
-                + [
-                    {"signal": "penalty", "value": name, "weight": value}
-                    for name, value in candidate.get("signals", {}).get(
-                        "penalties", {}
-                    ).items()
-                ],
-                "unknowns": [
-                    {"signal": value}
-                    for value, unknown in (
-                        ("job_description", not candidate["description_available"]),
-                        (
-                            "application_deadline",
-                            not candidate.get("application_deadline"),
-                        ),
-                    )
-                    if unknown
-                ],
-                "reasons": reasons,
-            }
-        )
+        recommendations.append(recommendation)
+    analysis_targets = [
+        {"job_id": recommendation["job_id"], "source": recommendation["source"]}
+        for recommendation in recommendations[:2]
+    ]
     rank_ms = (time.perf_counter() - rank_started) * 1000
     result = {
         "ok": True,
         "data": {
             "recommendations": recommendations,
+            "analysis_targets": analysis_targets,
             "profile_used": {
                 "skills": sorted(skills)[:50],
                 "completion_percent": profile.completion_percent,
@@ -636,6 +593,7 @@ async def tool_recommend_jobs(
                 "recalled": len(candidates),
                 "eligible": len(ranked),
                 "returned": len(recommendations),
+                "analysis_targets": len(analysis_targets),
             },
             "timings_ms": {
                 "recall": round(recall_ms, 1),
@@ -646,8 +604,7 @@ async def tool_recommend_jobs(
         },
         "used": used,
         "summary": (
-            f"Recommended {len(recommendations)} job(s) based on "
-            f"{len(skills)} profile skills."
+            f"Recommended {len(recommendations)} job(s) based on {len(skills)} profile skills."
         ),
         "for_llm": "\n".join(
             f"- [{r['source']}:{r['job_id']}] {r['title']} at {r['company'] or 'unknown'} | "
@@ -663,4 +620,3 @@ async def tool_recommend_jobs(
     }
     recommendation_cache.put(cache_key, result)
     return result
-

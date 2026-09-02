@@ -218,7 +218,7 @@ def test_parser_extracts_all_required_sections() -> None:
         "PostgreSQL",
         "AWS",
     }
-    assert set(profile.skills[0].model_dump()) == {"name"}
+    assert set(profile.skills[0].model_dump(exclude_none=True)) == {"name"}
     assert profile.certifications[0].name == "AWS Certified Cloud Practitioner"
     assert profile.languages[1].name == "French"
     assert profile.awards[0].title == "Dean's Honour List 2025"

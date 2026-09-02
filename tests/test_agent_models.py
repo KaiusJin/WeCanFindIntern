@@ -5,14 +5,21 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+
 from wecanfindintern.agent.models import (
-    AddInterestedArgs,
+    AddIntoTrackerArgs,
     AgentApproval,
+    AgentContext,
+    AgentJobContext,
     AgentMessage,
     AgentSession,
     AgentToolCall,
+    AnalyseJobArgs,
+    CompareJobsArgs,
     JobReference,
     RecommendJobsArgs,
+    RemoveTrackerArgs,
     SearchJobsArgs,
     UpdateTrackerStageArgs,
 )
@@ -54,7 +61,7 @@ def test_agent_tool_call_and_approval_models():
     approval = AgentApproval(
         id=uuid4(),
         session_id=uuid4(),
-        tool_name="add_interested",
+        tool_name="add_into_tracker",
         arguments={"jobs": []},
         preview={"count": 0},
         created_at=now,
@@ -69,13 +76,17 @@ def test_job_reference_display():
     assert JobReference(job_id="x").display() == "public:x"
 
 
+def test_analyse_job_accepts_exactly_one_job_reference():
+    ref = JobReference(job_id="job-1", source="public")
+    assert AnalyseJobArgs(job=ref).job == ref
+    assert AnalyseJobArgs(job=ref, response_language="zh").response_language == "zh"
+
+
 def test_tool_argument_models_validate():
     search = SearchJobsArgs(query="python", source="waterloo_work", limit=5)
     assert search.source == "waterloo_work"
 
-    add = AddInterestedArgs(
-        jobs=[JobReference(job_id="j1", source="public")]
-    )
+    add = AddIntoTrackerArgs(jobs=[JobReference(job_id="j1", source="public")])
     assert add.jobs[0].display() == "public:j1"
 
     stage = UpdateTrackerStageArgs(
@@ -83,6 +94,30 @@ def test_tool_argument_models_validate():
         stage=ApplicationStage.INTERVIEW,
     )
     assert stage.stage == ApplicationStage.INTERVIEW
+
+    removal = RemoveTrackerArgs(application_ids=[str(uuid4())])
+    assert removal.application_ids
+
+
+def test_agent_context_accepts_up_to_five_jobs_and_keeps_legacy_job_compatibility():
+    jobs = [
+        AgentJobContext(id=f"job-{index}", source="public", title=f"Role {index}")
+        for index in range(5)
+    ]
+    assert len(AgentContext(jobs=jobs).jobs) == 5
+    assert AgentContext(job=jobs[0]).job.id == "job-0"
+
+    with pytest.raises(ValueError):
+        AgentContext(jobs=[*jobs, AgentJobContext(id="job-5")])
+
+
+def test_compare_jobs_requires_two_to_five_references():
+    refs = [JobReference(job_id=f"job-{index}") for index in range(5)]
+    assert len(CompareJobsArgs(jobs=refs).jobs) == 5
+    with pytest.raises(ValueError):
+        CompareJobsArgs(jobs=refs[:1])
+    with pytest.raises(ValueError):
+        CompareJobsArgs(jobs=[*refs, JobReference(job_id="job-5")])
 
 
 def test_search_jobs_supports_ranking_filters_and_pagination():

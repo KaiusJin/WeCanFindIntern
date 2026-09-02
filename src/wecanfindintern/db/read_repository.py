@@ -22,7 +22,7 @@ from wecanfindintern.application.job_models import (
 from wecanfindintern.db.job_projection import (
     JOB_SELECT,
     job_list_item,
-    location_display_name,
+    location_display_name,  # noqa: F401 - compatibility export used by callers/tests
 )
 from wecanfindintern.domain.classification import normalize_tag
 from wecanfindintern.domain.jobs import normalize_company

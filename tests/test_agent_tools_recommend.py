@@ -140,11 +140,7 @@ def make_profile(*skills, studying=False):
         id=uuid4(),
         schema_version="profile.v1",
         basics=ProfileBasics(full_name="Alex Chen"),
-        education=(
-            [EducationEntry(institution="Waterloo", status="studying")]
-            if studying
-            else []
-        ),
+        education=([EducationEntry(institution="Waterloo", status="studying")] if studying else []),
         skills=[SkillEntry(name=skill) for skill in skills],
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
@@ -192,9 +188,7 @@ def test_tracked_jobs_are_excluded_via_recall_args():
     job_a = make_job(title="Backend Intern")
     job_b = make_job(title="Platform Intern", company="Beta")
     tracker = FakeTrackerRepo(
-        job_states=[
-            SimpleNamespace(job_id=job_a.id, application_id=uuid4(), stage="interested")
-        ]
+        job_states=[SimpleNamespace(job_id=job_a.id, application_id=uuid4(), stage="interested")]
     )
     repo = RecallJobRepo([(job_a, "a"), (job_b, "b")])
     deps = make_deps(job_repo=repo, tracker=tracker)
@@ -233,6 +227,33 @@ def test_empty_library_returns_empty_recommendations():
     assert result["summary"].startswith("Recommended 0 job(s)")
 
 
+def test_recommendations_target_only_the_top_two_jobs_for_analysis():
+    jobs = [make_job(title=f"Python Role {index}", company=f"Co{index}") for index in range(3)]
+    deps = make_deps(job_repo=RecallJobRepo([(job, job.description) for job in jobs]))
+
+    result = run_recommend(deps, limit=3)
+
+    recommendations = result["data"]["recommendations"]
+    targets = result["data"]["analysis_targets"]
+    assert len(recommendations) == 3
+    assert len(targets) == 2
+    assert [target["job_id"] for target in targets] == [
+        recommendation["job_id"] for recommendation in recommendations[:2]
+    ]
+    assert result["data"]["candidate_counts"]["analysis_targets"] == 2
+
+
+def test_single_recommendation_targets_top_one_for_analysis():
+    job = make_job()
+    deps = make_deps(job_repo=RecallJobRepo([(job, job.description)]))
+
+    result = run_recommend(deps)
+
+    assert len(result["data"]["recommendations"]) == 1
+    assert len(result["data"]["analysis_targets"]) == 1
+    assert result["data"]["candidate_counts"]["analysis_targets"] == 1
+
+
 def test_trap_job_does_not_outrank_real_skill_match():
     go_job = make_job(
         title="Go Developer",
@@ -264,9 +285,7 @@ def test_same_input_produces_same_order():
         make_job(title=f"Role {index}", company=f"Co{index}", skills=("python",))
         for index in range(4)
     ]
-    deps = make_deps(
-        job_repo=RecallJobRepo([(job, job.description) for job in jobs])
-    )
+    deps = make_deps(job_repo=RecallJobRepo([(job, job.description) for job in jobs]))
     first = run_recommend(deps)
     recommendation_cache.clear()
     second = run_recommend(deps)
@@ -301,9 +320,7 @@ def test_llm_rerank_applies_adjustments_and_reasons():
             ]
         }
     )
-    with patch(
-        "wecanfindintern.agent.recommend.rerank.complete_json", return_value=payload
-    ):
+    with patch("wecanfindintern.agent.recommend.rerank.complete_json", return_value=payload):
         result = run_recommend(deps, use_llm_rerank=True)
     recommendations = result["data"]["recommendations"]
     assert recommendations[0]["job_id"] == str(weaker.id)
