@@ -1,4 +1,4 @@
-"""Resident public-job collection scheduler used by the desktop sidecar."""
+"""Resident public-job synchronization scheduler used by the desktop sidecar."""
 
 from __future__ import annotations
 
@@ -12,7 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from scripts.collection.run_collection_campaign import acquire_process_lock, run
+from wecanfindintern.desktop.job_sync import sync_feed
+from wecanfindintern.process_lock import acquire_process_lock
 
 logger = logging.getLogger(__name__)
 
@@ -42,19 +43,13 @@ class CollectionStatus:
 
 
 class BackgroundCollectionService:
-    def __init__(self, *, config_path: Path, lock_path: Path) -> None:
+    def __init__(self, *, manifest_url: str, lock_path: Path) -> None:
         self.interval_seconds = max(
             300, int(os.getenv("WCFI_COLLECTION_INTERVAL_SECONDS", "14400"))
         )
-        self.initial_delay_seconds = max(
-            0, int(os.getenv("WCFI_COLLECTION_INITIAL_DELAY_SECONDS", "30"))
-        )
-        self.batch_size = int(os.getenv("WCFI_COLLECTION_BATCH_SIZE", "250"))
-        self.concurrency = int(os.getenv("WCFI_COLLECTION_CONCURRENCY", "4"))
-        self.max_retries = int(os.getenv("WCFI_COLLECTION_MAX_RETRIES", "3"))
-        self.config_path = config_path
+        self.manifest_url = manifest_url
         self.lock_path = lock_path
-        self.state_path = lock_path.with_name("collection-status.json")
+        self.state_path = lock_path.with_name("job-sync-status.json")
         enabled = os.getenv("WCFI_BACKGROUND_COLLECTION_ENABLED", "0").lower()
         self.status = self._load_status(enabled=enabled in {"1", "true", "yes"})
         self._wake = asyncio.Event()
@@ -79,15 +74,11 @@ class BackgroundCollectionService:
         return True
 
     async def _loop(self) -> None:
-        delay = self._next_delay_seconds()
-        if delay:
-            with suppress(TimeoutError):
-                await asyncio.wait_for(self._wake.wait(), timeout=delay)
-            self._wake.clear()
         while True:
             await self._run_once()
+            delay = 300 if self.status.last_error else self.interval_seconds
             with suppress(TimeoutError):
-                await asyncio.wait_for(self._wake.wait(), timeout=self.interval_seconds)
+                await asyncio.wait_for(self._wake.wait(), timeout=delay)
             self._wake.clear()
 
     async def _run_once(self) -> None:
@@ -96,7 +87,7 @@ class BackgroundCollectionService:
             try:
                 acquire_process_lock(lock_file)
             except BlockingIOError:
-                logger.info("Skipping scheduled collection because another run owns the lock")
+                logger.info("Skipping public job sync because another run owns the lock")
                 return
             self.status.running = True
             self.status.last_started_at = datetime.now(UTC)
@@ -104,17 +95,13 @@ class BackgroundCollectionService:
             self._persist_status()
             cancelled = False
             try:
-                result = await run(
-                    self.config_path,
-                    self.batch_size,
-                    concurrency=self.concurrency,
-                    max_retries=self.max_retries,
+                self.status.last_result = await sync_feed(
+                    self.manifest_url, self.lock_path.parent / "job-packages"
                 )
-                self.status.last_result = result.payload()
                 self.status.run_count += 1
             except asyncio.CancelledError:
                 cancelled = True
-                self.status.last_error = "Collection was interrupted during app shutdown."
+                self.status.last_error = "Job sync was interrupted during app shutdown."
                 self.status.last_result = {
                     "status": "interrupted",
                     "completed_at": None,
@@ -129,21 +116,12 @@ class BackgroundCollectionService:
                     "completed_at": datetime.now(UTC).isoformat(),
                     "error_summary": self.status.last_error,
                 }
-                logger.exception("Scheduled collection failed")
+                logger.exception("Public job sync failed")
             finally:
                 self.status.running = False
                 if not cancelled:
                     self.status.last_finished_at = datetime.now(UTC)
                 self._persist_status()
-
-    def _next_delay_seconds(self) -> float:
-        if self.status.last_finished_at is None:
-            return float(self.initial_delay_seconds)
-        elapsed = (datetime.now(UTC) - self.status.last_finished_at).total_seconds()
-        remaining = max(0.0, self.interval_seconds - elapsed)
-        if remaining == 0:
-            return float(self.initial_delay_seconds)
-        return min(float(self.interval_seconds), remaining)
 
     def _load_status(self, *, enabled: bool) -> CollectionStatus:
         try:
@@ -162,7 +140,7 @@ class BackgroundCollectionService:
                 run_count=max(0, int(payload.get("run_count", 0))),
             )
             if payload.get("running"):
-                status.last_error = "Previous collection was interrupted; it will retry."
+                status.last_error = "Previous job sync was interrupted; it will retry."
                 status.last_result = {
                     "status": "interrupted",
                     "completed_at": None,

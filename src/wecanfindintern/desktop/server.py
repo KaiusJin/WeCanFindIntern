@@ -85,6 +85,9 @@ def main() -> None:
     applied = apply_migrations(database_url, paths.migrations)
     if applied:
         logging.getLogger(__name__).info("Applied migrations: %s", ", ".join(applied))
+    if sys.platform == "win32":
+        # psycopg async connections require a selector loop on Windows.
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(_serve(args.host, args.port))
 
 

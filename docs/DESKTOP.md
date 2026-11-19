@@ -17,7 +17,7 @@ flowchart TD
     E --> B[Packaged Python/FastAPI sidecar<br/>random loopback port]
     B --> M[Checksummed migrations]
     B --> W[Static web and token-protected API]
-    B --> C[Resident four-hour collection]
+    B --> C[Public job feed synchronization]
     B --> X[Recommendation index maintenance]
     R -->|exact origin + injected token| W
 ```
@@ -29,9 +29,9 @@ uses SCRAM authentication, listens only on `127.0.0.1`, and on macOS also uses a
 private mode-0700 Unix socket directory.
 
 Closing the main window hides it instead of quitting. The tray menu can reopen the
-window, run collection immediately, create a backup, restore a backup, or quit.
-The packaged app registers itself for login startup with `--background`; scheduled
-collection therefore continues while the user session and tray app are running.
+window, sync public jobs immediately, create a backup, restore a backup, or quit.
+The packaged app registers itself for login startup with `--background`. The tray app
+keeps the local public feed current while the user session is running.
 
 Startup is fail-closed: Electron verifies the embedded PostgreSQL bundle, creates
 or validates the PostgreSQL data directory, checks for a server orphaned by a
@@ -89,8 +89,8 @@ Restore is not an incremental merge. The main process stops the backend/database
 as required, creates a pre-restore safety dump, restores the selected dump, and
 uses the safety dump to roll back if restore fails. If both restore and rollback
 fail, the app reports both errors and the safety directory must be preserved for
-manual recovery. A backup is not a substitute for source-level reruns: public
-collection and WaterlooWorks use their own idempotent restart semantics.
+manual recovery. The public sync cursor is restored alongside jobs. On restart,
+the sidecar checks for missing packages.
 
 ## Build prerequisites
 
@@ -179,8 +179,7 @@ binaries while preserving the data directory.
 
 - No Docker process is started by the desktop build.
 - No externally reachable listener is created; both services bind to loopback.
-- Public job collection still needs outbound internet access and must respect
-  source-site terms and rate limits.
+- Public job updates require HTTPS access to the R2 custom domain.
 - WaterlooWorks requires a locally installed Google Chrome and interactive SSO/MFA.
 - Remote Gemini/OpenAI/DeepSeek/GLM/Qwen features use their public APIs; Ollama and
   native TTS can remain fully local.
@@ -196,10 +195,8 @@ binaries while preserving the data directory.
 | PostgreSQL major mismatch | existing user data was created by another major version | restore a compatible dump or perform the documented `pg_upgrade` procedure |
 | `postmaster.pid` already exists | a previous Electron process exited before its embedded database | restart with a build containing orphan recovery; never delete a lock for a live process |
 | `401 Desktop authentication required` | renderer request lacks the current launch token | reload through Electron; do not expose the sidecar port publicly |
-| collection status says interrupted | previous background task stopped while `running` | leave existing data in place; the scheduler performs a fresh idempotent run |
+| sync status says interrupted | previous sync stopped while `running` | restart to resume from the committed database cursor |
 | restore failed | selected custom-format dump was incompatible/corrupt or DB failed | automatic safety rollback; preserve both error logs and safety backup |
 
-Desktop background public collection defaults to enabled by the packaged Electron
-environment and runs after its initial delay, then at the configured four-hour
-interval. Its status file is atomic and diagnostic only; it is not a page-level
-checkpoint.
+The desktop checks the public manifest on startup and every four hours. The
+release build embeds the configured manifest URL. [Public feed setup and recovery](CLOUD_JOB_FEED.md)

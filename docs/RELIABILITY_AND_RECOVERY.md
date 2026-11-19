@@ -230,10 +230,10 @@ PostgreSQL backup restore follows these rules:
 ## 9. Evidence and logs
 
 Public collection writes status, query/database/enrichment statistics, and a
-bounded failure list to `logs/campaign_summary_latest.json`. Desktop mode writes
-logs under the user-data `logs/` directory. Collection status is replaced
-atomically. If startup reads a previous `running=true` state, it reports the run
-as interrupted and schedules the next complete run.
+bounded failure list to `logs/campaign_summary_latest.json` on the runner. Desktop
+sync errors appear in the user-data backend log. The sidecar records diagnostic
+status in `runtime/job-sync-status.json` and resumes from its PostgreSQL cursor
+after restart. [Public feed operations](CLOUD_JOB_FEED.md)
 
 Logs exclude API keys, passwords, MFA data, cookies, and complete resumes. For
 troubleshooting, collect timestamps, run ID, source, board, attempts,

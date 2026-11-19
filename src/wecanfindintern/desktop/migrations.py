@@ -27,8 +27,12 @@ def migration_body(contents: str, *, name: str) -> str:
 
 def apply_migrations(database_url: str, migration_dir: Path) -> list[str]:
     migration_files = sorted(migration_dir.glob("*.sql"))
+    return apply_migration_files(database_url, migration_files)
+
+
+def apply_migration_files(database_url: str, migration_files: list[Path]) -> list[str]:
     if not migration_files:
-        raise RuntimeError(f"No packaged migrations found in {migration_dir}")
+        raise RuntimeError("No migration files supplied")
 
     applied_now: list[str] = []
     # Autocommit is used between migrations. Each migration and its checksum

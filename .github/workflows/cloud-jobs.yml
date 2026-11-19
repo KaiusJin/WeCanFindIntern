@@ -1,0 +1,102 @@
+name: Public job feed
+
+on:
+  schedule:
+    - cron: '17 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      validate_database_only:
+        description: Check the Supabase connection, migrations and permissions without collecting or publishing
+        type: boolean
+        default: false
+
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-job-feed
+  cancel-in-progress: false
+
+jobs:
+  collect-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            vendor/JobSpy/pyproject.toml
+            .github/workflows/cloud-jobs.yml
+      - name: Install collector dependencies
+        run: python -m pip install ./vendor/JobSpy 'psycopg[binary,pool]>=3.2,<4' 'boto3>=1.36,<2' 'openai>=2,<3'
+      - name: Validate Supabase database
+        if: ${{ inputs.validate_database_only }}
+        env:
+          PYTHONPATH: src
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+        run: |
+          python - <<'PYTHON'
+          import hashlib
+          import os
+          import psycopg
+          from scripts.cloud.run import PUBLIC_MIGRATIONS, ROOT
+
+          try:
+              with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=20) as db:
+                  db.execute("SET TRANSACTION READ ONLY")
+                  db.execute("SET LOCAL statement_timeout = '30s'")
+                  schema, create_ok, temp_ok = db.execute("""
+                      SELECT current_schema(),
+                             has_schema_privilege('job_feed', 'USAGE, CREATE'),
+                             has_database_privilege(current_database(), 'TEMP')
+                  """).fetchone()
+                  if schema != "job_feed" or not create_ok or not temp_ok:
+                      raise RuntimeError("Expected job_feed search_path, schema USAGE/CREATE and database TEMP")
+                  applied = dict(db.execute("SELECT version, checksum FROM job_feed.schema_migrations"))
+                  files = sorted(p for p in (ROOT / "migrations").glob("*.sql")
+                                 if p.name[:4] in PUBLIC_MIGRATIONS)
+                  for path in [*files, ROOT / "scripts/cloud/schema.sql"]:
+                      if applied.get(path.name) != hashlib.sha256(path.read_bytes()).hexdigest():
+                          raise RuntimeError(f"Missing or mismatched migration: {path.name}")
+                  for name, allowed, owned in db.execute("""
+                      SELECT c.relname,
+                             has_table_privilege(c.oid, 'SELECT, INSERT, UPDATE, DELETE'),
+                             pg_has_role(c.relowner, 'USAGE')
+                      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                      WHERE n.nspname='job_feed' AND c.relkind IN ('r','p')
+                  """):
+                      if not allowed or not owned:
+                          raise RuntimeError(f"Missing table privileges or owner membership: {name}")
+                  for name, allowed in db.execute("""
+                      SELECT c.relname, has_sequence_privilege(c.oid, 'USAGE, SELECT')
+                      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                      WHERE n.nspname='job_feed' AND c.relkind='S'
+                  """):
+                      if not allowed:
+                          raise RuntimeError(f"Missing sequence privileges: {name}")
+                  db.execute("SELECT 1 FROM job_feed.jobs LIMIT 1")
+              print("Supabase connection, migration checksums and collector privileges verified (read only).")
+          except psycopg.Error as exc:
+              # Connection exceptions can contain DSN details; keep credentials out of logs.
+              raise SystemExit(f"Database validation failed: {type(exc).__name__}; SQLSTATE={exc.sqlstate}") from None
+          PYTHON
+      - name: Collect and publish
+        if: ${{ !inputs.validate_database_only }}
+        env:
+          PYTHONPATH: src
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+          R2_ENDPOINT_URL: ${{ vars.R2_ENDPOINT_URL }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DB_POOL_MAX_SIZE: '4'
+          DB_STATEMENT_TIMEOUT_MS: '60000'
+        run: python -m scripts.cloud.run

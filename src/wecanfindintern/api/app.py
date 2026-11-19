@@ -114,8 +114,8 @@ def create_app() -> FastAPI:
 
             desktop_paths = DesktopPaths.from_env()
             app.state.background_collection = BackgroundCollectionService(
-                config_path=desktop_paths.collection_plan,
-                lock_path=desktop_paths.runtime / "collection-campaign.lock",
+                manifest_url=desktop_paths.public_job_manifest,
+                lock_path=desktop_paths.runtime / "job-sync.lock",
             )
             app.state.background_collection.start()
         recommendation_index_task = asyncio.create_task(
@@ -171,9 +171,9 @@ def create_app() -> FastAPI:
     async def run_desktop_collection(request: Request) -> dict:
         service = request.app.state.background_collection
         if service is None or not service.status.enabled:
-            raise HTTPException(status_code=409, detail="Background collection is disabled.")
+            raise HTTPException(status_code=409, detail="Public job synchronization is disabled.")
         if not service.trigger():
-            raise HTTPException(status_code=409, detail="Collection is already running.")
+            raise HTTPException(status_code=409, detail="Public job sync is already running.")
         return {"accepted": True}
 
     # Keep the browser experience in the same deployable service as the data API.

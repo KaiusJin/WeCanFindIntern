@@ -37,6 +37,20 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Bundle public job manifest URL
+        env:
+          MANIFEST_URL: ${{ vars.WCFI_PUBLIC_JOBS_MANIFEST_URL }}
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          url = os.environ["MANIFEST_URL"].strip()
+          parts = urlsplit(url)
+          if parts.scheme != "https" or not parts.hostname:
+              raise SystemExit("Set repository variable WCFI_PUBLIC_JOBS_MANIFEST_URL to the HTTPS feed URL")
+          Path("config/public-job-manifest.txt").write_text(url, encoding="utf-8")
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -80,7 +94,7 @@ jobs:
           path: desktop/resources/backend/${{ matrix.target }}
           key: >-
             backend-runtime-v1-${{ matrix.target }}-${{
-            hashFiles('src/**/*.py', 'scripts/**/*.py', 'vendor/JobSpy/**/*.py',
+            hashFiles('src/**/*.py', 'scripts/**/*.py',
             'packaging/backend.spec', 'requirements*.txt', 'pyproject.toml') }}
 
       - name: Install Python dependencies

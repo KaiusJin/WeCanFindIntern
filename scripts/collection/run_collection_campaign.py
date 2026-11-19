@@ -33,12 +33,7 @@ from wecanfindintern.ingestion.jobspy_adapter import (
 )
 from wecanfindintern.ingestion.location_query import resolve_query_location
 from wecanfindintern.ingestion.pipeline import run_ingestion_pipeline
-
-if sys.platform == "win32":
-    import msvcrt
-else:
-    import fcntl
-
+from wecanfindintern.process_lock import acquire_process_lock
 
 _RETRYABLE_HTTP_STATUSES = {408, 425, 429}
 _PERMANENT_ERROR_MARKERS = ("location not parsed",)
@@ -93,24 +88,6 @@ def is_retryable_collection_error(error: Exception) -> bool:
     return True
 
 
-def acquire_process_lock(lock_file) -> None:
-    """Acquire a non-blocking process lock on Unix or Windows."""
-
-    if sys.platform == "win32":
-        try:
-            lock_file.seek(0)
-            if not lock_file.read(1):
-                lock_file.seek(0)
-                lock_file.write("0")
-                lock_file.flush()
-            lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-        except OSError as exc:
-            raise BlockingIOError from exc
-    else:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-
-
 def log(message: str, level: str = "INFO") -> None:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{now_str}] [{level}] {message}", flush=True)
@@ -123,6 +100,7 @@ async def collect_all(
     max_retries: int = 3,
     defer_linkedin_descriptions: bool = False,
     hours_old_override: int | None = None,
+    checkpoint=None,
 ) -> tuple[list[NormalizedJob], list[str], dict[str, int]]:
     collected: dict[str, NormalizedJob] = {}
     failures: list[str] = []
@@ -143,8 +121,10 @@ async def collect_all(
 
     async def _collect_single_query(definition: dict[str, Any], source: str, task_idx: int) -> None:
         async with semaphore:
+            key = (definition["name"], source)
+            cached = checkpoint.completed.get(key) if checkpoint is not None else None
             async with lock:
-                source_disabled = source in disabled_sources
+                source_disabled = cached is None and source in disabled_sources
                 if source_disabled:
                     stats["skipped"] += 1
             if source_disabled:
@@ -159,10 +139,10 @@ async def collect_all(
             seen_for_query: set[str] = set()
             maximum = definition.get("max_results_per_source", 50)
             page_size = definition.get("page_size", 25)
-            query_jobs: list[NormalizedJob] = []
+            query_jobs: list[NormalizedJob] = [] if cached is None else cached
             query_has_failed = False
 
-            while offset < maximum:
+            while cached is None and offset < maximum:
                 requested = min(page_size, maximum - offset)
                 values = dict(definition["query"])
                 overrides = values.pop("source_overrides", {})
@@ -249,6 +229,9 @@ async def collect_all(
                 seen_for_query.update(job.source_fingerprint for job in new_jobs)
                 query_jobs.extend(new_jobs)
                 offset += len(result.jobs)
+
+            if checkpoint is not None and cached is None and not query_has_failed:
+                await asyncio.to_thread(checkpoint.save, key, query_jobs)
 
             async with lock:
                 if query_has_failed:
@@ -412,6 +395,8 @@ async def run(
     batch_size: int,
     concurrency: int = 4,
     max_retries: int = 3,
+    *,
+    checkpoint=None,
 ) -> CampaignResult:
     start_time = time.monotonic()
     raw_config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -454,12 +439,15 @@ async def run(
         # until IDs have been deduplicated across every keyword query.
         collection_started = time.monotonic()
         defer_linkedin = linkedin_details_enabled(definitions)
+        if checkpoint is not None:
+            checkpoint.restore(sweep_number)
         normalized_jobs, failures, query_stats = await collect_all(
             definitions,
             concurrency=concurrency,
             max_retries=max_retries,
             defer_linkedin_descriptions=defer_linkedin,
             hours_old_override=hours_old,
+            checkpoint=checkpoint,
         )
         query_stats.update(
             {

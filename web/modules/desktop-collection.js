@@ -1,35 +1,17 @@
 const DEFAULT_POLL_INTERVAL_MS = 5000;
 
-function number(value) {
-  return Number(value || 0).toLocaleString("en-US");
-}
-
 function collectionStatusView(collection) {
   if (!collection?.enabled) return { hidden: true, state: "disabled", text: "" };
   if (collection.running) {
-    return { hidden: false, state: "running", text: "Collecting new jobs…" };
+    return { hidden: false, state: "running", text: "Syncing public jobs…" };
   }
 
   const result = collection.last_result;
   if (!result) return { hidden: true, state: "idle", text: "" };
-  const created = number(result.database_stats?.created);
-  const failed = number(result.query_stats?.failed);
-  const skipped = number(result.query_stats?.skipped);
-
   if (result.status === "success") {
-    return { hidden: false, state: "success", text: `Last sync added ${created} jobs` };
+    return { hidden: false, state: "success", text: `Public jobs up to date · v${result.version}` };
   }
-  if (result.status === "partial") {
-    const unavailable = Number(result.query_stats?.failed || 0)
-      + Number(result.query_stats?.skipped || 0);
-    return {
-      hidden: false,
-      state: "partial",
-      text: `Last sync added ${created} jobs · ${number(unavailable)} queries unavailable`,
-      title: `${failed} failed, ${skipped} skipped after a provider circuit opened`,
-    };
-  }
-  const detail = result.error_summary || collection.last_error || "Unknown collection error";
+  const detail = result.error_summary || collection.last_error || "Unknown sync error";
   return { hidden: false, state: "failed", text: "Last job sync failed", title: detail };
 }
 
@@ -67,7 +49,7 @@ function startDesktopCollectionMonitor({
       const finishedAt = collection.last_finished_at || null;
       const completedTransition = previousRunning === true && collection.running === false;
       const completedWhileHidden = Boolean(
-        lastFinishedAt && finishedAt && finishedAt !== lastFinishedAt,
+        previousRunning !== null && finishedAt && finishedAt !== lastFinishedAt,
       );
       previousRunning = collection.running;
       lastFinishedAt = finishedAt || lastFinishedAt;

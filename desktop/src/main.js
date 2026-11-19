@@ -119,10 +119,10 @@ async function requestCollection(path, options = {}) {
 
 function createTray() {
   tray = new Tray(trayImage());
-  tray.setToolTip("WeCanFindIntern — background collection active");
+  tray.setToolTip("WeCanFindIntern — public job sync");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open WeCanFindIntern", click: () => mainWindow.show() },
-    { label: "Collect jobs now", click: () => requestCollection("/desktop/collection/run", { method: "POST" }).catch(console.error) },
+    { label: "Sync public jobs now", click: () => requestCollection("/desktop/collection/run", { method: "POST" }).catch(console.error) },
     { label: "Back up database now", click: () => backups.create("manual").catch(console.error) },
     { label: "Restore database backup…", click: () => chooseRestoreBackup().catch(console.error) },
     { type: "separator" },
