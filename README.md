@@ -83,7 +83,7 @@ provider boundary.
 The desktop application packages the web experience, FastAPI service, and
 PostgreSQL 16 runtime for macOS and Windows. Services bind to loopback, provider
 keys use operating-system secure storage, backups are managed locally, and
-scheduled collection continues from the tray. The browser/development runtime
+the tray syncs versioned public jobs collected by GitHub Actions. The browser/development runtime
 uses the same UI and API contracts with a local PostgreSQL service.
 
 ## Documentation
@@ -95,6 +95,7 @@ uses the same UI and API contracts with a local PostgreSQL service.
   operations, and recovery paths.
 - [Operations and Verification](docs/modules/operations.md) — setup, collection,
   scheduling, maintenance, and acceptance commands.
+- [Cloud Job Feed](docs/CLOUD_JOB_FEED.md) — Supabase, R2, Actions configuration and usage estimates.
 - [Desktop Application](docs/DESKTOP.md) — packaging, local data, secure storage,
   backups, platform builds, and startup recovery.
 - [Reliability and Recovery](docs/RELIABILITY_AND_RECOVERY.md) — retries,

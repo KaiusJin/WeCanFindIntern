@@ -195,7 +195,10 @@ Check desktop startup failures in this order:
 1. Confirm the Electron single-instance state and packaged resources.
 2. Confirm the PostgreSQL bundle contains
    `postgres/initdb/pg_ctl/pg_isready/createdb/psql` and `vector.control`.
-3. Confirm `PG_VERSION` is 16. A major-version mismatch stops startup.
+3. Confirm `PG_VERSION` is 16. A major-version mismatch stops startup. If a
+   previous Electron process left PostgreSQL running, startup validates its
+   data-directory lock and loopback endpoint before stopping it cleanly. Never
+   remove `postmaster.pid` while its process is alive.
 4. Confirm the sidecar prints `ready` within 60 seconds.
 5. Confirm the loopback token, `WCFI_USER_DATA_DIR`, `WCFI_RESOURCE_DIR`, and
    `DATABASE_URL` are present.
@@ -227,10 +230,10 @@ PostgreSQL backup restore follows these rules:
 ## 9. Evidence and logs
 
 Public collection writes status, query/database/enrichment statistics, and a
-bounded failure list to `logs/campaign_summary_latest.json`. Desktop mode writes
-logs under the user-data `logs/` directory. Collection status is replaced
-atomically. If startup reads a previous `running=true` state, it reports the run
-as interrupted and schedules the next complete run.
+bounded failure list to `logs/campaign_summary_latest.json` on the runner. Desktop
+sync errors appear in the user-data backend log. The sidecar records diagnostic
+status in `runtime/job-sync-status.json` and resumes from its PostgreSQL cursor
+after restart. [Public feed operations](CLOUD_JOB_FEED.md)
 
 Logs exclude API keys, passwords, MFA data, cookies, and complete resumes. For
 troubleshooting, collect timestamps, run ID, source, board, attempts,

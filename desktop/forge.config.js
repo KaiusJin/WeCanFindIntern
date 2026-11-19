@@ -69,7 +69,6 @@ module.exports = {
       const required = [
         path.join(projectRoot, "web", "index.html"),
         path.join(projectRoot, "migrations", "0001_job_data.sql"),
-        path.join(projectRoot, "config", "collection_plans.json"),
         path.join(
           __dirname,
           "resources", "backend", nativeTarget, "wecanfindintern-backend",

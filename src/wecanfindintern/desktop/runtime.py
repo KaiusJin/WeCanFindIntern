@@ -45,8 +45,12 @@ class DesktopPaths:
         return self.resources / "migrations"
 
     @property
-    def collection_plan(self) -> Path:
-        return self.resources / "config" / "collection_plans.json"
+    def public_job_manifest(self) -> str:
+        url = os.getenv("WCFI_PUBLIC_JOBS_MANIFEST_URL")
+        if url:
+            return url
+        config = self.resources / "config" / "public-job-manifest.txt"
+        return config.read_text(encoding="utf-8").strip() if config.is_file() else ""
 
     @property
     def web(self) -> Path:

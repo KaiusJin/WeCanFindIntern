@@ -24,9 +24,11 @@ async function freePort() {
 }
 
 class EmbeddedPostgres {
-  constructor(paths, password) {
+  constructor(paths, password, options = {}) {
     this.paths = paths;
     this.password = password;
+    this.execFile = options.execFile || execFileAsync;
+    this.readFile = options.readFile || fsp.readFile;
     this.process = null;
     this.port = null;
     this.logFd = null;
@@ -81,9 +83,92 @@ class EmbeddedPostgres {
     return true;
   }
 
+  async previousServerIsRunning() {
+    try {
+      await this.execFile(this.bin("pg_ctl"), [
+        "status", "-D", this.paths.postgresData,
+      ], { timeout: 5000 });
+      return true;
+    } catch (error) {
+      // pg_ctl documents exit status 3 as "server is not running". Other
+      // failures (permissions, an unreadable data directory, or a timeout)
+      // must not be mistaken for a stale lock file.
+      if (error?.code === 3) return false;
+      throw new Error(
+        "Could not inspect the previous embedded PostgreSQL process.",
+        { cause: error },
+      );
+    }
+  }
+
+  async previousServerDetails() {
+    const pidPath = path.join(this.paths.postgresData, "postmaster.pid");
+    let fields;
+    try {
+      fields = (await this.readFile(pidPath, "utf8")).split(/\r?\n/);
+    } catch (error) {
+      throw new Error(
+        "The previous embedded PostgreSQL process is running, but its lock file could not be read.",
+        { cause: error },
+      );
+    }
+    const recordedData = path.resolve(fields[1] || "");
+    const expectedData = path.resolve(this.paths.postgresData);
+    const sameDataDirectory = process.platform === "win32"
+      ? recordedData.toLowerCase() === expectedData.toLowerCase()
+      : recordedData === expectedData;
+    const port = Number.parseInt(fields[3], 10);
+    if (!sameDataDirectory || !Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(
+        "The previous embedded PostgreSQL lock file does not match this app database.",
+      );
+    }
+    return { port };
+  }
+
+  async verifyPreviousServer(details) {
+    try {
+      await this.execFile(this.bin("pg_isready"), [
+        "-h", "127.0.0.1", "-p", String(details.port), "-U", "wecanfindintern",
+      ], { timeout: 3000 });
+    } catch (error) {
+      throw new Error(
+        "A previous process owns the app database lock, but it is not a responsive PostgreSQL server.",
+        { cause: error },
+      );
+    }
+  }
+
+  async recoverPreviousServer() {
+    if (!(await this.previousServerIsRunning())) return false;
+
+    const details = await this.previousServerDetails();
+    await this.verifyPreviousServer(details);
+
+    // Electron owns this data directory and has already acquired its
+    // single-instance lock. A server found here therefore belongs to an
+    // earlier app process that exited before it could finish cleanup.
+    console.warn("Stopping an orphaned embedded PostgreSQL process from a previous app run.");
+    try {
+      await this.execFile(this.bin("pg_ctl"), [
+        "stop", "-D", this.paths.postgresData, "-m", "fast", "-w", "-t", "20",
+      ], { timeout: 25000 });
+    } catch (error) {
+      // The previous server may have completed shutdown while pg_ctl was
+      // reporting an error. Recheck before failing startup.
+      if (!(await this.previousServerIsRunning())) return true;
+      throw new Error(
+        "A previous embedded PostgreSQL process is still using the app database and could not be stopped safely.",
+        { cause: error },
+      );
+    }
+    return true;
+  }
+
   async start() {
     await this.verifyBundle();
     await this.initialize();
+    await this.recoverPreviousServer();
     this.port = await freePort();
     await fsp.mkdir(this.paths.logs, { recursive: true });
     const socketDirectory = path.join(this.paths.runtime, "postgres-socket");
@@ -113,7 +198,7 @@ class EmbeddedPostgres {
     for (let attempt = 0; attempt < 120; attempt += 1) {
       if (this.process?.exitCode !== null) throw new Error("Embedded PostgreSQL exited during startup.");
       try {
-        await execFileAsync(this.bin("pg_isready"), [
+        await this.execFile(this.bin("pg_isready"), [
           "-h", "127.0.0.1", "-p", String(this.port), "-U", "wecanfindintern",
         ], { env: environment, timeout: 1000 });
         return;
@@ -126,12 +211,12 @@ class EmbeddedPostgres {
 
   async ensureApplicationDatabase() {
     const environment = { ...process.env, PGPASSWORD: this.password };
-    const { stdout } = await execFileAsync(this.bin("psql"), [
+    const { stdout } = await this.execFile(this.bin("psql"), [
       "-h", "127.0.0.1", "-p", String(this.port), "-U", "wecanfindintern",
       "-d", "postgres", "-tAc", "SELECT 1 FROM pg_database WHERE datname='wecanfindintern'",
     ], { env: environment });
     if (stdout.trim() === "1") return;
-    await execFileAsync(this.bin("createdb"), [
+    await this.execFile(this.bin("createdb"), [
       "-h", "127.0.0.1", "-p", String(this.port),
       "-U", "wecanfindintern", "wecanfindintern",
     ], { env: environment });
@@ -147,7 +232,7 @@ class EmbeddedPostgres {
       return;
     }
     try {
-      await execFileAsync(this.bin("pg_ctl"), [
+      await this.execFile(this.bin("pg_ctl"), [
         "stop", "-D", this.paths.postgresData, "-m", "fast", "-w", "-t", "20",
       ], { env: { ...process.env, PGPASSWORD: this.password }, timeout: 25000 });
     } catch (error) {

@@ -89,7 +89,10 @@ PYTHONPATH=src .venv/bin/python scripts/collection/ingest_jobspy_to_db.py \
   --location "Toronto, ON" --country-indeed Canada --results-wanted 100
 ```
 
-Run the configured campaign:
+Production public collection runs through GitHub Actions. The local commands and
+OS schedulers below support standalone development. [Cloud job feed](../CLOUD_JOB_FEED.md)
+
+Run the configured campaign locally:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/collection/run_collection_campaign.py
