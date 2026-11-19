@@ -3,43 +3,36 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const moduleSource = await readFile(
-  new URL("../../web/modules/desktop-collection.js", import.meta.url),
+  new URL("../../web/modules/desktop-job-sync.js", import.meta.url),
   "utf8",
 );
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(moduleSource).toString("base64")}`;
 const {
-  collectionStatusView,
-  startDesktopCollectionMonitor,
+  jobSyncStatusView,
+  startDesktopJobSyncMonitor,
 } = await import(moduleUrl);
 
-test("partial collection status reports created and unavailable queries", () => {
-  const view = collectionStatusView({
+test("sync status shows the installed feed version", () => {
+  const view = jobSyncStatusView({
     enabled: true,
     running: false,
-    last_result: {
-      status: "partial",
-      database_stats: { created: 1619 },
-      query_stats: { failed: 2, skipped: 74 },
-    },
+    last_result: { status: "success", version: 7 },
   });
-
-  assert.equal(view.state, "partial");
-  assert.match(view.text, /1,619 jobs/);
-  assert.match(view.text, /76 queries unavailable/);
+  assert.equal(view.state, "success");
+  assert.match(view.text, /v7/);
 });
 
-test("monitor refreshes jobs when collection transitions to finished", async () => {
+test("monitor refreshes jobs when sync transitions to finished", async () => {
   const statuses = [
-    { collection: { enabled: true, running: true, last_finished_at: null } },
+    { sync: { enabled: true, running: true, last_finished_at: null } },
     {
-      collection: {
+      sync: {
         enabled: true,
         running: false,
         last_finished_at: "2026-09-01T18:34:38Z",
         last_result: {
           status: "success",
-          database_stats: { created: 10 },
-          query_stats: { failed: 0, skipped: 0 },
+          version: 7,
         },
       },
     },
@@ -54,7 +47,7 @@ test("monitor refreshes jobs when collection transitions to finished", async () 
   };
   globalThis.window = {
     weCanFindInternDesktop: {
-      getCollectionStatus: async () => statuses.shift(),
+      getSyncStatus: async () => statuses.shift(),
     },
     setInterval: (callback) => {
       intervalCallback = callback;
@@ -63,7 +56,7 @@ test("monitor refreshes jobs when collection transitions to finished", async () 
     clearInterval: () => {},
   };
 
-  const stop = startDesktopCollectionMonitor({
+  const stop = startDesktopJobSyncMonitor({
     refreshJobs: async () => {
       refreshCount += 1;
     },

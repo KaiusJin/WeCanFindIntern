@@ -1,36 +1,36 @@
 const DEFAULT_POLL_INTERVAL_MS = 5000;
 
-function collectionStatusView(collection) {
-  if (!collection?.enabled) return { hidden: true, state: "disabled", text: "" };
-  if (collection.running) {
+function jobSyncStatusView(sync) {
+  if (!sync?.enabled) return { hidden: true, state: "disabled", text: "" };
+  if (sync.running) {
     return { hidden: false, state: "running", text: "Syncing public jobs…" };
   }
 
-  const result = collection.last_result;
+  const result = sync.last_result;
   if (!result) return { hidden: true, state: "idle", text: "" };
   if (result.status === "success") {
     return { hidden: false, state: "success", text: `Public jobs up to date · v${result.version}` };
   }
-  const detail = result.error_summary || collection.last_error || "Unknown sync error";
+  const detail = result.error_summary || sync.last_error || "Unknown sync error";
   return { hidden: false, state: "failed", text: "Last job sync failed", title: detail };
 }
 
-function renderCollectionStatus(collection) {
-  const element = document.querySelector("#collection-status-text");
+function renderJobSyncStatus(sync) {
+  const element = document.querySelector("#job-sync-status-text");
   if (!element) return;
-  const view = collectionStatusView(collection);
+  const view = jobSyncStatusView(sync);
   element.hidden = view.hidden;
   element.dataset.state = view.state;
   element.textContent = view.text;
   element.title = view.title || view.text;
 }
 
-function startDesktopCollectionMonitor({
+function startDesktopJobSyncMonitor({
   refreshJobs,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
 } = {}) {
   const desktop = window.weCanFindInternDesktop;
-  if (!desktop?.getCollectionStatus) return () => {};
+  if (!desktop?.getSyncStatus) return () => {};
 
   let previousRunning = null;
   let lastFinishedAt = null;
@@ -41,24 +41,24 @@ function startDesktopCollectionMonitor({
     if (polling || stopped || document.visibilityState === "hidden") return;
     polling = true;
     try {
-      const payload = await desktop.getCollectionStatus();
-      const collection = payload?.collection;
-      if (!collection) return;
-      renderCollectionStatus(collection);
+      const payload = await desktop.getSyncStatus();
+      const sync = payload?.sync;
+      if (!sync) return;
+      renderJobSyncStatus(sync);
 
-      const finishedAt = collection.last_finished_at || null;
-      const completedTransition = previousRunning === true && collection.running === false;
+      const finishedAt = sync.last_finished_at || null;
+      const completedTransition = previousRunning === true && sync.running === false;
       const completedWhileHidden = Boolean(
         previousRunning !== null && finishedAt && finishedAt !== lastFinishedAt,
       );
-      previousRunning = collection.running;
+      previousRunning = sync.running;
       lastFinishedAt = finishedAt || lastFinishedAt;
 
       if ((completedTransition || completedWhileHidden) && typeof refreshJobs === "function") {
         await refreshJobs();
       }
     } catch (error) {
-      console.warn("Desktop collection status unavailable:", error);
+      console.warn("Desktop job sync status unavailable:", error);
     } finally {
       polling = false;
     }
@@ -78,4 +78,4 @@ function startDesktopCollectionMonitor({
   };
 }
 
-export { collectionStatusView, startDesktopCollectionMonitor };
+export { jobSyncStatusView, startDesktopJobSyncMonitor };

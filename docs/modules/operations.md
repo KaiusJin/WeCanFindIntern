@@ -56,117 +56,27 @@ flowchart TD
 | LLM provider bases | `DEEPSEEK_API_BASE`, `GLM_API_BASE`, `QWEN_API_BASE`, `OLLAMA_API_BASE` | shared gateway |
 | Interview | `INTERVIEW_STT_MODEL`, `INTERVIEW_TTS_BACKEND` | local transcription and playback |
 | WaterlooWorks | `WATERLOOWORKS_DB_PATH`, Chrome profile/binary and URL | dedicated local source |
-| Desktop service | `WCFI_*` resource/data/log/runtime paths, token and collection interval/batch/concurrency/retry values | Electron-launched sidecar |
+| Desktop service | `WCFI_*` resource/data/log/runtime paths, token, `WCFI_JOB_SYNC_ENABLED` and `WCFI_JOB_SYNC_INTERVAL_SECONDS` | Electron-launched sidecar |
 
 `.env.example` provides the development defaults and provider placeholders.
 Desktop-owned paths and tokens are injected by Electron rather than copied into
 a user-maintained `.env` file.
 
-## Collection operations
+## Public job pipeline
 
-Inspect a provider response:
+GitHub Actions owns public job collection and R2 publication. Use the `Public job
+feed` workflow to start a complete run, or select `validate_database_only` for a
+read-only database check. See [Cloud job feed](../CLOUD_JOB_FEED.md) for setup,
+configuration, and recovery.
 
-```bash
-PYTHONPATH=src .venv/bin/python scripts/dev/inspect_jobspy_output.py \
-  --site indeed --search-term "software engineer intern" \
-  --location "Toronto, ON" --country-indeed Canada --results-wanted 5
-```
+`scripts/collection/run_collection_campaign.py` supplies the campaign implementation
+called by `scripts/cloud/run.py`; it has no standalone local command or OS scheduler.
+GitHub Actions concurrency and a PostgreSQL advisory lock prevent overlapping runs.
+The cloud runner checkpoints completed queries; a retry can reuse those results.
 
-Write raw and normalized development output:
-
-```bash
-PYTHONPATH=src .venv/bin/python scripts/dev/scrape_jobs.py \
-  --site indeed --search-term "software engineer intern" \
-  --location "Toronto, ON" --country-indeed Canada \
-  --results-wanted 20 --output-dir data/raw
-```
-
-Run one database ingest:
-
-```bash
-PYTHONPATH=src .venv/bin/python scripts/collection/ingest_jobspy_to_db.py \
-  --site indeed --search-term "software engineer intern" \
-  --location "Toronto, ON" --country-indeed Canada --results-wanted 100
-```
-
-Production public collection runs through GitHub Actions. The local commands and
-OS schedulers below support standalone development. [Cloud job feed](../CLOUD_JOB_FEED.md)
-
-Run the configured campaign locally:
-
-```bash
-PYTHONPATH=src .venv/bin/python scripts/collection/run_collection_campaign.py
-```
-
-The campaign uses a single-instance lock, retries source failures, selects a
-durable recent/full sweep from completed campaign history, and executes provider
-collection before persistence/enrichment. LinkedIn list cards are deduplicated
-before fresh detail-cache reuse or one-time detail fetches. Logs include sweep
-mode, query counts, retries, source circuits, detail cache/fetch results,
-created/merged/unchanged rows, stage durations, and enrichment results.
-
-Both checked-in operating-system runners invoke
-`backfill_recruiting_terms.py` after a successful campaign. This covers active
-jobs omitted from a recent provider window; content hashes make already checked
-title/JD pairs a no-op.
-
-The lock prevents overlap but is not a checkpoint. Page offsets are in memory;
-after interruption, rerun the campaign from the beginning. Committed batches are
-safe to retain because source fingerprints and unique constraints make the write
-path idempotent. A run with exhausted source retries but a completed database
-stage is partial, not a reason to delete the database.
-
-## macOS launchd
-
-The supplied plist schedules a campaign every four hours. Install it with:
-
-The checked-in plist and shell runner contain the repository's absolute project
-path. When the checkout is stored elsewhere, update `PROJECT_DIR` in
-`run_collection_campaign_launchd.sh` and the plist's program, working-directory,
-stdout, and stderr paths before installation.
-
-```bash
-mkdir -p logs ~/Library/LaunchAgents
-cp config/launchd/com.kaius.wecanfindintern.collector.plist \
-  ~/Library/LaunchAgents/com.kaius.wecanfindintern.collector.plist
-launchctl bootstrap gui/$(id -u) \
-  ~/Library/LaunchAgents/com.kaius.wecanfindintern.collector.plist
-```
-
-Inspect state and logs:
-
-```bash
-launchctl print gui/$(id -u)/com.kaius.wecanfindintern.collector
-tail -f logs/collector.log
-tail -f logs/collector-error.log
-```
-
-## Windows Task Scheduler
-
-The Windows equivalent of the supplied `launchd` job is Task Scheduler. From
-PowerShell, after installing the Python dependencies and creating `.env`, run:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-& .\scripts\collection\register_windows_task.ps1
-```
-
-The task runs the campaign immediately after registration and then every four
-hours. It writes to `logs\collector.log` and `logs\collector-error.log`. To
-remove it:
-
-```powershell
-& .\scripts\collection\register_windows_task.ps1 -Unregister
-```
-
-The campaign lock is cross-platform: Unix uses `fcntl` and Windows uses the
-native `msvcrt` lock, so manual and scheduled campaigns cannot overlap on
-either platform.
-
-The Windows runner expects the virtual environment at `.venv\Scripts\python.exe`.
-It runs from the project directory, where database/provider settings are loaded
-through the application's environment handling, and executes the same campaign
-and recruiting-term backfill sequence as the macOS runner.
+The desktop app only downloads the versioned feed and applies updates to its local
+database. Its tray action is **Sync public jobs now**. WaterlooWorks remains a
+separate local, authenticated source.
 
 ## Maintenance scripts
 
@@ -185,7 +95,7 @@ and recruiting-term backfill sequence as the macOS runner.
 
 Ollama is platform-neutral from the application's perspective. Install Ollama
 for Windows, start its local service, and pull the configured models before
-registering the scheduled task:
+using local AI features:
 
 ```powershell
 ollama pull qwen3-embedding:0.6b
@@ -194,8 +104,8 @@ ollama pull qwen3-embedding:0.6b
 The default endpoints remain `http://localhost:11434` for embeddings and
 `http://localhost:11434/v1` for chat-compatible requests. Keep
 `RECOMMEND_EMBEDDING_PROVIDER=Ollama`; no remote API key is required. If
-Ollama is not running, collection still completes, but recommendation indexing
-or Ollama-powered AI requests will report an unavailable-provider error.
+Ollama is not running, recommendation indexing and Ollama-powered AI requests
+report an unavailable-provider error; public feed synchronization is independent.
 
 Raw snapshots are time-partitioned. Operators should create future partitions, monitor the default partition, use `VACUUM (ANALYZE)`, inspect slow queries with `EXPLAIN (ANALYZE, BUFFERS)`, and apply a retention policy by detaching/dropping expired partitions.
 

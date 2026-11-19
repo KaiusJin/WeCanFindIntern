@@ -107,7 +107,7 @@ function trayImage() {
   return image;
 }
 
-async function requestCollection(path, options = {}) {
+async function requestJobSync(path, options = {}) {
   const response = await fetch(`${appOrigin}${path}`, {
     ...options,
     headers: { ...options.headers, "X-WeCanFindIntern-Token": desktopToken },
@@ -122,7 +122,7 @@ function createTray() {
   tray.setToolTip("WeCanFindIntern — public job sync");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open WeCanFindIntern", click: () => mainWindow.show() },
-    { label: "Sync public jobs now", click: () => requestCollection("/desktop/collection/run", { method: "POST" }).catch(console.error) },
+    { label: "Sync public jobs now", click: () => requestJobSync("/desktop/sync/run", { method: "POST" }).catch(console.error) },
     { label: "Back up database now", click: () => backups.create("manual").catch(console.error) },
     { label: "Restore database backup…", click: () => chooseRestoreBackup().catch(console.error) },
     { type: "separator" },
@@ -202,8 +202,8 @@ function shutdownAndQuit() {
 }
 
 ipcMain.handle("desktop:get-version", () => app.getVersion());
-ipcMain.handle("desktop:get-collection-status", () => requestCollection("/desktop/status"));
-ipcMain.handle("desktop:run-collection", () => requestCollection("/desktop/collection/run", { method: "POST" }));
+ipcMain.handle("desktop:get-sync-status", () => requestJobSync("/desktop/status"));
+ipcMain.handle("desktop:run-sync", () => requestJobSync("/desktop/sync/run", { method: "POST" }));
 ipcMain.handle("desktop:list-backups", () => backups.list());
 ipcMain.handle("desktop:create-backup", () => backups.create("manual"));
 ipcMain.handle("desktop:restore-backup", () => chooseRestoreBackup());

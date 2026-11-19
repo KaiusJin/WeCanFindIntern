@@ -32,6 +32,11 @@ Closing the main window hides it instead of quitting. The tray menu can reopen t
 window, sync public jobs immediately, create a backup, restore a backup, or quit.
 The packaged app registers itself for login startup with `--background`. The tray app
 keeps the local public feed current while the user session is running.
+`WCFI_JOB_SYNC_INTERVAL_SECONDS` sets its interval (default 14400 seconds);
+Electron enables it with `WCFI_JOB_SYNC_ENABLED=1`. The renderer reads
+`sync` from `/desktop/status` and triggers `/desktop/sync/run` through preload
+IPC. Public scraping and its dependencies are not part of the desktop runtime.
+The release bundles only `public-job-manifest.txt`, not cloud collection plans.
 
 Startup is fail-closed: Electron verifies the embedded PostgreSQL bundle, creates
 or validates the PostgreSQL data directory, checks for a server orphaned by a

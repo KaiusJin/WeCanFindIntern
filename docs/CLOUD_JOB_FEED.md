@@ -23,7 +23,7 @@ The `Public job feed` workflow runs the existing JobSpy campaign at minute 17 ev
 
 4. After the workflow is available on the default branch, dispatch **Public job feed**. Check the job counts and version in the Actions log, then fetch the public manifest. Compare the next scheduled run with the manual run. GitHub schedules execute on the default branch. [GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
 
-5. Build the desktop release with the manifest variable configured. The release workflow embeds the public URL. Development and manual builds can set the same environment variable at launch or supply `config/public-job-manifest.txt` in the packaged resources. Disable any separately installed legacy launchd or Windows public collection task at cutover.
+5. Build the desktop release with the manifest variable configured. The release workflow embeds the public URL. Development and manual builds can set the same environment variable at launch or supply `desktop/resources/public-job-manifest.txt` before packaging. Disable any separately installed legacy launchd or Windows public collection task at cutover.
 
 ## Publication and recovery
 

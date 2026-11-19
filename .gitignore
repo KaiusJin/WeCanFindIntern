@@ -11,6 +11,7 @@ __pycache__/
 logs/
 desktop/node_modules/
 desktop/out/
+desktop/resources/public-job-manifest.txt
 desktop/resources/backend/
 desktop/resources/postgres/
 build/pyinstaller/

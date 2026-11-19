@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
-class CollectionStatus:
+class JobSyncStatus:
     enabled: bool
     running: bool = False
     last_started_at: datetime | None = None
@@ -42,15 +42,15 @@ class CollectionStatus:
         }
 
 
-class BackgroundCollectionService:
+class BackgroundJobSyncService:
     def __init__(self, *, manifest_url: str, lock_path: Path) -> None:
         self.interval_seconds = max(
-            300, int(os.getenv("WCFI_COLLECTION_INTERVAL_SECONDS", "14400"))
+            300, int(os.getenv("WCFI_JOB_SYNC_INTERVAL_SECONDS", "14400"))
         )
         self.manifest_url = manifest_url
         self.lock_path = lock_path
         self.state_path = lock_path.with_name("job-sync-status.json")
-        enabled = os.getenv("WCFI_BACKGROUND_COLLECTION_ENABLED", "0").lower()
+        enabled = os.getenv("WCFI_JOB_SYNC_ENABLED", "0").lower()
         self.status = self._load_status(enabled=enabled in {"1", "true", "yes"})
         self._wake = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -123,10 +123,10 @@ class BackgroundCollectionService:
                     self.status.last_finished_at = datetime.now(UTC)
                 self._persist_status()
 
-    def _load_status(self, *, enabled: bool) -> CollectionStatus:
+    def _load_status(self, *, enabled: bool) -> JobSyncStatus:
         try:
             payload = json.loads(self.state_path.read_text(encoding="utf-8"))
-            status = CollectionStatus(
+            status = JobSyncStatus(
                 enabled=enabled,
                 running=False,
                 last_started_at=self._parse_datetime(payload.get("last_started_at")),
@@ -149,10 +149,10 @@ class BackgroundCollectionService:
                 status.last_finished_at = None
             return status
         except FileNotFoundError:
-            return CollectionStatus(enabled=enabled)
+            return JobSyncStatus(enabled=enabled)
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
-            logger.warning("Ignoring invalid collection status file: %s", error)
-            return CollectionStatus(enabled=enabled)
+            logger.warning("Ignoring invalid job sync status file: %s", error)
+            return JobSyncStatus(enabled=enabled)
 
     @staticmethod
     def _parse_datetime(value: object) -> datetime | None:

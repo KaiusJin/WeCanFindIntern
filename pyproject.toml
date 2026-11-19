@@ -19,7 +19,7 @@ dependencies = [
   "psycopg[binary,pool]>=3.2,<4.0",
   "pypdf>=6.0",
   "python-docx>=1.2",
-  # JobSpy is installed from vendor/JobSpy via requirements.txt (-e ./vendor/JobSpy).
+  # Cloud collection installs vendor/JobSpy separately; desktop dependencies exclude it.
   "python-multipart>=0.0.20",
   "uvicorn>=0.35,<1.0",
   "websockets>=13,<16",

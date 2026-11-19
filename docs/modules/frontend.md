@@ -121,7 +121,7 @@ The frontend does not implement an independent automatic retry loop for every
 HTTP request. It displays the server's readable error and lets the user retry;
 server-side collection, provider, and repository layers own bounded retries and
 idempotency. In desktop mode, the preload bridge is the only path for secrets,
-backup, tray, and background-collection commands.
+backup, tray, and public job synchronization commands.
 
 ## UI state scenarios
 

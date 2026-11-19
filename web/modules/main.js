@@ -3,7 +3,7 @@ import { loadSettings } from "./settings.js?v=20260902-shared-components-v1";
 import { initializeNavigation, setTabActivators, switchTab } from "./navigation.js?v=20260901-app-shell-v4";
 import { jobContextState } from "./job-context.js?v=20260831-jobboard-parity-v3";
 import { setupInfiniteScroll } from "./pagination.js?v=20260901-results-scroll-container-v1";
-import { startDesktopCollectionMonitor } from "./desktop-collection.js?v=20260901-job-sync-v1";
+import { startDesktopJobSyncMonitor } from "./desktop-job-sync.js?v=20261119-job-sync-v2";
 import {
   state,
   loadJobs,
@@ -123,7 +123,7 @@ document.addEventListener("click", (event) => {
 updateSliderFill();
 loadFacets();
 loadJobs();
-startDesktopCollectionMonitor({
+startDesktopJobSyncMonitor({
   refreshJobs: () => Promise.all([loadFacets(), loadJobs()]),
 });
 setupInfiniteScroll({
