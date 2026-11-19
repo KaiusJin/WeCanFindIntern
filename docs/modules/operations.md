@@ -81,12 +81,7 @@ separate local, authenticated source.
 ## Maintenance scripts
 
 - `init_db.py`: initialize an empty database from the final schema SQL;
-- `backfill_job_classification.py`: recalculate classification fields and version;
-- `backfill_locations.py`: recalculate structured location fields;
 - `backfill_recommendation_index.py`: rebuild lexical documents and configured embeddings;
-- `backfill_recruiting_terms.py`: run recruiting-term enrichment over existing jobs;
-- `repair_salary_anomalies.py`: find/fix salary records violating current normalization expectations;
-- `migrate_waterlooworks_to_sqlite.py`: migrate local WaterlooWorks data;
 - `export_schemas.py`: export versioned public JSON schemas;
 - `verify_data_api_contract.py`: validate public data contract;
 - `verify_frontend_api_contract.py`: verify front-end route references.

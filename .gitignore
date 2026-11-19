@@ -18,4 +18,6 @@ build/pyinstaller/
 :memory:.ses
 .uvicorn.log
 data/raw/*
-!data/raw/.gitkeep
+
+# Local task notes
+/ticket/

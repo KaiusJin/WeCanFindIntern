@@ -108,11 +108,10 @@ The result is a scored decision with matched rules and algorithm version. A conf
 
 ## Recalculation rules
 
-Derived values must be recomputable from stored canonical/raw data. When classification rules change, `scripts/maintenance/backfill_job_classification.py` recalculates current jobs and stores the new classification version. Salary and recruiting-term backfills use their own repositories and content-hash caches. A recalculation must not mutate source URLs, source IDs, source fingerprints, or raw snapshots.
-
+Derived values are computed from canonical/raw inputs by the current ingestion pipeline. During development, recreate databases and collect fresh data when classification or normalization rules change. Source URLs, source IDs, source fingerprints, and raw evidence remain the source identity.
 ```mermaid
 flowchart TD
-    A[Change deterministic rule or model version] --> B[Run owning backfill]
+    A[Change deterministic rule or model version] --> B[Recreate development database and collect fresh data]
     B --> C[Read canonical/raw inputs]
     C --> D[Recompute derived fields]
     D --> E[Persist value and version/hash]
@@ -127,7 +126,7 @@ flowchart TD
 | Unknown or ambiguous location/work mode | raw text plus unset/`unknown` structured fields | do not invent country, city, mode, or coordinates |
 | Implausible salary | absent derived salary | retain raw source evidence; never serialize zero as a substitute |
 | Multiple role signals | deterministic ordered category plus supporting tags | title controls primary role; JD tools remain skills |
-| Classification algorithm change | recomputed fields with new `classification_version` | use the classification backfill; keep source identity unchanged |
+| Classification algorithm change | recomputed fields with new `classification_version` | recreate development data using the current ingestion rules |
 | Title/JD changes after enrichment | new content hash and recalculation eligibility | caches reuse only matching inputs |
 
 ## Verification surface
