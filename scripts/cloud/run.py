@@ -12,13 +12,10 @@ import psycopg
 
 from scripts.cloud.publish import R2, publish
 from scripts.collection.run_collection_campaign import run
-from wecanfindintern.desktop.migrations import apply_migration_files
 from wecanfindintern.domain.normalized_job import NormalizedJob
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "config/collection_plans.json"
-# Explicit opt-in: desktop profile, tracker, agent and RAG migrations never run here.
-PUBLIC_MIGRATIONS = {"0001", "0002", "0003", "0004", "0005", "0007", "0008", "0028", "0030"}
 
 
 class QueryCheckpoint:
@@ -88,13 +85,6 @@ def maintain(db, *, expire):
         """)
 
 
-def migrate(url):
-    files = sorted(
-        p for p in (ROOT / "migrations").glob("*.sql") if p.name[:4] in PUBLIC_MIGRATIONS
-    )
-    apply_migration_files(url, [*files, ROOT / "scripts/cloud/schema.sql"])
-
-
 def main():
     import boto3
 
@@ -118,7 +108,6 @@ def main():
             raise RuntimeError(
                 "Expected the private job_feed schema and an exclusive campaign lock"
             )
-        migrate(url)
         started = time.monotonic()
         result = asyncio.run(run(CONFIG, 250, checkpoint=QueryCheckpoint(db, CONFIG)))
         stats = result.query_stats

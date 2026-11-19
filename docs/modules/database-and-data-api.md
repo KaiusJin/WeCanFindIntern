@@ -6,7 +6,7 @@ The application uses PostgreSQL for public jobs and all cross-feature applicatio
 
 ```mermaid
 flowchart TD
-    M[Ordered SQL migrations] --> P[(PostgreSQL + pgvector)]
+    M[Final schema SQL] --> P[(PostgreSQL + pgvector)]
     I[Ingestion repositories] --> P
     T[Tracker/Profile/Agent repositories] --> P
     P --> R[JobReadRepository]
@@ -20,32 +20,19 @@ controls minimum/maximum pool size and statement timeout. `read_repository.py`
 is the read-facing job query layer; `db/repositories/` contains ingestion,
 collection-cache, salary, and recruiting-term repositories.
 
-## Migration sequence
+## Database initialization
 
-`scripts/maintenance/migrate.py` applies the numbered SQL files in order and
-records applied versions. The resulting schema covers jobs/sources/raw
-snapshots/ingestion runs, classification and location hierarchy,
-salary/recruiting-term enrichment, Tracker, Profile, interview sessions,
-recommendation retrieval, LLM cache, Agent persistence, and Agent memory.
-Campaign definitions are file-backed in `config/collection_plans.json`, and
-campaign recovery uses a safe idempotent rerun from source.
+`database/schema.sql` contains the complete final desktop schema. Run
+`scripts/maintenance/init_db.py` against an empty database; desktop startup
+performs the same first-launch initialization. There is no migration history or
+upgrade compatibility. Recreate development databases after schema changes.
 
-Each migration is designed to be rerunnable through `IF EXISTS`, `IF NOT EXISTS`, guarded constraints, or controlled alteration checks. The migration directory README describes the operational command and ordering.
-
-```mermaid
-sequenceDiagram
-    participant O as Operator/Desktop sidecar
-    participant R as Migration runner
-    participant D as PostgreSQL
-    O->>R: apply migrations directory
-    R->>D: read schema_migrations
-    loop unapplied files in lexical order
-        R->>R: calculate file checksum
-        R->>D: execute SQL transaction
-        R->>D: record filename and checksum
-    end
-    R-->>O: applied list or checksum/SQL failure
-```
+The schema covers jobs, sources, raw snapshots, ingestion runs, classification,
+location hierarchy, salary and recruiting-term enrichment, Tracker, Profile,
+interview sessions, recommendation retrieval, LLM cache, and Agent persistence.
+Cloud collection uses `scripts/cloud/bootstrap_job_feed.sql` instead, with only
+collection tables in the private `job_feed` schema. Campaign definitions remain
+in `config/collection_plans.json`.
 
 ## Core job tables
 

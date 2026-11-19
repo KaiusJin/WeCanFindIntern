@@ -13,7 +13,7 @@ cp .env.example .env
 set -a
 source .env
 set +a
-PYTHONPATH=src .venv/bin/python scripts/maintenance/migrate.py
+PYTHONPATH=src .venv/bin/python scripts/maintenance/init_db.py
 ```
 
 Set `DATABASE_URL` in `.env`. `docker-compose.yml` exposes the development database only on localhost and persists it in the `wecanfindintern_postgres` volume.
@@ -35,10 +35,10 @@ the OS application-data directory and survives app upgrades.
 ```mermaid
 flowchart TD
     A{Runtime mode} -->|browser/development| B[Start localhost PostgreSQL]
-    B --> C[Load .env and apply migrations]
+    B --> C[Load .env and initialize database]
     C --> D[Start Uvicorn and open localhost UI]
     A -->|packaged desktop| E[Launch Electron]
-    E --> F[Embedded PostgreSQL, restore check and migrations]
+    E --> F[Embedded PostgreSQL, restore check and schema initialization]
     F --> G[Token-protected sidecar and renderer]
     D --> H[Use /health and feature checks]
     G --> H
@@ -48,7 +48,7 @@ flowchart TD
 
 | Group | Configuration surface | Used by |
 |---|---|---|
-| Database | `DATABASE_URL`, `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, `DB_STATEMENT_TIMEOUT_MS` | FastAPI, scripts, migrations |
+| Database | `DATABASE_URL`, `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, `DB_STATEMENT_TIMEOUT_MS` | FastAPI, scripts, schema initialization |
 | Recommendation vectors | `RECOMMEND_EMBEDDING_PROVIDER`, model, dimensions, key and base URL | background indexer and backfill |
 | Collection enrichment | `DEEPSEEK_*` salary/term model, enablement, timeout and API settings | salary and recruiting-term enrichment |
 | Collection sweep | `WCFI_COLLECTION_RECENT_HOURS`, `WCFI_COLLECTION_FULL_SWEEP_EVERY` | durable recent/full provider sweep selection |
@@ -80,7 +80,7 @@ separate local, authenticated source.
 
 ## Maintenance scripts
 
-- `migrate.py`: apply numbered SQL migrations;
+- `init_db.py`: initialize an empty database from the final schema SQL;
 - `backfill_job_classification.py`: recalculate classification fields and version;
 - `backfill_locations.py`: recalculate structured location fields;
 - `backfill_recommendation_index.py`: rebuild lexical documents and configured embeddings;
@@ -124,7 +124,7 @@ git diff --check
 ```mermaid
 flowchart TD
     S[Observe error, status or log] --> C{Failure owner}
-    C -->|database or migration| D[Check /health, checksum, extensions and permissions]
+    C -->|database initialization| D[Check /health, schema, extensions and permissions]
     C -->|public source| P[Inspect query retries and campaign summary]
     C -->|WaterlooWorks| W[Inspect browser auth and per-board state]
     C -->|LLM or embedding| L[Validate provider, model, key and base URL]
@@ -140,7 +140,7 @@ flowchart TD
 
 1. Check `/health` and the relevant run summary/log before changing data.
 2. Classify the failure as source, database, provider, Chrome/WaterlooWorks,
-   migration, or packaging failure.
+   schema initialization, or packaging failure.
 3. Fix configuration or the external dependency, then retry the smallest safe
    operation. For a stopped campaign or WaterlooWorks run, a full rerun is the
    supported recovery path.
@@ -166,7 +166,7 @@ matrix and detailed per-module rules.
 - LLM feature errors are provider/configuration/output errors and do not indicate database corruption.
 - Contract-check failures indicate route/frontend drift and should be fixed before merging a feature change.
 - A desktop sidecar startup timeout means the packaged backend did not emit
-  `ready` within 60 seconds; inspect backend stdout/stderr and migration logs
+  `ready` within 60 seconds; inspect backend stdout/stderr and schema initialization logs
   before retrying.
 - A desktop `PG_VERSION` mismatch is a major-version upgrade problem, not a
   transient startup failure; use the documented backup/restore or `pg_upgrade`

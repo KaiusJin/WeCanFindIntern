@@ -14,7 +14,7 @@ flowchart TD
     B -->|no| D{Which ownership boundary failed?}
     D -->|input validation| E[Correct parameters, file, or selection]
     D -->|source, browser, provider| F[Repair dependency, authentication, or configuration]
-    D -->|database or migration| G[Repair connection, permissions, extension, or checksum]
+    D -->|database initialization| G[Repair connection, permissions, extension, or schema]
     D -->|desktop runtime| H[Inspect bundle, PG_VERSION, restore, and sidecar logs]
     E --> I[Retry the smallest safe operation]
     F --> I
@@ -31,7 +31,7 @@ flowchart TD
 | Transient upstream failure | timeout, connection error, JobSpy logger ERROR | yes | wait through backoff; inspect the source failure after exhaustion |
 | Permanent input error | 422 or invalid source/filter/file | no | correct the input and resubmit |
 | One malformed record | missing field, unknown location, parse failure | usually no | preserve usable fields and record the row/posting failure |
-| Database or migration failure | `/health` failure or migration checksum mismatch | bounded within current operation | repair database, version, or permissions before writes continue |
+| Database initialization failure | `/health` failure or schema initialization error | bounded within current operation | repair database, version, or permissions before writes continue |
 | Provider configuration error | missing key/model/base URL | no | complete Settings and resubmit |
 | Provider transport error | 5xx, network failure, rate limit | bounded gateway retry | use the feature fallback if retries are exhausted |
 | Provider output error | malformed JSON or schema rejection | no | retain deterministic output or return a safe error |
@@ -97,7 +97,7 @@ not a progress file.
 - Every query succeeds, including valid empty pages: `success`.
 - At least one query exhausts retries and the database stage completes:
   `partial`, with failures retained in the summary.
-- A database, migration, or unrecoverable pipeline error marks the run failed or
+- A database initialization or unrecoverable pipeline error marks the run failed or
   partial and returns a nonzero command status. Previously committed batches
   remain.
 - Enrichment failure does not undo the canonical job. Salary checks record the
@@ -123,7 +123,7 @@ Create a backup of the current state before beginning that recovery.
 ### 3.3 Database troubleshooting
 
 1. Call `/health` and confirm that `SELECT 1` succeeds through the pool.
-2. Check migration checksums, the `vector`, `pgcrypto`, and `pg_trgm` extensions,
+2. Check the final schema, the `vector`, `pgcrypto`, and `pg_trgm` extensions,
    and database-user permissions.
 3. Inspect `database_stats`, run status, and logs in the campaign summary.
 4. For statement timeouts, reduce batch/concurrency or optimize SQL before
@@ -202,7 +202,7 @@ Check desktop startup failures in this order:
 4. Confirm the sidecar prints `ready` within 60 seconds.
 5. Confirm the loopback token, `WCFI_USER_DATA_DIR`, `WCFI_RESOURCE_DIR`, and
    `DATABASE_URL` are present.
-6. Check whether migration checksum or extension permissions stopped startup.
+6. Check whether schema initialization or extension permissions stopped startup.
 
 PostgreSQL backup restore follows these rules:
 
@@ -210,7 +210,7 @@ PostgreSQL backup restore follows these rules:
 - automatically roll back to the safety backup if restore fails;
 - restore replaces PostgreSQL data only, leaving WaterlooWorks, Chrome, models,
   and secrets intact;
-- restart after restore so migrations execute before the API listens;
+- restart after restore so schema initialization runs before the API listens;
 - use compatible backup/restore or `pg_upgrade` for a major-version change; never
   point a newer server directly at the older data directory.
 

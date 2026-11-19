@@ -82,7 +82,7 @@ Question generation accepts either a top-level JSON array or an object containin
 Recorded answers are transcribed on-device by `interview/stt.py` using faster-whisper (model configurable through `INTERVIEW_STT_MODEL`, default `base`, downloaded and cached on first use). The transcript fills the answer text when the user did not type one; a typed answer takes precedence. Transcription failures return actionable errors (missing package, empty upload, no speech detected) instead of provider errors. There is no multimodal provider lock-in: content analysis uses the common JSON gateway for every provider.
 
 Practice runs are persisted in `interview_sessions` / `interview_answers`
-(migration `0021`). `POST /sessions` generates and stores a question set;
+(defined in `database/schema.sql`). `POST /sessions` generates and stores a question set;
 `POST /sessions/stream` emits validated question progress and then persists the
 same session contract. `POST /analyze` upserts one analyzed answer per
 `(session_id, question_index)` when both are supplied. `GET /sessions`,

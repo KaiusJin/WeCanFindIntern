@@ -13,8 +13,8 @@ from pathlib import Path
 
 import uvicorn
 
-from wecanfindintern.desktop.migrations import apply_migrations
 from wecanfindintern.desktop.runtime import DesktopPaths
+from wecanfindintern.desktop.schema import initialize_database
 
 
 def _configure_logging(log_dir: Path) -> None:
@@ -82,9 +82,8 @@ def main() -> None:
     if not paths.web.is_dir():
         parser.error(f"Packaged web resources are missing: {paths.web}")
 
-    applied = apply_migrations(database_url, paths.migrations)
-    if applied:
-        logging.getLogger(__name__).info("Applied migrations: %s", ", ".join(applied))
+    if initialize_database(database_url, paths.schema):
+        logging.getLogger(__name__).info("Initialized desktop database")
     if sys.platform == "win32":
         # psycopg async connections require a selector loop on Windows.
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

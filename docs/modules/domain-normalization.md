@@ -92,7 +92,7 @@ remaining signaled candidates. The repository stores the checked description
 hash, `complete`/`not_found`/`error` status, check time, and model so unchanged
 definitive results are reused and provider errors remain retryable.
 
-Annualization uses hourly × 2,080, daily × 260, weekly × 52, monthly × 12, and yearly/annual × 1. The salary interval integrity migration enforces interval-specific amount ranges and annual minimum/maximum ordering. Unknown or invalid compensation is kept absent instead of being converted to a misleading zero.
+Annualization uses hourly × 2,080, daily × 260, weekly × 52, monthly × 12, and yearly/annual × 1. The database constraints enforce interval-specific amount ranges and annual minimum/maximum ordering. Unknown or invalid compensation is kept absent instead of being converted to a misleading zero.
 
 ## Recruiting term normalization
 
