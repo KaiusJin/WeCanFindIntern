@@ -41,8 +41,8 @@ class DesktopPaths:
         return self.waterlooworks / "chrome-profile"
 
     @property
-    def migrations(self) -> Path:
-        return self.resources / "migrations"
+    def schema(self) -> Path:
+        return self.resources / "database" / "schema.sql"
 
     @property
     def public_job_manifest(self) -> str:

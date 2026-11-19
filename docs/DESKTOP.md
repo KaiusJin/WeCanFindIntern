@@ -15,7 +15,7 @@ flowchart TD
     E --> S[OS safeStorage]
     E --> P[Embedded PostgreSQL 16<br/>random loopback port]
     E --> B[Packaged Python/FastAPI sidecar<br/>random loopback port]
-    B --> M[Checksummed migrations]
+    B --> M[First-launch schema initialization]
     B --> W[Static web and token-protected API]
     B --> C[Public job feed synchronization]
     B --> X[Recommendation index maintenance]
@@ -44,7 +44,7 @@ previous app process, chooses a free loopback port, starts the database, starts
 the Python sidecar, waits up to 60 seconds for its JSON
 `ready` line, and only then navigates the renderer. The sidecar rejects non-loopback
 bind addresses, requires the desktop token and both resource/data directories,
-applies migrations before serving, and logs startup failures to the user data
+initializes an empty database before serving, and logs startup failures to the user data
 directory. Orphan recovery validates the recorded data directory and loopback
 PostgreSQL endpoint before issuing a fast shutdown; a mismatched or unresponsive
 lock fails closed instead of deleting `postmaster.pid` or signaling an unknown
@@ -59,8 +59,8 @@ Electron owns the standard per-user application-data directory:
 
 It contains PostgreSQL data, WaterlooWorks SQLite/Chrome profile, logs, model cache,
 encrypted secrets, backups, and runtime locks. Application upgrades do not replace
-this directory. Ordered SQL migrations run before the API accepts traffic, and
-applied migration checksums prevent silent schema drift.
+this directory. The final schema SQL initializes an empty database before the API accepts traffic.
+Existing databases are not upgraded; recreate development databases after schema changes.
 
 AI API keys are encrypted through Electron `safeStorage` (macOS Keychain and Windows
 DPAPI-backed storage). Non-secret AI preferences remain in renderer local storage.
@@ -195,7 +195,7 @@ binaries while preserving the data directory.
 
 | Signal | Meaning | Action |
 |---|---|---|
-| app opens but API is unavailable | backend sidecar exited or timed out | inspect `logs/backend-*.log`, then retry after fixing resources/migrations |
+| app opens but API is unavailable | backend sidecar exited or timed out | inspect `logs/backend-*.log`, then retry after fixing resources/schema initialization |
 | PostgreSQL bundle incomplete | native runtime or pgvector artifact missing | rebuild the platform bundle; do not use a host data directory |
 | PostgreSQL major mismatch | existing user data was created by another major version | restore a compatible dump or perform the documented `pg_upgrade` procedure |
 | `postmaster.pid` already exists | a previous Electron process exited before its embedded database | restart with a build containing orphan recovery; never delete a lock for a live process |

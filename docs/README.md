@@ -30,7 +30,7 @@ flowchart LR
 | Document | Scope |
 |---|---|
 | [Technical Documentation](TECHNICAL_DOCUMENTATION.md) | Runtime topology, ownership boundaries, cross-module data flows, concurrency, security, and end-to-end scenarios |
-| [Operations and Verification](modules/operations.md) | Setup, migrations, application startup, collection, scheduling, maintenance, and acceptance commands |
+| [Operations and Verification](modules/operations.md) | Setup, schema initialization, application startup, collection, scheduling, maintenance, and acceptance commands |
 | [Desktop Application](DESKTOP.md) | Electron lifecycle, embedded PostgreSQL/FastAPI, local data, secure storage, backups, platform builds, and recovery |
 | [Reliability and Recovery](RELIABILITY_AND_RECOVERY.md) | Outcome classification, retry rules, idempotent reruns, transaction boundaries, concurrency conflicts, and recovery actions |
 
@@ -40,7 +40,7 @@ flowchart LR
 |---|---|
 | [Job Ingestion](modules/job-ingestion.md) | JobSpy boundary, recent/full sweep cadence, LinkedIn detail reuse, paging, retry, normalization, persistence, and enrichment |
 | [Domain and Data Normalization](modules/domain-normalization.md) | Canonical model, text/location/work-mode normalization, classification, salary, recruiting term, and dedupe inputs |
-| [Database and Data API](modules/database-and-data-api.md) | PostgreSQL schema, migrations, repositories, query construction, cursor pagination, facets, and transaction behavior |
+| [Database and Data API](modules/database-and-data-api.md) | PostgreSQL schema, initialization, repositories, query construction, cursor pagination, facets, and transaction behavior |
 | [WaterlooWorks](modules/waterlooworks.md) | Dedicated Chrome, authenticated list/detail APIs, five-board state, known-ID reuse, SQLite, submitted sync, and Tracker handoff |
 | [Profile and Resume Import](modules/profile.md) | `profile.v1`, PDF/LaTeX security, parsing, draft review, confirmation, persistence, and API |
 | [Application Tracker](modules/tracker.md) | Source identities, bookmarks, stages, snapshots, events, bulk actions, export, and Agent integration |
@@ -59,13 +59,13 @@ inside `src/wecanfindintern/` or `web/`.
 | [Data API](DATA_API.md) | Public job routes, filters, pagination, responses, and performance behavior |
 | [Job Data Taxonomy](JOB_DATA_TAXONOMY.md) | Current canonical vocabulary and display semantics |
 | [JobSpy Integration](JOBSPY_INTEGRATION.md) | Vendored source baseline, stable DataFrame boundary, query restrictions, and upgrade verification |
-| [Database Migrations](../migrations/README.md) | Ordered migration runner, checksums, extensions, partitions, and deployment rules |
+| [Database Schema](../database/README.md) | Final schema SQL, initialization, extensions, and partitions |
 | [Desktop Native Resources](../desktop/resources/README.md) | Platform resource directory contract used by Electron packaging |
 | [`schemas/`](../schemas/) | Versioned JSON Schemas for the public job list/detail/facets contracts |
 
 ## Authority and update rule
 
-Runtime code, SQL migrations, versioned schemas, route models, configuration,
+Runtime code, final schema SQL, versioned schemas, route models, configuration,
 and executable checks are the implementation evidence. Documentation changes
 must update the system guide, owning module guide, contract reference, and
 operator procedure together when a change crosses those boundaries. Every

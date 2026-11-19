@@ -49,11 +49,11 @@ src/wecanfindintern/
 ├── tracker/             application snapshots, stages, events, source identity
 ├── agent/               planning, tools, analysis, approval, recommendation, memory
 ├── llm/                 provider gateway, JSON parsing, prompts, shared cache
-└── desktop/             sidecar server, migrations, security, resident collection
+└── desktop/             sidecar server, schema initialization, security, resident collection
 
 web/                     static HTML, CSS, and native ES modules
 desktop/                 Electron main/preload, PostgreSQL, backups, packaging
-migrations/              ordered, checksummed PostgreSQL schema migrations
+database/                final desktop PostgreSQL schema
 schemas/                 exported public-job JSON Schemas
 scripts/                 collection, maintenance, packaging, and verification
 config/                  cloud collection catalog
@@ -63,7 +63,7 @@ tests/                   unit, route, frontend, repository, and integration chec
 
 Dependencies flow from routes and scripts into application services, domain
 functions, and repositories. Provider DataFrames remain inside the ingestion
-boundary. SQL is owned by repositories and migrations. LLM output passes typed
+boundary. SQL is owned by repositories and schema definitions. LLM output passes typed
 validation and receives neither a database connection nor browser credentials.
 
 ## 3. Runtime topology
@@ -103,7 +103,7 @@ sequenceDiagram
     E->>P: bind a random loopback port with SCRAM authentication
     E->>E: apply a pending restore with a pre-restore safety backup
     E->>B: spawn with resource paths, DATABASE_URL, and a per-launch token
-    B->>P: apply checksummed migrations
+    B->>P: initialize empty database
     B-->>E: emit ready with the random loopback origin
     E->>R: create the sandboxed window and load that exact origin
     R->>B: send API requests with the injected desktop token
@@ -494,7 +494,7 @@ flowchart LR
     V[Create Python environment] --> I[Install requirements]
     I --> P[Start PostgreSQL]
     P --> E[Load environment]
-    E --> M[Apply ordered migrations]
+    E --> M[Initialize empty database]
     M --> A[Start FastAPI]
     A --> H[Check health]
     H --> C[Run code, frontend, contract, and test gates]
@@ -502,8 +502,8 @@ flowchart LR
 
 The executable commands, scheduler setup, maintenance procedures, and failure
 interpretation are in [Operations and Verification](modules/operations.md).
-Migrations run in lexical filename order, record checksums in
-`schema_migrations`, and reject a changed applied file.
+An empty desktop database is initialized from `database/schema.sql`.
+Development databases must be recreated after schema changes; there is no upgrade chain.
 
 Repository acceptance entry points are:
 
@@ -535,4 +535,4 @@ migrated PostgreSQL database.
 - [Data API](DATA_API.md)
 - [Job Data Taxonomy](JOB_DATA_TAXONOMY.md)
 - [JobSpy Integration](JOBSPY_INTEGRATION.md)
-- [Database Migrations](../migrations/README.md)
+- [Database Schema](../database/README.md)

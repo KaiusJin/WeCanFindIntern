@@ -4,7 +4,7 @@ The `Public job feed` workflow runs the existing JobSpy campaign at minute 17 ev
 
 ## Provision once
 
-1. Use the existing `job_collector` login in the dedicated Supabase jobs project. For a new project, create it with `CREATE ROLE job_collector LOGIN` and set its password separately. Run [bootstrap_job_feed.sql](../scripts/cloud/bootstrap_job_feed.sql) in SQL Editor as `postgres`. It uses the existing password and grants schema creation privileges within `job_feed` for migrations and monthly partitions. If you ran the earlier bootstrap, it also transfers ownership of the previous collector's feed objects. Keep `job_feed` outside the Data API exposed schemas.
+1. In a fresh Supabase jobs project, create the `job_collector` login with `CREATE ROLE job_collector LOGIN` and set its password separately. Run the complete [bootstrap_job_feed.sql](../scripts/cloud/bootstrap_job_feed.sql) once in SQL Editor as `postgres`. This is the final cloud schema, with no migration chain or legacy ownership conversion. Keep `job_feed` outside the Data API exposed schemas. The collector uses this provisioned schema without running DDL upgrades at startup.
 
    Use the IPv4 **session pooler** DSN on port 5432, username `job_collector.<project-ref>`, URL-encoded password and `sslmode=require`. Session pooling supports the collector's advisory lock and prepared statements. [Supabase connection guide](https://supabase.com/docs/guides/database/connecting-to-postgres)
 

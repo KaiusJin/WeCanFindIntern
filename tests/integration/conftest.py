@@ -6,14 +6,13 @@ Run with::
 
 Skipped automatically (without failing unit-test runs) when the test
 database is not reachable. Point ``TEST_DATABASE_URL`` at a disposable
-database — the suite applies all migrations and truncates tables between
+database — the suite initializes the schema and truncates tables between
 tests, so never point it at a database with data you care about.
 """
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 from pathlib import Path
 
@@ -22,12 +21,13 @@ import pytest
 
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
+from wecanfindintern.desktop.schema import initialize_database
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql://wecanfindintern:wecanfindintern@127.0.0.1:5432/wecanfindintern_test",
 )
-MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
+SCHEMA_PATH = Path(__file__).resolve().parents[2] / "database" / "schema.sql"
 
 pytestmark = pytest.mark.db
 
@@ -38,35 +38,6 @@ def _database_available(url: str) -> bool:
             return True
     except psycopg.OperationalError:
         return False
-
-
-def _apply_migrations() -> None:
-    """Mirror scripts/maintenance/migrate.py for a disposable database."""
-
-    with psycopg.connect(TEST_DATABASE_URL) as connection:
-        connection.execute(
-            """CREATE TABLE IF NOT EXISTS schema_migrations (
-                version TEXT PRIMARY KEY,
-                checksum CHAR(64) NOT NULL,
-                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );"""
-        )
-        applied = {
-            row[0]
-            for row in connection.execute(
-                "SELECT version FROM schema_migrations;"
-            ).fetchall()
-        }
-        for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            if path.name in applied:
-                continue
-            checksum = hashlib.sha256(path.read_bytes()).hexdigest()
-            connection.execute(path.read_text(encoding="utf-8"), prepare=False)
-            connection.execute(
-                "INSERT INTO schema_migrations (version, checksum) VALUES (%s, %s);",
-                (path.name, checksum),
-            )
-        connection.commit()
 
 
 @pytest.fixture(scope="session")
@@ -82,7 +53,7 @@ def event_loop():
 def database(event_loop):
     if not _database_available(TEST_DATABASE_URL):
         pytest.skip("TEST_DATABASE_URL is not reachable — skipping db integration tests")
-    _apply_migrations()
+    initialize_database(TEST_DATABASE_URL, SCHEMA_PATH)
     database = Database(Settings(database_url=TEST_DATABASE_URL))
     event_loop.run_until_complete(database.open())
     yield database
