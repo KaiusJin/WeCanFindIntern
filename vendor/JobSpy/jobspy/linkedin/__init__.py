@@ -60,7 +60,6 @@ class LinkedIn(Scraper):
         self.session = create_session(
             proxies=self.proxies,
             ca_cert=ca_cert,
-            is_tls=False,
             has_retry=True,
             delay=5,
             clear_cookies=True,

@@ -34,7 +34,7 @@ def test_permanent_provider_failure_opens_circuit(monkeypatch) -> None:
         raise RuntimeError("response status code 403")
 
     monkeypatch.setattr(campaign, "scrape_checked", fail_permanently)
-    definitions = [_definition(f"query-{index}", "zip_recruiter") for index in range(3)]
+    definitions = [_definition(f"query-{index}", "indeed") for index in range(3)]
 
     jobs, failures, stats = asyncio.run(
         campaign.collect_all(definitions, concurrency=1, max_retries=3)
@@ -112,7 +112,7 @@ def test_campaign_result_payload_is_json_ready() -> None:
             "failed": 1,
         },
         query_stats={"retried": 0, "succeeded": 2, "failed": 1, "skipped": 4},
-        failures=("zip_recruiter:403",),
+        failures=("indeed:403",),
     )
 
     payload = result.payload()

@@ -59,20 +59,18 @@ class JobType(Enum):
 
 class Country(Enum):
     """
-    Gets the subdomain for Indeed and Glassdoor.
-    The second item in the tuple is the subdomain (and API country code if there's a ':' separator) for Indeed
-    The third item in the tuple is the subdomain (and tld if there's a ':' separator) for Glassdoor
+    Indeed country names, subdomains, and API country codes.
     """
 
-    ARGENTINA = ("argentina", "ar", "com.ar")
-    AUSTRALIA = ("australia", "au", "com.au")
-    AUSTRIA = ("austria", "at", "at")
+    ARGENTINA = ("argentina", "ar")
+    AUSTRALIA = ("australia", "au")
+    AUSTRIA = ("austria", "at")
     BAHRAIN = ("bahrain", "bh")
     BANGLADESH = ("bangladesh", "bd")  # Added Bangladesh
-    BELGIUM = ("belgium", "be", "fr:be")
+    BELGIUM = ("belgium", "be")
     BULGARIA = ("bulgaria", "bg")
-    BRAZIL = ("brazil", "br", "com.br")
-    CANADA = ("canada", "ca", "ca")
+    BRAZIL = ("brazil", "br")
+    CANADA = ("canada", "ca")
     CHILE = ("chile", "cl")
     CHINA = ("china", "cn")
     COLOMBIA = ("colombia", "co")
@@ -85,27 +83,27 @@ class Country(Enum):
     EGYPT = ("egypt", "eg")
     ESTONIA = ("estonia", "ee")
     FINLAND = ("finland", "fi")
-    FRANCE = ("france", "fr", "fr")
-    GERMANY = ("germany", "de", "de")
+    FRANCE = ("france", "fr")
+    GERMANY = ("germany", "de")
     GREECE = ("greece", "gr")
-    HONGKONG = ("hong kong", "hk", "com.hk")
+    HONGKONG = ("hong kong", "hk")
     HUNGARY = ("hungary", "hu")
-    INDIA = ("india", "in", "co.in")
+    INDIA = ("india", "in")
     INDONESIA = ("indonesia", "id")
-    IRELAND = ("ireland", "ie", "ie")
+    IRELAND = ("ireland", "ie")
     ISRAEL = ("israel", "il")
-    ITALY = ("italy", "it", "it")
+    ITALY = ("italy", "it")
     JAPAN = ("japan", "jp")
     KUWAIT = ("kuwait", "kw")
     LATVIA = ("latvia", "lv")
     LITHUANIA = ("lithuania", "lt")
     LUXEMBOURG = ("luxembourg", "lu")
-    MALAYSIA = ("malaysia", "malaysia:my", "com")
-    MALTA = ("malta", "malta:mt", "mt")
-    MEXICO = ("mexico", "mx", "com.mx")
+    MALAYSIA = ("malaysia", "malaysia:my")
+    MALTA = ("malta", "malta:mt")
+    MEXICO = ("mexico", "mx")
     MOROCCO = ("morocco", "ma")
-    NETHERLANDS = ("netherlands", "nl", "nl")
-    NEWZEALAND = ("new zealand", "nz", "co.nz")
+    NETHERLANDS = ("netherlands", "nl")
+    NEWZEALAND = ("new zealand", "nz")
     NIGERIA = ("nigeria", "ng")
     NORWAY = ("norway", "no")
     OMAN = ("oman", "om")
@@ -118,27 +116,24 @@ class Country(Enum):
     QATAR = ("qatar", "qa")
     ROMANIA = ("romania", "ro")
     SAUDIARABIA = ("saudi arabia", "sa")
-    SINGAPORE = ("singapore", "sg", "sg")
+    SINGAPORE = ("singapore", "sg")
     SLOVAKIA = ("slovakia", "sk")
     SLOVENIA = ("slovenia", "sl")
     SOUTHAFRICA = ("south africa", "za")
     SOUTHKOREA = ("south korea", "kr")
-    SPAIN = ("spain", "es", "es")
+    SPAIN = ("spain", "es")
     SWEDEN = ("sweden", "se")
-    SWITZERLAND = ("switzerland", "ch", "de:ch")
+    SWITZERLAND = ("switzerland", "ch")
     TAIWAN = ("taiwan", "tw")
     THAILAND = ("thailand", "th")
     TURKEY = ("türkiye,turkey", "tr")
     UKRAINE = ("ukraine", "ua")
     UNITEDARABEMIRATES = ("united arab emirates", "ae")
-    UK = ("uk,united kingdom", "uk:gb", "co.uk")
-    USA = ("usa,us,united states", "www:us", "com")
+    UK = ("uk,united kingdom", "uk:gb")
+    USA = ("usa,us,united states", "www:us")
     URUGUAY = ("uruguay", "uy")
     VENEZUELA = ("venezuela", "ve")
-    VIETNAM = ("vietnam", "vn", "com")
-
-    # internal for ziprecruiter
-    US_CANADA = ("usa/ca", "www")
+    VIETNAM = ("vietnam", "vn")
 
     # internal for linkedin
     WORLDWIDE = ("worldwide", "www")
@@ -149,20 +144,6 @@ class Country(Enum):
         if subdomain and api_country_code:
             return subdomain, api_country_code.upper()
         return self.value[1], self.value[1].upper()
-
-    @property
-    def glassdoor_domain_value(self):
-        if len(self.value) == 3:
-            subdomain, _, domain = self.value[2].partition(":")
-            if subdomain and domain:
-                return f"{subdomain}.glassdoor.{domain}"
-            else:
-                return f"www.glassdoor.{self.value[2]}"
-        else:
-            raise Exception(f"Glassdoor is not available for {self.name}")
-
-    def get_glassdoor_url(self):
-        return f"https://{self.glassdoor_domain_value}/"
 
     @classmethod
     def from_string(cls, country_str: str):
@@ -272,7 +253,7 @@ class JobPost(BaseModel):
     # LinkedIn only atm
     job_function: str | None = None
 
-    # Naukri specific
+    # Optional source metadata
     skills: list[str] | None = None  #from tagsAndSkills
     experience_range: str | None = None  #from experienceText
     company_rating: float | None = None  #from ambitionBoxData.AggregateRating
@@ -287,12 +268,6 @@ class JobResponse(BaseModel):
 class Site(Enum):
     LINKEDIN = "linkedin"
     INDEED = "indeed"
-    ZIP_RECRUITER = "zip_recruiter"
-    GLASSDOOR = "glassdoor"
-    GOOGLE = "google"
-    BAYT = "bayt"
-    NAUKRI = "naukri"
-    BDJOBS = "bdjobs"  # Add this line
 
 
 class SalarySource(Enum):
@@ -303,7 +278,6 @@ class SalarySource(Enum):
 class ScraperInput(BaseModel):
     site_type: list[Site]
     search_term: str | None = None
-    google_search_term: str | None = None
 
     location: str | None = None
     country: Country | None = Country.USA

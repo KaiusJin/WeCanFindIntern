@@ -30,8 +30,8 @@ upgrade compatibility. Recreate development databases after schema changes.
 The schema covers jobs, sources, raw snapshots, ingestion runs, classification,
 location hierarchy, salary and recruiting-term enrichment, Tracker, Profile,
 interview sessions, recommendation retrieval, LLM cache, and Agent persistence.
-Cloud collection uses `scripts/cloud/bootstrap_job_feed.sql` instead, with only
-collection tables in the private `job_feed` schema. Campaign definitions remain
+Cloud collection uses the already-provisioned private `job_feed` schema, which
+contains only collection tables. Campaign definitions remain
 in `config/collection_plans.json`.
 
 ## Core job tables
@@ -65,7 +65,7 @@ Stores source payloads against an ingestion run and source record. The table is 
 
 ### Dedupe/status tables
 
-`dedupe_candidates` records indexed candidate pairs and comparison state. `dedupe_decisions` records scores, rule hits, algorithm version, and resulting canonical job. `job_status_history` records active/possibly-closed/closed/expired changes.
+Duplicate candidates are compared during ingestion without a separate candidate table. `dedupe_decisions` records scores, rule hits, algorithm version, and resulting canonical job. `job_status_history` records active/possibly-closed/closed/expired changes.
 
 ## Application feature tables
 

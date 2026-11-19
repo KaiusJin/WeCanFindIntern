@@ -6,7 +6,6 @@ from itertools import cycle
 
 import numpy as np
 import requests
-import tls_client
 import urllib3
 from markdownify import markdownify as md
 from requests.adapters import HTTPAdapter, Retry
@@ -86,45 +85,25 @@ class RequestsRotating(RotatingProxySession, requests.Session):
         return requests.Session.request(self, method, url, **kwargs)
 
 
-class TLSRotating(RotatingProxySession, tls_client.Session):
-    def __init__(self, proxies=None):
-        RotatingProxySession.__init__(self, proxies=proxies)
-        tls_client.Session.__init__(self, random_tls_extension_order=True)
-
-    def execute_request(self, *args, **kwargs):
-        if self.proxy_cycle:
-            next_proxy = next(self.proxy_cycle)
-            if next_proxy["http"] != "http://localhost":
-                self.proxies = next_proxy
-            else:
-                self.proxies = {}
-        response = tls_client.Session.execute_request(self, *args, **kwargs)
-        response.ok = response.status_code in range(200, 400)
-        return response
-
 
 def create_session(
     *,
     proxies: dict | str | None = None,
     ca_cert: str | None = None,
-    is_tls: bool = True,
     has_retry: bool = False,
     delay: int = 1,
     clear_cookies: bool = False,
 ) -> requests.Session:
     """
-    Creates a requests session with optional tls, proxy, and retry settings.
+    Creates a requests session with optional proxy and retry settings.
     :return: A session object
     """
-    if is_tls:
-        session = TLSRotating(proxies=proxies)
-    else:
-        session = RequestsRotating(
-            proxies=proxies,
-            has_retry=has_retry,
-            delay=delay,
-            clear_cookies=clear_cookies,
-        )
+    session = RequestsRotating(
+        proxies=proxies,
+        has_retry=has_retry,
+        delay=delay,
+        clear_cookies=clear_cookies,
+    )
 
     if ca_cert:
         session.verify = ca_cert
@@ -353,7 +332,7 @@ desired_order = [
     "company_num_employees",
     "company_revenue",
     "company_description",
-    # naukri-specific fields
+    # Optional source metadata
     "skills",
     "experience_range",
     "company_rating",

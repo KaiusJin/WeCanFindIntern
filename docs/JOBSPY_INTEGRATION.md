@@ -114,3 +114,9 @@ When upgrading JobSpy:
 The upgrade is complete only when the vendored source version/commit, adapter
 column contract, normalization tests, cloud collection, database ingest, and
 public schema all describe the same provider shape.
+
+## Vendored provider scope
+
+The local JobSpy package includes only Indeed and LinkedIn. Other upstream
+collectors, their query options, release configuration, and development tooling
+are removed. The upstream MIT license is retained.

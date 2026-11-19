@@ -1,10 +1,10 @@
 # Public job feed
 
-The `Public job feed` workflow runs the existing JobSpy campaign at minute 17 every four hours UTC and accepts manual dispatches. The collector, its cache and the exporter use a private PostgreSQL schema. Desktop installations read a public HTTPS feed and serve jobs from their own PostgreSQL database.
+The `Public job feed` workflow runs the existing JobSpy campaign at 00:17 and 12:17 UTC every day and accepts manual dispatches. The collector, its cache and the exporter use a private PostgreSQL schema. Desktop installations read a public HTTPS feed and serve jobs from their own PostgreSQL database.
 
 ## Provision once
 
-1. In a fresh Supabase jobs project, create the `job_collector` login with `CREATE ROLE job_collector LOGIN` and set its password separately. Run the complete [bootstrap_job_feed.sql](../scripts/cloud/bootstrap_job_feed.sql) once in SQL Editor as `postgres`. This is the final cloud schema, with no migration chain or legacy ownership conversion. Keep `job_feed` outside the Data API exposed schemas. The collector uses this provisioned schema without running DDL upgrades at startup.
+1. Use the provisioned Supabase jobs project and its `job_collector` login. Keep `job_feed` outside the Data API exposed schemas. The collector uses this schema without creating tables or running DDL upgrades at startup. Cloud database provisioning SQL is not stored in this repository.
 
    Use the IPv4 **session pooler** DSN on port 5432, username `job_collector.<project-ref>`, URL-encoded password and `sslmode=require`. Session pooling supports the collector's advisory lock and prepared statements. [Supabase connection guide](https://supabase.com/docs/guides/database/connecting-to-postgres)
 
@@ -37,13 +37,13 @@ The desktop checks on startup, every four hours while running, and from the tray
 
 ## Free-tier sizing and monitoring
 
-The last 30 historical campaign summaries in the development collector log averaged 887 unique source records and 131 newly created jobs per run. At six runs a day, a 30-day month has 180 runs. The table gives a planning envelope. Row sizes, client population and provider response sizes are assumptions until the hosted run produces measurements.
+The last 30 historical campaign summaries in the development collector log averaged 887 unique source records and 131 newly created jobs per run. At two runs a day, a 30-day month has 60 runs. The table gives a planning envelope. Row sizes, client population and provider response sizes are assumptions until the hosted run produces measurements.
 
 | Resource | Example monthly load | Free allowance |
 | --- | --- | --- |
-| Supabase database | 16,506 retained jobs at 16 KiB each including sources/indexes, plus 100 MB for base tables, checkpoints and headroom ≈ 370 MB. This assumes 21 days from first observation to purge on average. | 500 MB/project |
-| Supabase egress | 20 MB/run for all query results, including cache reads, enrichment and export ≈ 3.6 GB. The 5 GB budget allows about 27.8 MB/run if this is the only workload. | 5 GB |
-| R2 Standard storage | At 30 MB/snapshot and 1 MB/delta, 14 snapshots and 54 deltas including the cleanup grace period occupy about 474 MB. | 10 GB-month |
-| R2 requests | Roughly 900 Class A requests at three PUTs and two single-page LISTs per changed run. 1,000 clients polling six times/day and fetching one delta per poll use about 360,000 Class B requests before startup checks and retries. | 1 million A and 10 million B |
+| Supabase database | 5,502 retained jobs at 16 KiB each including sources/indexes, plus 100 MB for base tables, checkpoints and headroom ≈ 190 MB. This assumes 21 days from first observation to purge on average. | 500 MB/project |
+| Supabase egress | 20 MB/run for all query results, including cache reads, enrichment and export ≈ 1.2 GB. The 5 GB budget allows about 83.3 MB/run if this is the only workload. | 5 GB |
+| R2 Standard storage | At 30 MB/snapshot and 1 MB/delta, 6 snapshots and 46 deltas including the cleanup grace period occupy about 226 MB. | 10 GB-month |
+| R2 requests | Roughly 300 Class A requests at three PUTs and two single-page LISTs per changed run. 1,000 clients polling six times/day and fetching one delta per poll use about 360,000 Class B requests before startup checks and retries. | 1 million A and 10 million B |
 
 Use the Actions log for collection duration, source job count, unavailable query rate, changed jobs, package sizes, database bytes and retained R2 bytes. In Supabase **Organization → Usage**, compare the database size and metered egress over several runs, including a full sweep. In **R2 → bucket → Metrics**, compare storage and Class A/B operations with the estimate. A sustained average above the modeled retention or transfer budget needs a new capacity calculation. [Supabase allowances](https://supabase.com/docs/guides/platform/billing-on-supabase) · [R2 allowances](https://developers.cloudflare.com/r2/pricing/)

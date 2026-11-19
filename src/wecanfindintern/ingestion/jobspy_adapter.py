@@ -35,18 +35,9 @@ __all__ = [
     "merge_linkedin_details",
 ]
 
-SUPPORTED_SITES = {
-    "linkedin",
-    "indeed",
-    "zip_recruiter",
-    "glassdoor",
-    "google",
-    "bayt",
-    "naukri",
-    "bdjobs",
-}
+SUPPORTED_SITES = {"indeed", "linkedin"}
 
-# Mirrors jobspy.util.desired_order in JobSpy 1.1.82.
+# Mirrors the vendored jobspy.util.desired_order.
 JOBSPY_COLUMNS: tuple[str, ...] = (
     "id",
     "site",
@@ -90,7 +81,6 @@ class JobSpyQuery(BaseModel):
 
     sites: list[str] = Field(default_factory=lambda: ["indeed"])
     search_term: str
-    google_search_term: str | None = None
     location: str | None = None
     distance: int = Field(default=50, ge=0)
     is_remote: bool = False
@@ -121,9 +111,6 @@ class JobSpyQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_upstream_filter_combinations(self) -> JobSpyQuery:
-        if "google" in self.sites and not self.google_search_term:
-            raise ValueError("google_search_term is required when using Google Jobs")
-
         if "indeed" in self.sites:
             indeed_filter_groups = sum(
                 (
@@ -155,7 +142,6 @@ def scrape_and_normalize(query: JobSpyQuery) -> tuple[pd.DataFrame, ScrapeResult
     frame = scrape_jobs(
         site_name=query.sites,
         search_term=query.search_term,
-        google_search_term=query.google_search_term,
         location=query.location,
         distance=query.distance,
         is_remote=query.is_remote,

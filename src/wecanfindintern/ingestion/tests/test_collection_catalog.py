@@ -20,25 +20,28 @@ def test_default_campaign_only_enables_indeed_and_linkedin() -> None:
 
 def test_expands_sites_from_config() -> None:
     raw = {
-        "sites": ["indeed", "google"],
+        "sites": ["indeed", "linkedin"],
         "locations": [{"country_code": "CA"}],
         "keyword_groups": [{"domain": "x", "keywords": ["intern"]}],
-        "source_overrides": {"google": {"google_search_term": "{search_term} near {location}"}},
+        "source_overrides": {"linkedin": {"easy_apply": True}},
     }
     plans = expand_collection_catalog(raw)
     assert len(plans) == 1
-    assert plans[0]["sites"] == ["indeed", "google"]
+    assert plans[0]["sites"] == ["indeed", "linkedin"]
     overrides = plans[0]["query"]["source_overrides"]
-    assert overrides["google"]["google_search_term"] == "{search_term} near {location}"
+    assert overrides["linkedin"]["easy_apply"] is True
 
 
-def test_google_requires_google_search_term_override() -> None:
+@pytest.mark.parametrize(
+    "site", ["google", "glassdoor", "zip_recruiter", "bayt", "naukri", "bdjobs"]
+)
+def test_removed_collection_sources_are_rejected(site: str) -> None:
     raw = {
-        "sites": ["indeed", "google"],
+        "sites": ["indeed", site],
         "locations": [{"country_code": "US"}],
         "keyword_groups": [{"domain": "x", "keywords": ["intern"]}],
     }
-    with pytest.raises(ValueError, match="google_search_term"):
+    with pytest.raises(ValueError, match="Unsupported collection sources"):
         expand_collection_catalog(raw)
 
 

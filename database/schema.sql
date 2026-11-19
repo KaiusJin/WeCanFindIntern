@@ -289,30 +289,6 @@ CREATE SEQUENCE public.application_tracker_id_seq
 
 ALTER SEQUENCE public.application_tracker_id_seq OWNED BY public.application_tracker.id;
 
-CREATE TABLE public.dedupe_candidates (
-    id bigint NOT NULL,
-    incoming_job_id bigint NOT NULL,
-    candidate_job_id bigint NOT NULL,
-    source_fingerprint bytea NOT NULL,
-    score numeric(5,4) NOT NULL,
-    evidence jsonb NOT NULL,
-    status smallint DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    reviewed_at timestamp with time zone,
-    CONSTRAINT dedupe_candidates_distinct_jobs_chk CHECK ((incoming_job_id <> candidate_job_id)),
-    CONSTRAINT dedupe_candidates_score_chk CHECK (((score >= (0)::numeric) AND (score <= (1)::numeric))),
-    CONSTRAINT dedupe_candidates_status_chk CHECK (((status >= 0) AND (status <= 3)))
-);
-
-ALTER TABLE public.dedupe_candidates ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.dedupe_candidates_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
 CREATE TABLE public.dedupe_decisions (
     id bigint NOT NULL,
     source_fingerprint bytea NOT NULL,
@@ -350,7 +326,6 @@ CREATE TABLE public.ingestion_runs (
     created_count integer DEFAULT 0 NOT NULL,
     merged_count integer DEFAULT 0 NOT NULL,
     unchanged_count integer DEFAULT 0 NOT NULL,
-    review_count integer DEFAULT 0 NOT NULL,
     failed_count integer DEFAULT 0 NOT NULL,
     error_summary text,
     updated_count integer DEFAULT 0 NOT NULL,
@@ -994,9 +969,6 @@ ALTER TABLE ONLY public.application_tracker
 ALTER TABLE ONLY public.application_tracker
     ADD CONSTRAINT application_tracker_public_id_key UNIQUE (public_id);
 
-ALTER TABLE ONLY public.dedupe_candidates
-    ADD CONSTRAINT dedupe_candidates_pkey PRIMARY KEY (id);
-
 ALTER TABLE ONLY public.dedupe_decisions
     ADD CONSTRAINT dedupe_decisions_pkey PRIMARY KEY (id);
 
@@ -1136,8 +1108,6 @@ CREATE INDEX idx_agent_messages_session_token ON public.agent_messages USING btr
 
 CREATE INDEX idx_agent_tool_calls_session ON public.agent_tool_calls USING btree (session_id, created_at);
 
-CREATE INDEX idx_dedupe_candidates_pending ON public.dedupe_candidates USING btree (score DESC, id) WHERE (status = 0);
-
 CREATE INDEX idx_dedupe_decisions_result_time ON public.dedupe_decisions USING btree (resulting_job_id, created_at DESC);
 
 CREATE INDEX idx_dedupe_decisions_source_time ON public.dedupe_decisions USING btree (source_fingerprint, created_at DESC);
@@ -1262,8 +1232,6 @@ CREATE INDEX raw_job_snapshots_default_scraped_at_idx ON public.raw_job_snapshot
 
 CREATE UNIQUE INDEX uq_agent_memories_active_hash ON public.agent_memories USING btree (content_hash) WHERE ((status)::text = 'ACTIVE'::text);
 
-CREATE UNIQUE INDEX uq_dedupe_candidates_pair ON public.dedupe_candidates USING btree (incoming_job_id, candidate_job_id);
-
 CREATE UNIQUE INDEX uq_job_sources_fingerprint ON public.job_sources USING btree (source_fingerprint);
 
 CREATE UNIQUE INDEX uq_job_sources_source_job_id ON public.job_sources USING btree (source, source_job_id) WHERE (source_job_id IS NOT NULL);
@@ -1306,12 +1274,6 @@ ALTER TABLE ONLY public.application_tracker_events
 
 ALTER TABLE ONLY public.application_tracker
     ADD CONSTRAINT application_tracker_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.jobs(public_id) ON DELETE SET NULL;
-
-ALTER TABLE ONLY public.dedupe_candidates
-    ADD CONSTRAINT dedupe_candidates_candidate_job_id_fkey FOREIGN KEY (candidate_job_id) REFERENCES public.jobs(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.dedupe_candidates
-    ADD CONSTRAINT dedupe_candidates_incoming_job_id_fkey FOREIGN KEY (incoming_job_id) REFERENCES public.jobs(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.dedupe_decisions
     ADD CONSTRAINT dedupe_decisions_compared_job_id_fkey FOREIGN KEY (compared_job_id) REFERENCES public.jobs(id) ON DELETE SET NULL;

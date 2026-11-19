@@ -148,12 +148,6 @@ async def collect_all(
                     values["hours_old"] = hours_old_override
                 if source == "linkedin" and defer_linkedin_descriptions:
                     values["linkedin_fetch_description"] = False
-                google_term = values.get("google_search_term")
-                if google_term:
-                    values["google_search_term"] = google_term.format(
-                        search_term=values["search_term"],
-                        location=values.get("location") or "Canada",
-                    )
                 query = JobSpyQuery.model_validate(
                     {**values, "sites": [source], "offset": offset, "results_wanted": requested}
                 )

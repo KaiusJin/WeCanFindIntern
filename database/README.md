@@ -24,10 +24,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f database/schema.
 
 ## Cloud job feed
 
-`scripts/cloud/bootstrap_job_feed.sql` is a separate, self-contained schema for
-the Supabase collector. Run the entire file once as `postgres` in a fresh jobs
-database after creating the `job_collector` login and setting its password.
-It creates only cloud collection tables in the private `job_feed` schema.
+The Supabase collector uses the already-provisioned private `job_feed` schema.
+Cloud database provisioning SQL is not stored in this repository.
 Desktop Profile, Tracker, Agent, and recommendation tables stay local.
 
 The collector does not create or upgrade its schema on startup. See

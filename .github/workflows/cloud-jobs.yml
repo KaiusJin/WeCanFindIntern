@@ -2,7 +2,7 @@ name: Public job feed
 
 on:
   schedule:
-    - cron: '17 */4 * * *'
+    - cron: '17 */12 * * *'
   workflow_dispatch:
     inputs:
       validate_database_only:

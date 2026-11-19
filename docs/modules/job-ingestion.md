@@ -15,13 +15,13 @@ The ingestion module turns source-specific JobSpy results into stable internal r
 | Detail cache | `src/wecanfindintern/db/repositories/collection_cache.py` | Reads durable campaign counts and reusable LinkedIn detail payloads |
 | Campaign runner | `scripts/collection/run_collection_campaign.py` | Runs every query, retries failures, then persists and enriches |
 
-The vendored upstream implementation is in `vendor/JobSpy`. The project pins
+The vendored Indeed and LinkedIn implementation is in `vendor/JobSpy`. The project pins
 and audits the local source rather than importing an unconstrained package at
 runtime.
 
 ## Input contract
 
-`JobSpyQuery` contains the source list, search term, optional Google search term, location, distance, remote/job-type/easy-apply filters, result count, Indeed country, proxies, certificate path, description format, LinkedIn description flag, offset, age filter, annual salary flag, verbosity, and user agent.
+`JobSpyQuery` contains the source list, search term, location, distance, remote/job-type/easy-apply filters, result count, Indeed country, proxies, certificate path, description format, LinkedIn description flag, offset, age filter, annual salary flag, verbosity, and user agent.
 
 The source restrictions enforced by JobSpy remain relevant at the caller boundary. In particular, Indeed does not allow `hours_old`, `job_type + is_remote`, and `easy_apply` to be combined as arbitrary independent filters; LinkedIn does not allow `hours_old` and `easy_apply` together. The campaign uses `source_overrides` when a source requires a different query shape.
 

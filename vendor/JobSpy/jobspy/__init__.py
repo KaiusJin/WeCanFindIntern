@@ -5,13 +5,8 @@ from typing import Tuple
 
 import pandas as pd
 
-from jobspy.bayt import BaytScraper
-from jobspy.bdjobs import BDJobs
-from jobspy.glassdoor import Glassdoor
-from jobspy.google import Google
 from jobspy.indeed import Indeed
 from jobspy.linkedin import LinkedIn
-from jobspy.naukri import Naukri
 from jobspy.model import JobType, Location, JobResponse, Country
 from jobspy.model import SalarySource, ScraperInput, Site
 from jobspy.util import (
@@ -23,15 +18,11 @@ from jobspy.util import (
     convert_to_annual,
     desired_order,
 )
-from jobspy.ziprecruiter import ZipRecruiter
 
-
-# Update the SCRAPER_MAPPING dictionary in the scrape_jobs function
 
 def scrape_jobs(
     site_name: str | list[str] | Site | list[Site] | None = None,
     search_term: str | None = None,
-    google_search_term: str | None = None,
     location: str | None = None,
     distance: int | None = 50,
     is_remote: bool = False,
@@ -58,12 +49,6 @@ def scrape_jobs(
     SCRAPER_MAPPING = {
         Site.LINKEDIN: LinkedIn,
         Site.INDEED: Indeed,
-        Site.ZIP_RECRUITER: ZipRecruiter,
-        Site.GLASSDOOR: Glassdoor,
-        Site.GOOGLE: Google,
-        Site.BAYT: BaytScraper,
-        Site.NAUKRI: Naukri,
-        Site.BDJOBS: BDJobs,  # Add BDJobs to the scraper mapping
     }
     set_logger_level(verbose)
     job_type = get_enum_from_value(job_type) if job_type else None
@@ -87,7 +72,6 @@ def scrape_jobs(
         site_type=get_site_type(),
         country=country_enum,
         search_term=search_term,
-        google_search_term=google_search_term,
         location=location,
         distance=distance,
         is_remote=is_remote,
@@ -106,7 +90,7 @@ def scrape_jobs(
         scraper = scraper_class(proxies=proxies, ca_cert=ca_cert, user_agent=user_agent)
         scraped_data: JobResponse = scraper.scrape(scraper_input)
         cap_name = site.value.capitalize()
-        site_name = "ZipRecruiter" if cap_name == "Zip_recruiter" else cap_name
+        site_name = cap_name
         site_name = "LinkedIn" if cap_name == "Linkedin" else cap_name
         create_logger(site_name).info(f"finished scraping")
         return site.value, scraped_data
@@ -185,7 +169,7 @@ def scrape_jobs(
                 else None
             )
 
-            #naukri-specific fields
+            # Optional source metadata
             job_data["skills"] = (
                 ", ".join(job_data["skills"]) if job_data["skills"] else None
             )
@@ -221,7 +205,4 @@ def scrape_jobs(
         return pd.DataFrame()
 
 
-# Add BDJobs to __all__
-__all__ = [
-    "BDJobs",
-]
+__all__ = ["scrape_jobs"]

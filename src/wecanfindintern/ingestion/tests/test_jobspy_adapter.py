@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 from datetime import UTC, date, datetime
 
+import jobspy
 import pandas as pd
 import pytest
-from jobspy.model import JobType
+from jobspy.model import JobPost, JobResponse, JobType
 
 from wecanfindintern.ingestion.jobspy_adapter import (
     JOBSPY_COLUMNS,
@@ -102,9 +103,12 @@ def test_canonical_url_removes_tracking_parameters() -> None:
     )
 
 
-def test_google_requires_google_search_term() -> None:
-    with pytest.raises(ValueError, match="google_search_term"):
-        JobSpyQuery(sites=["google"], search_term="software engineer")
+@pytest.mark.parametrize(
+    "site", ["google", "glassdoor", "zip_recruiter", "bayt", "naukri", "bdjobs"]
+)
+def test_removed_sources_are_rejected(site: str) -> None:
+    with pytest.raises(ValueError, match="Unsupported JobSpy sources"):
+        JobSpyQuery(sites=[site], search_term="software engineer")
 
 
 def test_indeed_rejects_incompatible_filters() -> None:
@@ -159,3 +163,29 @@ def test_linkedin_detail_merge_cleans_job_type_enums_for_snapshot_payload() -> N
     assert merged.employment_types == ["internship", "fulltime"]
     assert merged.raw["job_type"] == ["internship", "fulltime"]
     json.dumps(merged.raw)
+
+
+def test_vendored_default_dispatch_only_calls_indeed_and_linkedin(monkeypatch) -> None:
+    calls = []
+
+    class FakeScraper:
+        def __init__(self, **kwargs):
+            pass
+
+        def scrape(self, query):
+            calls.append({site.value for site in query.site_type})
+            return JobResponse(jobs=[JobPost(
+                title="Software Engineer Intern",
+                company_name="Example Co",
+                job_url="https://example.com/job",
+                location=None,
+            )])
+
+    monkeypatch.setattr(jobspy, "Indeed", FakeScraper)
+    monkeypatch.setattr(jobspy, "LinkedIn", FakeScraper)
+    frame = jobspy.scrape_jobs(search_term="intern", country_indeed="Canada")
+
+    assert len(calls) == 2
+    assert all(sites == {"indeed", "linkedin"} for sites in calls)
+    assert set(frame["site"]) == {"indeed", "linkedin"}
+    assert jobspy.__all__ == ["scrape_jobs"]
