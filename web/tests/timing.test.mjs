@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const { createDebouncedAction } = await import(
-  "../../web/modules/timing.js?test=shared-timing"
+  "../modules/timing.js?test=shared-timing"
 );
 
 test("shared debounced action keeps only the latest scheduled call", async () => {

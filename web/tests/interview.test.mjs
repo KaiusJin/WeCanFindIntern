@@ -3,15 +3,15 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const interviewSource = await readFile(
-  new URL("../../web/modules/interview.js", import.meta.url),
+  new URL("../modules/interview.js", import.meta.url),
   "utf8",
 );
 const mainSource = await readFile(
-  new URL("../../web/modules/main.js", import.meta.url),
+  new URL("../modules/main.js", import.meta.url),
   "utf8",
 );
 const indexSource = await readFile(
-  new URL("../../web/index.html", import.meta.url),
+  new URL("../index.html", import.meta.url),
   "utf8",
 );
 

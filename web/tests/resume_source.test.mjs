@@ -39,7 +39,7 @@ globalThis.document = {
 const {
   setupProfileOrPdfResumeSource,
   setupResumePdfInput,
-} = await import("../../web/modules/resume-source.js?test=shared-resume-source");
+} = await import("../modules/resume-source.js?test=shared-resume-source");
 
 function registerResumeElements(prefix) {
   const selectors = {

@@ -107,7 +107,7 @@ output is never accepted as a score.
 
 ## Verification surface
 
-`tests/test_ats.py` covers parsing-readiness and job-match formulas, evidence,
-unavailable categories, aliases, and invariants. `tests/test_ats_commentary.py`
+`src/wecanfindintern/ats/tests/test_ats.py` covers parsing-readiness and job-match formulas, evidence,
+unavailable categories, aliases, and invariants. `src/wecanfindintern/ats/tests/test_ats_commentary.py`
 checks that commentary is grounded in and cannot replace the deterministic
-diagnostic. Calibration cases live in `tests/fixtures/ats_calibration_cases.json`.
+diagnostic. Calibration cases live in `src/wecanfindintern/ats/tests/fixtures/ats_calibration_cases.json`.

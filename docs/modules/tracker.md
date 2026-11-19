@@ -130,7 +130,7 @@ flowchart TD
 
 ## Verification surface
 
-`tests/test_tracker.py` covers stages, source identity, idempotent bookmarks,
+`src/wecanfindintern/tracker/tests/test_tracker.py` covers stages, source identity, idempotent bookmarks,
 protected removal, events, external-status separation, bulk operations, stats,
 CSV, and route behavior. Frontend route references are verified by the shared
 contract script.

@@ -132,7 +132,7 @@ flowchart TD
 
 ## Verification surface
 
-Domain behavior is covered by `tests/test_location.py`,
-`tests/test_job_classification.py`, `tests/test_salary_enrichment.py`, and
-`tests/test_recruiting_term.py`. Public vocabulary is cross-checked against
+Domain behavior is covered by `src/wecanfindintern/domain/tests/test_location.py`,
+`src/wecanfindintern/domain/tests/test_job_classification.py`, `src/wecanfindintern/ingestion/tests/test_salary_enrichment.py`, and
+`src/wecanfindintern/ingestion/tests/test_recruiting_term.py`. Public vocabulary is cross-checked against
 [Job Data Taxonomy](../JOB_DATA_TAXONOMY.md) and the schemas in `schemas/`.

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const moduleSource = await readFile(
-  new URL("../../web/modules/desktop-job-sync.js", import.meta.url),
+  new URL("../modules/desktop-job-sync.js", import.meta.url),
   "utf8",
 );
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(moduleSource).toString("base64")}`;

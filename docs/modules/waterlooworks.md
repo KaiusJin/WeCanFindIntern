@@ -229,7 +229,7 @@ update board membership.
 
 ## Verification surface
 
-`tests/test_waterlooworks.py` covers extraction, storage, run state,
-application sync, idempotency, and API-facing behavior. `tests/test_routes.py`
+`src/wecanfindintern/waterlooworks/tests/test_waterlooworks.py` covers extraction, storage, run state,
+application sync, idempotency, and API-facing behavior. `src/wecanfindintern/api/tests/test_routes.py`
 covers route contracts; frontend references are checked by
 `scripts/dev/verify_frontend_api_contract.py`.

@@ -30,7 +30,7 @@ jobs:
       - name: Frontend syntax
         run: for f in web/modules/*.js; do node --check "$f"; done
       - name: Frontend tests
-        run: node --test tests/frontend/*.test.mjs
+        run: node --test web/tests desktop/tests
       - name: Frontend/API contract
         run: PYTHONPATH=src python scripts/dev/verify_frontend_api_contract.py
     services:

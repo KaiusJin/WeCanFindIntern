@@ -189,13 +189,13 @@ definitive miss is `not_found`, and transport/provider failure is `error`.
 
 ## Verification surface
 
-- `tests/test_jobspy_adapter.py`: stable columns, conversion, query validation.
-- `tests/test_scrape_checked.py`: empty success versus logged source failure.
-- `tests/test_collection_catalog.py`: catalog expansion and source overrides.
-- `tests/test_collection_campaign.py`: sweep cadence, LinkedIn cache/hydration,
+- `src/wecanfindintern/ingestion/tests/test_jobspy_adapter.py`: stable columns, conversion, query validation.
+- `src/wecanfindintern/ingestion/tests/test_scrape_checked.py`: empty success versus logged source failure.
+- `src/wecanfindintern/ingestion/tests/test_collection_catalog.py`: catalog expansion and source overrides.
+- `scripts/collection/tests/test_collection_campaign.py`: sweep cadence, LinkedIn cache/hydration,
   retry isolation, and campaign status.
-- `tests/test_job_ingestion_repository.py`: persistence and identity behavior.
-- `tests/test_salary_enrichment.py`: signal gating, content-hash state, and
+- `src/wecanfindintern/db/tests/test_job_ingestion_repository.py`: persistence and identity behavior.
+- `src/wecanfindintern/ingestion/tests/test_salary_enrichment.py`: signal gating, content-hash state, and
   structured/regex/model precedence.
 
 ## Safe extension procedure

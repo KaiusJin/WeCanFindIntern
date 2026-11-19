@@ -27,10 +27,15 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+exclude = ["*.tests", "*.tests.*"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["tests/*", "tests/**/*"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
-testpaths = ["tests"]
+addopts = "-q --import-mode=importlib"
+testpaths = ["src/wecanfindintern", "scripts", "tests"]
+pythonpath = [".", "src"]
 markers = [
   "db: integration tests requiring a live PostgreSQL database (deselected by default in CI unit step)",
 ]

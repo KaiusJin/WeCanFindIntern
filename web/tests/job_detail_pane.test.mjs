@@ -57,7 +57,7 @@ globalThis.document = {
 };
 
 const { closeJobDetailPane, openJobDetailPane } = await import(
-  "../../web/modules/job-detail-pane.js?test=shared-pane"
+  "../modules/job-detail-pane.js?test=shared-pane"
 );
 
 test("shared job detail pane preserves loading, selection, and rendered output", async () => {

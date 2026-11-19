@@ -13,7 +13,7 @@ contract:
 
 frontend-check:
 	for f in web/modules/*.js; do node --input-type=module --check < "$$f"; done
-	node --test tests/frontend/*.test.mjs
+	node --test web/tests desktop/tests
 
 format-check:
 	.venv/bin/ruff format --check src tests scripts
