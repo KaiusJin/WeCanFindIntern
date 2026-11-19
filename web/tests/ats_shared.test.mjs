@@ -11,7 +11,7 @@ globalThis.document = {
 };
 
 const { createAtsCommentary } = await import(
-  "../../web/modules/ats-shared.js?test=shared-commentary"
+  "../modules/ats-shared.js?test=shared-commentary"
 );
 
 function element() {

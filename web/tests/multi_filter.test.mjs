@@ -9,7 +9,7 @@ import {
   setMultiFilterSheetOpen,
   setupMultiFilterInteractions,
   toggleMultiFilter,
-} from "../../web/modules/multi-filter.js?v=20260902-shared-filters-v1";
+} from "../modules/multi-filter.js?v=20260902-shared-filters-v1";
 
 class FakeClassList {
   constructor(...names) {

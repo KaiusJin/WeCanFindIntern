@@ -11,7 +11,7 @@ from wecanfindintern.ingestion.collection_catalog import expand_collection_catal
 
 
 def test_default_campaign_only_enables_indeed_and_linkedin() -> None:
-    config_path = Path(__file__).parents[1] / "config" / "collection_plans.json"
+    config_path = Path(__file__).resolve().parents[4] / "config" / "collection_plans.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
 
     assert config["sites"] == ["indeed", "linkedin"]

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from integration.conftest import seed_job
 
+from tests.integration.conftest import seed_job
 from wecanfindintern.agent.recommend.embeddings import EmbeddingConfig
 from wecanfindintern.agent.recommend.repository import RecommendationRepository
 from wecanfindintern.api.models import JobListFilters

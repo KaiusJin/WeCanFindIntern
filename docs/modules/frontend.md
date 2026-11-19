@@ -142,5 +142,5 @@ backup, tray, and public job synchronization commands.
 `scripts/dev/verify_frontend_api_contract.py` compares frontend route references
 with FastAPI routes. `make frontend-check` runs Node syntax validation for every
 `web/modules/*.js` file and checks the navigation/layout contract in
-`tests/frontend/navigation.test.mjs`. Route/service tests validate the response
+`web/tests/navigation.test.mjs`. Route/service tests validate the response
 contracts the modules consume.

@@ -112,7 +112,7 @@ provider configuration in local settings; desktop mode places keys in Electron
 
 ## Verification surface
 
-`tests/test_profile.py` covers Pydantic models, parser/security boundaries,
+`src/wecanfindintern/profile/tests/test_profile.py` covers Pydantic models, parser/security boundaries,
 draft/confirm semantics, deletion, and routes. Shared extraction behavior is
 also exercised by ATS route tests. The source of truth for size and structure
 limits is `profile/security.py`.

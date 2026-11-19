@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const indexSource = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
-const shellSource = await readFile(new URL("../../web/app-shell.css", import.meta.url), "utf8");
-const stylesSource = await readFile(new URL("../../web/styles.css", import.meta.url), "utf8");
-const navigationSource = await readFile(new URL("../../web/modules/navigation.js", import.meta.url), "utf8");
-const heatmapSource = await readFile(new URL("../../web/modules/heatmap.js", import.meta.url), "utf8");
-const waterlooWorksSource = await readFile(new URL("../../web/modules/waterlooworks.js", import.meta.url), "utf8");
-const profileSource = await readFile(new URL("../../web/modules/profile.js", import.meta.url), "utf8");
-const settingsSource = await readFile(new URL("../../web/modules/settings.js", import.meta.url), "utf8");
-const trackerSource = await readFile(new URL("../../web/modules/tracker.js", import.meta.url), "utf8");
+const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const shellSource = await readFile(new URL("../app-shell.css", import.meta.url), "utf8");
+const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+const navigationSource = await readFile(new URL("../modules/navigation.js", import.meta.url), "utf8");
+const heatmapSource = await readFile(new URL("../modules/heatmap.js", import.meta.url), "utf8");
+const waterlooWorksSource = await readFile(new URL("../modules/waterlooworks.js", import.meta.url), "utf8");
+const profileSource = await readFile(new URL("../modules/profile.js", import.meta.url), "utf8");
+const settingsSource = await readFile(new URL("../modules/settings.js", import.meta.url), "utf8");
+const trackerSource = await readFile(new URL("../modules/tracker.js", import.meta.url), "utf8");
 
 const sidebarSource = indexSource.match(/<aside id="app-sidebar"[\s\S]*?<\/aside>/)?.[0] || "";
 

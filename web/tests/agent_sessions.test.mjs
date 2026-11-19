@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const indexSource = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
-const moduleSource = await readFile(new URL("../../web/modules/agent.js", import.meta.url), "utf8");
-const mainSource = await readFile(new URL("../../web/modules/main.js", import.meta.url), "utf8");
-const jobsSource = await readFile(new URL("../../web/modules/jobs.js", import.meta.url), "utf8");
-const waterlooWorksSource = await readFile(new URL("../../web/modules/waterlooworks.js", import.meta.url), "utf8");
-const stylesSource = await readFile(new URL("../../web/styles.css", import.meta.url), "utf8");
-const appShellSource = await readFile(new URL("../../web/app-shell.css", import.meta.url), "utf8");
+const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const moduleSource = await readFile(new URL("../modules/agent.js", import.meta.url), "utf8");
+const mainSource = await readFile(new URL("../modules/main.js", import.meta.url), "utf8");
+const jobsSource = await readFile(new URL("../modules/jobs.js", import.meta.url), "utf8");
+const waterlooWorksSource = await readFile(new URL("../modules/waterlooworks.js", import.meta.url), "utf8");
+const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+const appShellSource = await readFile(new URL("../app-shell.css", import.meta.url), "utf8");
 
 test("conversation history exposes a confirmed delete flow", () => {
   assert.match(indexSource, /id="agent-delete-session-dialog"/);

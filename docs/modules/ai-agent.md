@@ -279,9 +279,9 @@ fall back to lexical/skill signals when vector or optional review is unavailable
 
 ## Verification surface
 
-Agent behavior is covered by `tests/test_agent_models.py`,
-`tests/test_agent_tools.py`, `tests/test_agent_tools_recommend.py`,
-`tests/test_agent_orchestrator.py`, the `tests/test_agent_memory_*` files, and
+Agent behavior is covered by `src/wecanfindintern/agent/tests/test_agent_models.py`,
+`src/wecanfindintern/agent/tests/test_agent_tools.py`, `src/wecanfindintern/agent/tests/test_agent_tools_recommend.py`,
+`src/wecanfindintern/agent/tests/test_agent_orchestrator.py`, the `src/wecanfindintern/agent/memory/tests/test_agent_memory_*` files, and
 recommendation retrieval/scoring tests. `scripts/dev/evaluate_agent_job_tools.py`
 and `scripts/dev/probe_recommendation_quality.py` provide bounded diagnostic
 entry points against configured data/providers.

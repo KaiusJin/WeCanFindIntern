@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const indexSource = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
-const stylesSource = await readFile(new URL("../../web/styles.css", import.meta.url), "utf8");
+const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
 test("career tool loading states share the centered inline layout", () => {
   for (const id of [

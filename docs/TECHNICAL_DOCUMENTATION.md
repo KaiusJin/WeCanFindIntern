@@ -58,7 +58,8 @@ schemas/                 exported public-job JSON Schemas
 scripts/                 collection, maintenance, packaging, and verification
 config/                  cloud collection catalog
 vendor/JobSpy/           audited local JobSpy source
-tests/                   unit, route, frontend, repository, and integration checks
+tests/                   cross-module database and integration checks
+**/tests/                module-owned Python, web, and desktop tests
 ```
 
 Dependencies flow from routes and scripts into application services, domain

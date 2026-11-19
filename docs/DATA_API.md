@@ -127,4 +127,4 @@ database resource usage.
 `scripts/dev/verify_data_api_contract.py` validates exported examples and
 schema/model alignment. `scripts/dev/verify_frontend_api_contract.py` checks
 that frontend route references exist. Route/repository behavior is covered by
-`tests/test_routes.py` and database-marked integration tests.
+`src/wecanfindintern/api/tests/test_routes.py` and database-marked integration tests.

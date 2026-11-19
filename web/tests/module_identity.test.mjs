@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
-const moduleDirectory = new URL("../../web/modules/", import.meta.url);
+const moduleDirectory = new URL("../modules/", import.meta.url);
 const moduleFiles = (await readdir(moduleDirectory)).filter((name) => name.endsWith(".js"));
 const sources = await Promise.all(moduleFiles.map(async (name) => ({
   name,

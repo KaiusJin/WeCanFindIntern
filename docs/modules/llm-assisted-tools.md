@@ -162,7 +162,7 @@ user clears a feature.
 
 ## Verification surface
 
-`tests/test_ats_commentary.py`, `tests/test_cover_letter.py`, and
-`tests/test_interview.py` cover gateway consumers, grounding/revision behavior,
+`src/wecanfindintern/ats/tests/test_ats_commentary.py`, `src/wecanfindintern/cover_letter/tests/test_cover_letter.py`, and
+`src/wecanfindintern/interview/tests/test_interview.py` cover gateway consumers, grounding/revision behavior,
 session persistence, STT/TTS contracts, errors, and routes. Agent and enrichment
 tests cover the same gateway boundary for their owning modules.

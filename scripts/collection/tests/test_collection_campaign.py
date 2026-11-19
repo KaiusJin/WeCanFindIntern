@@ -162,7 +162,7 @@ def test_linkedin_hydration_uses_cache_and_fetches_only_misses(monkeypatch) -> N
             "title": "New job",
         }
     )
-    fetched_at = datetime(2026, 9, 2, tzinfo=UTC)
+    fetched_at = datetime.now(UTC)
 
     class FakeCache:
         async def linkedin_details(self, fingerprints):
