@@ -3,7 +3,7 @@
 check: lint test contract frontend-check
 
 lint:
-	.venv/bin/ruff check src tests scripts
+	.venv/bin/ruff check src tests scripts desktop/build
 
 test:
 	PYTHONPATH=src .venv/bin/python -m pytest
@@ -16,4 +16,4 @@ frontend-check:
 	node --test web/tests desktop/tests
 
 format-check:
-	.venv/bin/ruff format --check src tests scripts
+	.venv/bin/ruff format --check src tests scripts desktop/build

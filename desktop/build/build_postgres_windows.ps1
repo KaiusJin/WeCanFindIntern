@@ -27,7 +27,7 @@ try {
         Pop-Location
     }
     & $PythonExecutable `
-        (Join-Path $ProjectRoot "scripts\desktop\prepare_postgres.py") `
+        (Join-Path $ProjectRoot "desktop\build\prepare_postgres.py") `
         --source $PostgresRoot --target win32-x64
 } finally {
     if (Test-Path $BuildRoot) {

@@ -89,7 +89,7 @@ This distinction is used by the campaign retry policy.
 Callers must obey source-specific JobSpy constraints. Indeed's `hours_old`,
 `job_type + is_remote`, and `easy_apply` combinations are mutually constrained.
 LinkedIn's `hours_old` and `easy_apply` combination is constrained.
-`source_overrides` in `collection_plans.json` is the supported place for source-
+`source_overrides` in `scripts/collection/collection_plans.json` is the supported place for source-
 specific query changes.
 
 The delivered catalog enables LinkedIn descriptions, but the campaign forces

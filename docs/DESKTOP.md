@@ -99,6 +99,12 @@ the sidecar checks for missing packages.
 
 ## Build prerequisites
 
+Desktop build tools are grouped in `desktop/build/`: `backend.spec`, the Python
+backend builder, PostgreSQL build/staging scripts, macOS library relocation, and
+signature verification. Electron runtime code stays in `desktop/src/`, and
+staged runtime bundles stay in `desktop/resources/`. Build tools are excluded
+from the Electron application bundle.
+
 The build pipeline is platform-native:
 
 ```mermaid
@@ -123,8 +129,8 @@ the portable PostgreSQL 16 + pgcrypto + pg_trgm + pgvector runtime, the Python
 sidecar, and the installer with:
 
 ```bash
-scripts/desktop/build_postgres_macos.sh
-python scripts/desktop/build_backend.py --clean
+desktop/build/build_postgres_macos.sh
+python desktop/build/build_backend.py --clean
 cd desktop
 npm ci
 npm run make
@@ -142,8 +148,8 @@ installed for the build machine:
 ```powershell
 python -m pip install -r requirements-desktop.txt
 npm --prefix desktop ci
-scripts\desktop\build_postgres_windows.ps1
-python scripts\desktop\build_backend.py --clean
+desktop\build\build_postgres_windows.ps1
+python desktop\build\build_backend.py --clean
 npm --prefix desktop run make
 ```
 

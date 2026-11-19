@@ -20,7 +20,7 @@ module.exports = {
     appBundleId: "com.wecanfindintern.desktop",
     icon: path.join(__dirname, "assets", process.platform === "darwin" ? "icon.icns" : "icon.ico"),
     extraResource,
-    ignore: [/^\/assets(?:\/|$)/, /^\/resources(?:\/|$)/, /^\/out(?:\/|$)/],
+    ignore: [/^\/build(?:\/|$)/, /^\/assets(?:\/|$)/, /^\/resources(?:\/|$)/, /^\/out(?:\/|$)/],
     // Seal the complete bundle even when no Apple Developer ID is available.
     // Gatekeeper will still require the user to approve the app manually, but
     // strict code-signature verification can distinguish it from a damaged app.

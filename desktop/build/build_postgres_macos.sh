@@ -94,7 +94,7 @@ git clone --depth 1 --branch "v${vector_version}" https://github.com/pgvector/pg
 make -C "$build_root/pgvector" "PG_CONFIG=$stage_prefix/bin/pg_config" OPTFLAGS="" -j"$(sysctl -n hw.logicalcpu)"
 make -C "$build_root/pgvector" "PG_CONFIG=$stage_prefix/bin/pg_config" install
 
-"$python_bin" "$project_root/scripts/desktop/prepare_postgres.py" --source "$stage_prefix" --target "$target"
-"$python_bin" "$project_root/scripts/desktop/relocate_macos_postgres.py" \
+"$python_bin" "$project_root/desktop/build/prepare_postgres.py" --source "$stage_prefix" --target "$target"
+"$python_bin" "$project_root/desktop/build/relocate_macos_postgres.py" \
   "$project_root/desktop/resources/postgres/$target" \
   --deployment-target "$deployment_target"

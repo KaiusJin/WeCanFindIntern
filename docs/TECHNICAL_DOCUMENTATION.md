@@ -53,10 +53,11 @@ src/wecanfindintern/
 
 web/                     static HTML, CSS, and native ES modules
 desktop/                 Electron main/preload, PostgreSQL, backups, packaging
+└── build/               backend.spec and native desktop build tools
 database/                final desktop PostgreSQL schema
 schemas/                 exported public-job JSON Schemas
-scripts/                 collection, maintenance, packaging, and verification
-config/                  cloud collection catalog
+scripts/                 cloud collection, maintenance, and verification
+└── collection/          campaign runner, collection_plans.json, and tests
 vendor/JobSpy/           audited local JobSpy source
 tests/                   cross-module database and integration checks
 **/tests/                module-owned Python, web, and desktop tests

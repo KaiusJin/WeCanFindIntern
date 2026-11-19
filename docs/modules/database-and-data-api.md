@@ -32,7 +32,7 @@ location hierarchy, salary and recruiting-term enrichment, Tracker, Profile,
 interview sessions, recommendation retrieval, LLM cache, and Agent persistence.
 Cloud collection uses the already-provisioned private `job_feed` schema, which
 contains only collection tables. Campaign definitions remain
-in `config/collection_plans.json`.
+in `scripts/collection/collection_plans.json`.
 
 ## Core job tables
 

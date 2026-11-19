@@ -15,7 +15,7 @@ from scripts.collection.run_collection_campaign import run
 from wecanfindintern.domain.normalized_job import NormalizedJob
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG = ROOT / "config/collection_plans.json"
+CONFIG = ROOT / "scripts/collection/collection_plans.json"
 
 
 class QueryCheckpoint:

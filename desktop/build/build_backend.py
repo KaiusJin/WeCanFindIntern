@@ -44,7 +44,7 @@ def main() -> None:
         str(output_root),
         "--workpath",
         str(work_root),
-        str(project_root / "packaging" / "backend.spec"),
+        str(project_root / "desktop" / "build" / "backend.spec"),
     ]
     environment = os.environ.copy()
     environment["PYINSTALLER_CONFIG_DIR"] = str(work_root / "cache")

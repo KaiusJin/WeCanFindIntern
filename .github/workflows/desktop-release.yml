@@ -84,10 +84,10 @@ jobs:
           path: desktop/resources/postgres/${{ matrix.target }}
           key: >-
             postgres-runtime-v1-${{ matrix.target }}-${{
-            hashFiles('scripts/desktop/build_postgres_macos.sh',
-            'scripts/desktop/build_postgres_windows.ps1',
-            'scripts/desktop/prepare_postgres.py',
-            'scripts/desktop/relocate_macos_postgres.py') }}
+            hashFiles('desktop/build/build_postgres_macos.sh',
+            'desktop/build/build_postgres_windows.ps1',
+            'desktop/build/prepare_postgres.py',
+            'desktop/build/relocate_macos_postgres.py') }}
 
       - name: Restore native Python sidecar
         id: backend-runtime
@@ -96,8 +96,8 @@ jobs:
           path: desktop/resources/backend/${{ matrix.target }}
           key: >-
             backend-runtime-v1-${{ matrix.target }}-${{
-            hashFiles('src/**/*.py', 'scripts/**/*.py',
-            'packaging/backend.spec', 'requirements*.txt', 'pyproject.toml') }}
+            hashFiles('src/**/*.py', 'scripts/**/*.py', 'desktop/build/*.py',
+            'desktop/build/backend.spec', 'requirements*.txt', 'pyproject.toml') }}
 
       - name: Install Python dependencies
         if: steps.backend-runtime.outputs.cache-hit != 'true'
@@ -112,7 +112,7 @@ jobs:
         env:
           PYTHON_BIN: ${{ env.pythonLocation }}/bin/python
           MACOSX_DEPLOYMENT_TARGET: "13.0"
-        run: scripts/desktop/build_postgres_macos.sh
+        run: desktop/build/build_postgres_macos.sh
 
       - name: Install PostgreSQL 16 on Windows
         if: runner.os == 'Windows' && steps.postgres-runtime.outputs.cache-hit != 'true'
@@ -128,7 +128,7 @@ jobs:
       - name: Build Windows PostgreSQL runtime
         if: runner.os == 'Windows' && steps.postgres-runtime.outputs.cache-hit != 'true'
         shell: pwsh
-        run: scripts/desktop/build_postgres_windows.ps1 -Python "${{ env.pythonLocation }}\python.exe"
+        run: desktop/build/build_postgres_windows.ps1 -Python "${{ env.pythonLocation }}\python.exe"
 
       - name: Save PostgreSQL runtime
         if: steps.postgres-runtime.outputs.cache-hit != 'true'
@@ -139,7 +139,7 @@ jobs:
 
       - name: Build native Python sidecar
         if: steps.backend-runtime.outputs.cache-hit != 'true'
-        run: python scripts/desktop/build_backend.py --clean
+        run: python desktop/build/build_backend.py --clean
 
       - name: Save native Python sidecar
         if: steps.backend-runtime.outputs.cache-hit != 'true'
@@ -178,7 +178,7 @@ jobs:
             echo "Expected exactly one packaged macOS app, found ${#apps[@]}." >&2
             exit 1
           fi
-          ../scripts/desktop/verify_macos_adhoc_app.sh "${apps[0]}"
+          build/verify_macos_adhoc_app.sh "${apps[0]}"
 
       - name: Build Windows desktop installer
         if: runner.os == 'Windows'

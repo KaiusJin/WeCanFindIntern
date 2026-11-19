@@ -17,7 +17,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
       - name: Lint
-        run: ruff check src tests scripts
+        run: ruff check src tests scripts desktop/build
       - name: Unit tests
         run: PYTHONPATH=src python -m pytest -m "not db"
       - name: Database integration tests
