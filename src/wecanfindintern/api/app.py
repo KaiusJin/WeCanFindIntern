@@ -107,17 +107,17 @@ def create_app() -> FastAPI:
             ),
         )
         app.state.recommendation_index_wake = asyncio.Event()
-        app.state.background_collection = None
+        app.state.background_job_sync = None
         if os.getenv("WCFI_USER_DATA_DIR") and os.getenv("WCFI_RESOURCE_DIR"):
-            from wecanfindintern.desktop.collection import BackgroundCollectionService
+            from wecanfindintern.desktop.job_sync_service import BackgroundJobSyncService
             from wecanfindintern.desktop.runtime import DesktopPaths
 
             desktop_paths = DesktopPaths.from_env()
-            app.state.background_collection = BackgroundCollectionService(
+            app.state.background_job_sync = BackgroundJobSyncService(
                 manifest_url=desktop_paths.public_job_manifest,
                 lock_path=desktop_paths.runtime / "job-sync.lock",
             )
-            app.state.background_collection.start()
+            app.state.background_job_sync.start()
         recommendation_index_task = asyncio.create_task(
             _recommendation_index_loop(
                 app.state.recommendation_indexer,
@@ -126,8 +126,8 @@ def create_app() -> FastAPI:
             )
         )
         yield
-        if app.state.background_collection is not None:
-            await app.state.background_collection.stop()
+        if app.state.background_job_sync is not None:
+            await app.state.background_job_sync.stop()
         recommendation_index_task.cancel()
         with suppress(asyncio.CancelledError):
             await recommendation_index_task
@@ -159,17 +159,17 @@ def create_app() -> FastAPI:
 
     @app.get("/desktop/status")
     async def desktop_status(request: Request) -> dict:
-        service = request.app.state.background_collection
-        collection = (
+        service = request.app.state.background_job_sync
+        sync = (
             service.status.payload()
             if service is not None
             else {"enabled": False, "running": False}
         )
-        return {"status": "ready", "collection": collection}
+        return {"status": "ready", "sync": sync}
 
-    @app.post("/desktop/collection/run", status_code=202)
-    async def run_desktop_collection(request: Request) -> dict:
-        service = request.app.state.background_collection
+    @app.post("/desktop/sync/run", status_code=202)
+    async def run_desktop_sync(request: Request) -> dict:
+        service = request.app.state.background_job_sync
         if service is None or not service.status.enabled:
             raise HTTPException(status_code=409, detail="Public job synchronization is disabled.")
         if not service.trigger():

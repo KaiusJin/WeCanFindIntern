@@ -2,8 +2,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("weCanFindInternDesktop", {
   getVersion: () => ipcRenderer.invoke("desktop:get-version"),
-  getCollectionStatus: () => ipcRenderer.invoke("desktop:get-collection-status"),
-  runCollectionNow: () => ipcRenderer.invoke("desktop:run-collection"),
+  getSyncStatus: () => ipcRenderer.invoke("desktop:get-sync-status"),
+  syncJobsNow: () => ipcRenderer.invoke("desktop:run-sync"),
   listBackups: () => ipcRenderer.invoke("desktop:list-backups"),
   createBackup: () => ipcRenderer.invoke("desktop:create-backup"),
   restoreBackup: () => ipcRenderer.invoke("desktop:restore-backup"),

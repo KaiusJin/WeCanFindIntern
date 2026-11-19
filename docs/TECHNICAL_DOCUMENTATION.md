@@ -56,7 +56,7 @@ desktop/                 Electron main/preload, PostgreSQL, backups, packaging
 migrations/              ordered, checksummed PostgreSQL schema migrations
 schemas/                 exported public-job JSON Schemas
 scripts/                 collection, maintenance, packaging, and verification
-config/                  collection catalog and launchd configuration
+config/                  cloud collection catalog
 vendor/JobSpy/           audited local JobSpy source
 tests/                   unit, route, frontend, repository, and integration checks
 ```
@@ -86,7 +86,7 @@ flowchart LR
 `Settings.from_env()` loads `DATABASE_URL`, pool sizes, and the statement timeout
 from the environment or `.env`. Docker Compose supplies PostgreSQL/pgvector on
 `127.0.0.1:5432`. FastAPI startup opens the async psycopg pool, Agent memory
-manager, WaterlooWorks service, desktop collection service when desktop paths
+manager, WaterlooWorks service, desktop job synchronization service when desktop paths
 are present, and the recommendation-index maintenance task. Shutdown cancels
 background tasks before closing memory, WaterlooWorks, and the database pool.
 
@@ -168,7 +168,7 @@ result limits, age filters, and source settings. `scrape_checked()` distinguishe
 a successful empty DataFrame from a scraper that logged an error and returned no
 rows. `stabilize_jobspy_frame()` always produces the fixed 34-column boundary.
 
-The campaign uses `asyncio.Semaphore` (default 4; CLI range 1–16) and runs each
+The campaign uses `asyncio.Semaphore` (default 4) and runs each
 blocking JobSpy call in a worker thread. A query stops after its configured
 maximum, an empty page, a page with no new fingerprints, or terminal failure.
 Transient failures use bounded exponential backoff with jitter; deterministic
@@ -403,7 +403,7 @@ FastAPI registers route families before mounting `web/` at `/`:
 | `/api/v1/interview` | sessions, SSE creation, questions, TTS, analysis, trend |
 | `/api/v1/tracker` | contract vocabulary, bookmarks, applications, events, bulk actions, CSV |
 | `/api/v1/agent` | sessions, messages/SSE, tools, approvals, preferences, memory |
-| `/desktop` | resident collection status and manual trigger |
+| `/desktop` | public feed synchronization status and manual trigger |
 
 ```mermaid
 flowchart LR

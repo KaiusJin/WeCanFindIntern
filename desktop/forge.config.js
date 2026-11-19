@@ -7,7 +7,7 @@ const macInstallGuide = path.join(__dirname, "assets", "INSTALL-macOS.txt");
 const extraResource = [
   path.join(projectRoot, "web"),
   path.join(projectRoot, "migrations"),
-  path.join(projectRoot, "config"),
+  path.join(__dirname, "resources", "public-job-manifest.txt"),
   path.join(__dirname, "resources", "backend"),
   path.join(__dirname, "resources", "postgres"),
 ]
@@ -69,6 +69,7 @@ module.exports = {
       const required = [
         path.join(projectRoot, "web", "index.html"),
         path.join(projectRoot, "migrations", "0001_job_data.sql"),
+        path.join(__dirname, "resources", "public-job-manifest.txt"),
         path.join(
           __dirname,
           "resources", "backend", nativeTarget, "wecanfindintern-backend",

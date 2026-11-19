@@ -42,7 +42,7 @@ class BackendSidecar {
       WCFI_DESKTOP_TOKEN: this.token,
       WCFI_USER_DATA_DIR: this.paths.userData,
       WCFI_RESOURCE_DIR: this.paths.resources,
-      WCFI_BACKGROUND_COLLECTION_ENABLED: "1",
+      WCFI_JOB_SYNC_ENABLED: "1",
       PYTHONUNBUFFERED: "1",
     };
     if (!this.app.isPackaged) environment.PYTHONPATH = path.join(this.paths.projectRoot, "src");

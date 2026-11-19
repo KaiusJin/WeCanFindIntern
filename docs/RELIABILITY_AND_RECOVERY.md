@@ -216,8 +216,8 @@ PostgreSQL backup restore follows these rules:
 
 ## 8. Concurrency conflict handling
 
-- `campaign already running`: identify the current manual, scheduled, or desktop
-  task and wait for it instead of starting another campaign.
+- Cloud campaign lock conflict: inspect the active Actions run and wait for it
+  instead of starting another campaign.
 - Agent approval conflict: an approval can leave `pending` once. Refresh the list
   to read its final state and do not repeat the write.
 - Tracker unique conflict: read the current row by source/job identity. A repeated

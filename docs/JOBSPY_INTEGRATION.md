@@ -108,9 +108,9 @@ When upgrading JobSpy:
 2. Compare upstream `JobPost` and desired column ordering.
 3. Update `JOBSPY_COLUMNS` and this table.
 4. Run adapter, normalization, and route tests.
-5. Run `inspect_jobspy_output.py` against a small real query.
-6. Verify raw CSV, normalized JSONL, PostgreSQL ingest, and public API output separately.
+5. Inspect a cloud workflow run for source/query failures.
+6. Verify raw snapshots, normalized records, PostgreSQL ingest, and public feed output separately.
 
 The upgrade is complete only when the vendored source version/commit, adapter
-column contract, normalization tests, bounded live probe, database ingest, and
+column contract, normalization tests, cloud collection, database ingest, and
 public schema all describe the same provider shape.

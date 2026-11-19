@@ -49,7 +49,7 @@ class DesktopPaths:
         url = os.getenv("WCFI_PUBLIC_JOBS_MANIFEST_URL")
         if url:
             return url
-        config = self.resources / "config" / "public-job-manifest.txt"
+        config = self.resources / "public-job-manifest.txt"
         return config.read_text(encoding="utf-8").strip() if config.is_file() else ""
 
     @property

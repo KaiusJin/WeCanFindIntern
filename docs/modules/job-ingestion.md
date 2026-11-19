@@ -14,8 +14,6 @@ The ingestion module turns source-specific JobSpy results into stable internal r
 | Collection catalog | `src/wecanfindintern/ingestion/collection_catalog.py` | Expands JSON plans into executable definitions |
 | Detail cache | `src/wecanfindintern/db/repositories/collection_cache.py` | Reads durable campaign counts and reusable LinkedIn detail payloads |
 | Campaign runner | `scripts/collection/run_collection_campaign.py` | Runs every query, retries failures, then persists and enriches |
-| Single-query runner | `scripts/collection/ingest_jobspy_to_db.py` | Runs one JobSpy query and writes a batch |
-| Developer CLI | `src/wecanfindintern/ingestion/jobspy_cli.py` | Shared CLI parsing and query defaults |
 
 The vendored upstream implementation is in `vendor/JobSpy`. The project pins
 and audits the local source rather than importing an unconstrained package at
@@ -116,7 +114,7 @@ sources.
 
 When the request has `country_indeed=Canada` or `USA`/`United States`, the returned location is parsed and records outside the requested country are discarded before persistence. If no country scope is supplied, the adapter does not apply this filter.
 
-The campaign takes a single-instance file lock. This protects launchd runs from overlapping with manual runs. `run_collection_campaign_launchd.sh` loads `.env`, changes to the project directory, and redirects normal/error output to the configured log files.
+The cloud runner calls the campaign implementation directly. GitHub Actions concurrency and a PostgreSQL advisory lock prevent overlapping cloud campaigns. Public scraping is not scheduled or executed by the desktop app.
 
 ### Concurrency and restart semantics
 
@@ -133,9 +131,10 @@ database unique constraints make them unchanged/idempotent, while changed raw
 payloads are recorded by hash. This is a restart-from-source strategy, not a
 claim of resumable page-level crawling.
 
-The lock only prevents overlap; it does not record progress and should not be
-deleted as a recovery step. A desktop shutdown marks an interrupted background
-run and schedules a fresh run on the next eligible interval.
+The cloud runner checkpoints completed queries in PostgreSQL. A retry reuses
+eligible checkpoints; unfinished queries restart from their first page. Desktop
+shutdown interrupts only feed synchronization, which resumes from its committed
+local cursor.
 
 ## Persistence handoff
 
@@ -152,7 +151,7 @@ newer LinkedIn detail timestamp; they skip candidate lookup and raw snapshot
 insertion. New or changed rows continue through source-fingerprint and dedupe-
 block advisory locks, and a new raw snapshot is written only for a changed hash.
 
-The single-query CLI supports raw CSV and normalized JSONL output for development. The database ingest CLI is the operational path for one-off collection; the campaign is the operational path for the configured full sweep.
+The `Public job feed` workflow is the operational entry point for collection and publication. The desktop consumes the published feed; it does not run JobSpy.
 
 ## Failure behavior
 
@@ -186,7 +185,7 @@ definitive miss is `not_found`, and transport/provider failure is `error`.
 | Process stops during batch persistence | committed batches remain; active transaction rolls back | restart the full campaign; identity constraints reconcile records |
 | Fresh LinkedIn detail request fails | stale stored detail is used when present; card fields otherwise remain | rerun after LinkedIn recovers; detail freshness advances only after a successful fetch |
 | Enrichment provider fails | canonical jobs and completed enrichment remain | fix provider configuration and rerun/backfill the affected enrichment |
-| Process lock is already held | second invocation exits without collection | inspect the active manual/scheduled/desktop run and wait for it |
+| Process lock is already held | second invocation exits without collection | inspect the active Actions run and wait for it |
 
 ## Verification surface
 
@@ -198,8 +197,6 @@ definitive miss is `not_found`, and transport/provider failure is `error`.
 - `tests/test_job_ingestion_repository.py`: persistence and identity behavior.
 - `tests/test_salary_enrichment.py`: signal gating, content-hash state, and
   structured/regex/model precedence.
-- `scripts/dev/inspect_jobspy_output.py`: bounded live-source inspection before
-  a full campaign.
 
 ## Safe extension procedure
 
@@ -209,5 +206,5 @@ When adding or upgrading a source:
 2. Update the adapter’s stable columns and row mapping.
 3. Add source-specific query overrides only in the catalog/config boundary.
 4. Test zero-result, partial-field, salary, URL, date, and logged-error responses.
-5. Run a small `inspect_jobspy_output.py` query before a full campaign.
+5. Inspect source/query outcomes in the cloud workflow logs.
 6. Confirm raw output, canonical output, database ingest, and API response remain separate contracts.

@@ -3,14 +3,11 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import json
 import os
 import random
 import re
-import signal
-import sys
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -33,7 +30,6 @@ from wecanfindintern.ingestion.jobspy_adapter import (
 )
 from wecanfindintern.ingestion.location_query import resolve_query_location
 from wecanfindintern.ingestion.pipeline import run_ingestion_pipeline
-from wecanfindintern.process_lock import acquire_process_lock
 
 _RETRYABLE_HTTP_STATUSES = {408, 425, 429}
 _PERMANENT_ERROR_MARKERS = ("location not parsed",)
@@ -41,7 +37,7 @@ _PERMANENT_ERROR_MARKERS = ("location not parsed",)
 
 @dataclass(frozen=True, slots=True)
 class CampaignResult:
-    """Structured result shared by CLI summaries and the desktop status API."""
+    """Structured collection result used by the cloud publisher."""
 
     completed_at: datetime
     duration_seconds: float
@@ -594,68 +590,3 @@ async def run(
     if result is None:
         raise RuntimeError("collection campaign ended without a result")
     return result
-
-
-def main() -> None:
-    resource_dir = Path(os.getenv("WCFI_RESOURCE_DIR", "."))
-    runtime_dir = Path(os.getenv("WCFI_RUNTIME_DIR", ".runtime"))
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--config", type=Path, default=resource_dir / "config" / "collection_plans.json"
-    )
-    parser.add_argument("--batch-size", type=int, default=250)
-    parser.add_argument(
-        "--concurrency",
-        type=int,
-        default=4,
-        help="Max concurrent scraper threads/queries",
-    )
-    parser.add_argument(
-        "--max-retries",
-        type=int,
-        default=3,
-        help="Max retries per scraper query on error",
-    )
-    parser.add_argument(
-        "--lock-file",
-        type=Path,
-        default=runtime_dir / "collection-campaign.lock",
-        help="Process lock shared by manual and scheduled campaign runs",
-    )
-    args = parser.parse_args()
-    if not 1 <= args.batch_size <= 500:
-        parser.error("--batch-size must be between 1 and 500")
-    if not 1 <= args.concurrency <= 16:
-        parser.error("--concurrency must be between 1 and 16")
-    if not 0 <= args.max_retries <= 10:
-        parser.error("--max-retries must be between 0 and 10")
-
-    args.lock_file.parent.mkdir(parents=True, exist_ok=True)
-
-    # Graceful signal handler for unexpected termination
-    def _handle_signal(signum, _frame):
-        sig_name = signal.Signals(signum).name
-        log(f"Received termination signal ({sig_name}). Exiting cleanly...", level="WARN")
-        sys.exit(128 + signum)
-
-    signal.signal(signal.SIGINT, _handle_signal)
-    signal.signal(signal.SIGTERM, _handle_signal)
-
-    with args.lock_file.open("a+", encoding="utf-8") as lock_file:
-        try:
-            acquire_process_lock(lock_file)
-        except BlockingIOError:
-            log(f"Campaign already running; lock is held at {args.lock_file}", level="WARN")
-            return
-        asyncio.run(
-            run(
-                args.config,
-                args.batch_size,
-                concurrency=args.concurrency,
-                max_retries=args.max_retries,
-            )
-        )
-
-
-if __name__ == "__main__":
-    main()
