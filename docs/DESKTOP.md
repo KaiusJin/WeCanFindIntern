@@ -34,12 +34,16 @@ The packaged app registers itself for login startup with `--background`; schedul
 collection therefore continues while the user session and tray app are running.
 
 Startup is fail-closed: Electron verifies the embedded PostgreSQL bundle, creates
-or validates the PostgreSQL data directory, chooses a free loopback port, starts
-the database, starts the Python sidecar, waits up to 60 seconds for its JSON
+or validates the PostgreSQL data directory, checks for a server orphaned by a
+previous app process, chooses a free loopback port, starts the database, starts
+the Python sidecar, waits up to 60 seconds for its JSON
 `ready` line, and only then navigates the renderer. The sidecar rejects non-loopback
 bind addresses, requires the desktop token and both resource/data directories,
 applies migrations before serving, and logs startup failures to the user data
-directory.
+directory. Orphan recovery validates the recorded data directory and loopback
+PostgreSQL endpoint before issuing a fast shutdown; a mismatched or unresponsive
+lock fails closed instead of deleting `postmaster.pid` or signaling an unknown
+process.
 
 ## Local data
 
@@ -190,6 +194,7 @@ binaries while preserving the data directory.
 | app opens but API is unavailable | backend sidecar exited or timed out | inspect `logs/backend-*.log`, then retry after fixing resources/migrations |
 | PostgreSQL bundle incomplete | native runtime or pgvector artifact missing | rebuild the platform bundle; do not use a host data directory |
 | PostgreSQL major mismatch | existing user data was created by another major version | restore a compatible dump or perform the documented `pg_upgrade` procedure |
+| `postmaster.pid` already exists | a previous Electron process exited before its embedded database | restart with a build containing orphan recovery; never delete a lock for a live process |
 | `401 Desktop authentication required` | renderer request lacks the current launch token | reload through Electron; do not expose the sidecar port publicly |
 | collection status says interrupted | previous background task stopped while `running` | leave existing data in place; the scheduler performs a fresh idempotent run |
 | restore failed | selected custom-format dump was incompatible/corrupt or DB failed | automatic safety rollback; preserve both error logs and safety backup |

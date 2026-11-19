@@ -195,7 +195,10 @@ Check desktop startup failures in this order:
 1. Confirm the Electron single-instance state and packaged resources.
 2. Confirm the PostgreSQL bundle contains
    `postgres/initdb/pg_ctl/pg_isready/createdb/psql` and `vector.control`.
-3. Confirm `PG_VERSION` is 16. A major-version mismatch stops startup.
+3. Confirm `PG_VERSION` is 16. A major-version mismatch stops startup. If a
+   previous Electron process left PostgreSQL running, startup validates its
+   data-directory lock and loopback endpoint before stopping it cleanly. Never
+   remove `postmaster.pid` while its process is alive.
 4. Confirm the sidecar prints `ready` within 60 seconds.
 5. Confirm the loopback token, `WCFI_USER_DATA_DIR`, `WCFI_RESOURCE_DIR`, and
    `DATABASE_URL` are present.

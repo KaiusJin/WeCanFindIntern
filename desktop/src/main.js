@@ -24,6 +24,7 @@ let desktopToken;
 let runtimePaths;
 let quitting = false;
 let shutdownStarted = false;
+let shutdownPromise;
 
 function trustedExternalUrl(rawUrl) {
   try {
@@ -184,12 +185,20 @@ async function startRuntime() {
   }
 }
 
-async function shutdown() {
-  if (shutdownStarted) return;
+function shutdown() {
+  if (shutdownPromise) return shutdownPromise;
   shutdownStarted = true;
-  await backups?.stop();
-  await backend?.stop();
-  await postgres?.stop();
+  shutdownPromise = (async () => {
+    await backups?.stop();
+    await backend?.stop();
+    await postgres?.stop();
+  })();
+  return shutdownPromise;
+}
+
+function shutdownAndQuit() {
+  quitting = true;
+  shutdown().finally(() => app.quit());
 }
 
 ipcMain.handle("desktop:get-version", () => app.getVersion());
@@ -230,7 +239,13 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", (event) => {
     if (shutdownStarted) return;
     event.preventDefault();
-    quitting = true;
-    shutdown().finally(() => app.quit());
+    shutdownAndQuit();
   });
+}
+
+// An updater, terminal, or session shutdown can terminate Electron without a
+// normal menu-driven quit. Handle the catchable process signals so the backend
+// and database have an opportunity to flush and release their runtime files.
+for (const signal of ["SIGINT", "SIGHUP", "SIGTERM"]) {
+  process.once(signal, shutdownAndQuit);
 }
