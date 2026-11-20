@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from threading import Event, Lock
 from types import SimpleNamespace
+
+from jobspy.exception import LinkedInException, LinkedInRateLimitException
 
 from scripts.collection import run_collection_campaign as campaign
 from wecanfindintern.db.repositories.collection_cache import LinkedInDetailCacheEntry
@@ -79,6 +82,108 @@ def test_collection_error_classification() -> None:
     assert campaign.is_retryable_collection_error(RuntimeError("status code 429"))
     assert campaign.is_retryable_collection_error(RuntimeError("status code 503"))
     assert campaign.is_retryable_collection_error(TimeoutError("read timed out"))
+    assert not campaign.is_retryable_collection_error(
+        LinkedInException("type object 'Country' has no attribute 'US_CANADA'")
+    )
+
+
+def test_exhausted_linkedin_rate_limit_opens_only_linkedin_circuit(monkeypatch) -> None:
+    calls = []
+
+    def scrape(query):
+        source = query.sites[0]
+        calls.append(source)
+        if source == "linkedin":
+            raise LinkedInRateLimitException("HTTP 429 circuit is open", retry_after=300)
+        return "frame", SimpleNamespace(jobs=[])
+
+    monkeypatch.setattr(campaign, "scrape_checked", scrape)
+    definitions = [_definition(f"linkedin-{i}", "linkedin") for i in range(3)]
+    definitions.append(_definition("indeed", "indeed"))
+
+    _, failures, stats = asyncio.run(campaign.collect_all(definitions, concurrency=4))
+
+    assert calls.count("linkedin") == 1
+    assert calls.count("indeed") == 1
+    assert len(failures) == 1
+    assert stats == {"retried": 0, "succeeded": 1, "failed": 1, "skipped": 2}
+
+
+def test_queued_linkedin_queries_leave_capacity_for_indeed(monkeypatch) -> None:
+    indeed_finished = Event()
+    counter_lock = Lock()
+    active_linkedin = 0
+    maximum_active = 0
+    indeed_progressed = []
+
+    def scrape(query):
+        nonlocal active_linkedin, maximum_active
+        if query.sites == ["indeed"]:
+            indeed_finished.set()
+        else:
+            with counter_lock:
+                active_linkedin += 1
+                maximum_active = max(maximum_active, active_linkedin)
+            indeed_progressed.append(indeed_finished.wait(timeout=2))
+            with counter_lock:
+                active_linkedin -= 1
+        return "frame", SimpleNamespace(jobs=[])
+
+    monkeypatch.setattr(campaign, "scrape_checked", scrape)
+    definitions = [_definition(f"linkedin-{i}", "linkedin") for i in range(3)]
+    definitions.append(_definition("indeed", "indeed"))
+
+    _, failures, stats = asyncio.run(campaign.collect_all(definitions, concurrency=2))
+
+    assert indeed_progressed == [True, True, True]
+    assert maximum_active == 1
+    assert not failures
+    assert stats["succeeded"] == 4
+
+
+def test_detail_rate_limit_stops_fetches_and_keeps_stale_cache(monkeypatch) -> None:
+    jobs = [
+        normalize_record(
+            {
+                "site": "linkedin",
+                "id": f"li-{i}",
+                "title": "Intern",
+                "job_url": f"https://linkedin.test/jobs/view/{i}",
+            }
+        )
+        for i in range(3)
+    ]
+
+    class Cache:
+        async def linkedin_details(self, _fingerprints):
+            return {
+                job.source_fingerprint: LinkedInDetailCacheEntry(
+                    payload={"description": "Cached description"},
+                    details_fetched_at=datetime(2020, 1, 1, tzinfo=UTC),
+                )
+                for job in jobs
+            }
+
+    calls = []
+
+    def fetch(job_id):
+        calls.append(job_id)
+        raise LinkedInRateLimitException("HTTP 429 circuit is open")
+
+    monkeypatch.setattr(campaign, "fetch_linkedin_details", fetch)
+    hydrated, stats = asyncio.run(
+        campaign.hydrate_linkedin_descriptions(
+            jobs,
+            Cache(),
+            ttl_seconds=86400,
+            concurrency=1,
+        )
+    )
+
+    assert len(calls) == 1
+    assert all(job.description == "Cached description" for job in hydrated)
+    assert stats["linkedin_detail_failed"] == 3
+    assert stats["linkedin_detail_stale_fallbacks"] == 3
 
 
 def test_collection_window_starts_full_then_refreshes_every_ten() -> None:

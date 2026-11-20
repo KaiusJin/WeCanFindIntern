@@ -50,7 +50,10 @@ Some JobSpy scrapers log an HTTP or parsing error and return an empty DataFrame 
 - empty result with captured source error: raises a retryable `RuntimeError` containing the latest source messages;
 - non-empty result: returns the normal frame/result pair.
 
-The handler is always removed in a `finally` block so repeated collection does not accumulate logging handlers.
+The handler only captures errors for the query's own sources, so a concurrent
+LinkedIn failure cannot turn a genuinely empty Indeed result into a failure.
+It is always removed in a `finally` block so repeated collection does not
+accumulate logging handlers.
 
 ## Campaign lifecycle
 
@@ -111,6 +114,30 @@ seconds. Deterministic provider failures such as unsupported locations or
 non-retryable HTTP 4xx responses open a per-run source circuit so remaining
 queries for that source are skipped. One source failure does not cancel unrelated
 sources.
+
+LinkedIn search and detail HTTP requests share a process-wide controller in
+`vendor/JobSpy/jobspy/linkedin/request.py`, which spaces request starts and allows up to two in flight:
+
+- **AIMD:** starts at 0.2 requests/second. Each successful response adds 0.02
+  requests/second, up to one request per second. Each HTTP 429 halves the
+  rate, with a lower bound of one request every 60 seconds. During recovery only one request may be in flight.
+- **Exponential backoff:** consecutive HTTP 429 responses wait 60, then 120
+  seconds, plus 0–10 seconds of jitter. Both numeric and HTTP-date `Retry-After`
+  headers are honored when they require a longer wait. The requests adapter and
+  campaign do not multiply these 429 retries.
+- **Circuit breaker:** the third consecutive HTTP 429 opens the controller's
+  circuit for at least 300 seconds, or longer if `Retry-After` requires it.
+  Calls during this window fail without HTTP traffic. The next call after the
+  cooldown is a single half-open probe: success closes the circuit; a failed
+  probe reopens it.
+
+LinkedIn keyword queries are serialized outside the campaign's global semaphore,
+so queued LinkedIn work cannot occupy all slots while Indeed is collecting.
+When the controller opens its circuit, the campaign skips remaining LinkedIn
+queries for that run. Detail hydration pauses further fetches and uses stale
+cached descriptions where available. Other sources continue and the existing
+partial-result publication policy still applies. Controller state is local to
+the Python process; successful-query checkpoints remain durable separately.
 
 When the request has `country_indeed=Canada` or `USA`/`United States`, the returned location is parsed and records outside the requested country are discarded before persistence. If no country scope is supplied, the adapter does not apply this filter.
 
@@ -190,6 +217,8 @@ A successful salary extraction is `complete`, and a definitive miss is
 
 - `src/wecanfindintern/ingestion/tests/test_jobspy_adapter.py`: stable columns, conversion, query validation.
 - `src/wecanfindintern/ingestion/tests/test_scrape_checked.py`: empty success versus logged source failure.
+- `src/wecanfindintern/ingestion/tests/test_linkedin_requests.py`: country display,
+  real card normalization, shared AIMD pacing, Retry-After/backoff, and circuit probes.
 - `src/wecanfindintern/ingestion/tests/test_collection_catalog.py`: catalog expansion and source overrides.
 - `scripts/collection/tests/test_collection_campaign.py`: sweep cadence, LinkedIn cache/hydration,
   retry isolation, and campaign status.

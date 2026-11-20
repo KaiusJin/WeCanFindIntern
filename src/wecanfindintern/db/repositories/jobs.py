@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
@@ -41,11 +43,35 @@ class IngestionRun:
     public_id: UUID
 
 
+class DedupeTimings:
+    """Client-side wall time for nonoverlapping phases of one ingestion run."""
+
+    def __init__(self) -> None:
+        self.seconds = dict.fromkeys(
+            ("normalize", "locks", "source_lookup", "candidates", "writes", "bulk_refresh"), 0.0
+        )
+
+    @contextmanager
+    def measure(self, phase: str) -> Iterator[None]:
+        started = perf_counter()
+        try:
+            yield
+        finally:
+            self.seconds[phase] += perf_counter() - started
+
+    def summary(self, elapsed: float) -> dict[str, float]:
+        other = max(0.0, elapsed - sum(self.seconds.values()))
+        return {
+            k: round(v, 3) for k, v in {**self.seconds, "other": other, "total": elapsed}.items()
+        }
+
+
 class JobIngestionRepository:
     """Write path optimized for bounded batches, not one connection per row."""
 
-    def __init__(self, pool: AsyncConnectionPool) -> None:
+    def __init__(self, pool: AsyncConnectionPool, timings: DedupeTimings | None = None) -> None:
         self.pool = pool
+        self.timings = timings if timings is not None else DedupeTimings()
 
     async def start_run(
         self,
@@ -89,11 +115,12 @@ class JobIngestionRepository:
                 "SELECT ensure_raw_job_snapshot_partition(%s)",
                 (scraped_at,),
             )
-            unchanged_fingerprints = await self._refresh_unchanged_sources(
-                connection,
-                jobs=batch_jobs,
-                scraped_at=scraped_at,
-            )
+            with self.timings.measure("bulk_refresh"):
+                unchanged_fingerprints = await self._refresh_unchanged_sources(
+                    connection,
+                    jobs=batch_jobs,
+                    scraped_at=scraped_at,
+                )
             counts[IngestionOutcome.UNCHANGED.value] += len(unchanged_fingerprints)
             for job in batch_jobs:
                 if job.source.source_fingerprint in unchanged_fingerprints:
@@ -241,92 +268,96 @@ class JobIngestionRepository:
         if direct_hash:
             lock_values.append(direct_hash)
         lock_keys = sorted({advisory_key(value) for value in lock_values})
-        for lock_key in lock_keys:
-            await connection.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
-
-        existing = await (
-            await connection.execute(
-                """
-                SELECT id, job_id, last_payload_hash
-                FROM job_sources
-                WHERE source_fingerprint = %s
-                FOR UPDATE
-                """,
-                (fingerprint,),
-            )
-        ).fetchone()
+        with self.timings.measure("locks"):
+            for lock_key in lock_keys:
+                await connection.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
+        with self.timings.measure("source_lookup"):
+            existing = await (
+                await connection.execute(
+                    """
+                    SELECT id, job_id, last_payload_hash
+                    FROM job_sources
+                    WHERE source_fingerprint = %s
+                    FOR UPDATE
+                    """,
+                    (fingerprint,),
+                )
+            ).fetchone()
         if existing:
             persisted_incoming = normalize_canonical_job_description(incoming)
-            changed = await self._refresh_existing_source(
-                connection,
-                incoming=persisted_incoming,
-                source_id=existing["id"],
-                job_id=existing["job_id"],
-                payload_hash=payload_hash,
-                previous_payload_hash=existing["last_payload_hash"],
-                run_id=run_id,
-                scraped_at=scraped_at,
-            )
+            with self.timings.measure("writes"):
+                changed = await self._refresh_existing_source(
+                    connection,
+                    incoming=persisted_incoming,
+                    source_id=existing["id"],
+                    job_id=existing["job_id"],
+                    payload_hash=payload_hash,
+                    previous_payload_hash=existing["last_payload_hash"],
+                    run_id=run_id,
+                    scraped_at=scraped_at,
+                )
             return IngestionOutcome.UPDATED if changed else IngestionOutcome.UNCHANGED
 
-        candidates = await self._find_candidates(connection, incoming)
+        with self.timings.measure("candidates"):
+            candidates = await self._find_candidates(connection, incoming)
         decision = choose_duplicate(incoming, candidates)
         persisted_incoming = normalize_canonical_job_description(incoming)
-        if decision.action is DedupeAction.MERGE and decision.candidate_job_id:
-            job_id = decision.candidate_job_id
-            outcome = IngestionOutcome.MERGED
-            await self._refresh_canonical_job(
-                connection, job_id, persisted_incoming, scraped_at
+        with self.timings.measure("writes"):
+            if decision.action is DedupeAction.MERGE and decision.candidate_job_id:
+                job_id = decision.candidate_job_id
+                outcome = IngestionOutcome.MERGED
+                await self._refresh_canonical_job(
+                    connection, job_id, persisted_incoming, scraped_at
+                )
+            else:
+                job_id = await self._insert_job(connection, persisted_incoming, scraped_at)
+                outcome = IngestionOutcome.CREATED
+
+            source_id = await self._insert_source(
+                connection,
+                job_id=job_id,
+                incoming=persisted_incoming,
+                fingerprint=fingerprint,
+                payload_hash=payload_hash,
+                scraped_at=scraped_at,
             )
-        else:
-            job_id = await self._insert_job(connection, persisted_incoming, scraped_at)
-            outcome = IngestionOutcome.CREATED
+            await self._insert_snapshot(
+                connection,
+                run_id=run_id,
+                source_id=source_id,
+                fingerprint=fingerprint,
+                payload_hash=payload_hash,
+                payload=persisted_incoming.source.payload,
+                scraped_at=scraped_at,
+            )
+            await connection.execute(
+                """
+                UPDATE jobs
+                SET source_count = source_count + 1,
+                    last_seen_at = GREATEST(last_seen_at, %s),
+                    last_verified_at = GREATEST(last_verified_at, %s),
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (scraped_at, scraped_at, job_id),
+            )
 
-        source_id = await self._insert_source(
-            connection,
-            job_id=job_id,
-            incoming=persisted_incoming,
-            fingerprint=fingerprint,
-            payload_hash=payload_hash,
-            scraped_at=scraped_at,
-        )
-        await self._insert_snapshot(
-            connection,
-            run_id=run_id,
-            source_id=source_id,
-            fingerprint=fingerprint,
-            payload_hash=payload_hash,
-            payload=persisted_incoming.source.payload,
-            scraped_at=scraped_at,
-        )
-        await connection.execute(
-            """
-            UPDATE jobs
-            SET source_count = source_count + 1,
-                last_seen_at = GREATEST(last_seen_at, %s),
-                last_verified_at = GREATEST(last_verified_at, %s),
-                updated_at = now()
-            WHERE id = %s
-            """,
-            (scraped_at, scraped_at, job_id),
-        )
-
-        await connection.execute(
-            """
-            INSERT INTO dedupe_decisions (
-                source_fingerprint, resulting_job_id, compared_job_id,
-                action, score, algorithm_version, evidence
-            ) VALUES (%s, %s, %s, %s, %s, 2, %s)
-            """,
-            (
-                fingerprint,
-                job_id,
-                decision.candidate_job_id,
-                decision.action.value,
-                decision.score,
-                Jsonb(decision.evidence),
-            ),
-        )
+            await connection.execute(
+                """
+                INSERT INTO dedupe_decisions (
+                    source_fingerprint, resulting_job_id, compared_job_id,
+                    action, score, algorithm_version, evidence
+                ) VALUES (%s, %s, %s, %s, %s, 2, %s)
+                """,
+                (
+                    fingerprint,
+                    job_id,
+                    decision.candidate_job_id,
+                    decision.action.value,
+                    decision.score,
+                    Jsonb(decision.evidence),
+                ),
+            )
         return outcome
 
     async def _find_candidates(
@@ -684,9 +715,7 @@ class JobIngestionRepository:
         employment_types = sorted(
             set(current["employment_types"] or []) | set(incoming.employment_types)
         )
-        source_skills = sorted(
-            set(current["source_skills"] or []) | set(incoming.source_skills)
-        )
+        source_skills = sorted(set(current["source_skills"] or []) | set(incoming.source_skills))
         work_mode = current["work_mode"]
         if not work_mode or work_mode == "unknown":
             work_mode = incoming.work_mode.value

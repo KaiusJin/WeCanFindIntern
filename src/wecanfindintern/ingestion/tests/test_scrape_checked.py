@@ -36,3 +36,18 @@ def test_scrape_checked_converts_jobspy_error_log_to_exception(monkeypatch) -> N
 
     with pytest.raises(RuntimeError, match="status code 403"):
         scrape_checked(query())
+
+
+def test_scrape_checked_ignores_other_providers_errors(monkeypatch) -> None:
+    expected = SimpleNamespace(jobs=[])
+
+    def scrape(_):
+        logging.getLogger("JobSpy:LinkedIn").error("HTTP 429")
+        return "frame", expected
+
+    monkeypatch.setattr(
+        "wecanfindintern.ingestion.jobspy_adapter.scrape_and_normalize",
+        scrape,
+    )
+
+    assert scrape_checked(query()) == ("frame", expected)

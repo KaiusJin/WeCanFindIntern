@@ -111,7 +111,7 @@ def test_ingestion_finishes_deduplication_before_regex_and_never_calls_llm(monke
         return original_term(*args, **kwargs)
 
     class Jobs:
-        def __init__(self, pool):
+        def __init__(self, pool, timings=None):
             pass
 
         async def ingest_batch(self, **kwargs):

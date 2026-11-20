@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import os
 import random
@@ -15,10 +16,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from jobspy.exception import LinkedInRateLimitException
+
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.db.repositories.collection_cache import CollectionCacheRepository
-from wecanfindintern.db.repositories.jobs import JobIngestionRepository
+from wecanfindintern.db.repositories.jobs import DedupeTimings, JobIngestionRepository
 from wecanfindintern.domain.location import parse_location
 from wecanfindintern.ingestion.collection_catalog import expand_collection_catalog
 from wecanfindintern.ingestion.jobspy_adapter import (
@@ -32,7 +35,7 @@ from wecanfindintern.ingestion.location_query import resolve_query_location
 from wecanfindintern.ingestion.pipeline import run_ingestion_pipeline
 
 _RETRYABLE_HTTP_STATUSES = {408, 425, 429}
-_PERMANENT_ERROR_MARKERS = ("location not parsed",)
+_PERMANENT_ERROR_MARKERS = ("location not parsed", "has no attribute")
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +51,7 @@ class CampaignResult:
     recruiting_term_stats: dict[str, int]
     query_stats: dict[str, int]
     failures: tuple[str, ...]
+    dedupe_seconds: dict[str, float] = dataclasses.field(default_factory=dict)
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -56,6 +60,7 @@ class CampaignResult:
             "status": self.status,
             "unique_jobs_collected": self.unique_jobs_collected,
             "database_stats": dict(self.database_stats),
+            "dedupe_seconds": self.dedupe_seconds,
             "salary_stats": dict(self.salary_stats),
             "recruiting_term_stats": dict(self.recruiting_term_stats),
             "query_stats": dict(self.query_stats),
@@ -65,8 +70,10 @@ class CampaignResult:
 
 
 def is_retryable_collection_error(error: Exception) -> bool:
-    """Retry transient failures, but stop immediately for deterministic provider errors."""
+    """Stop deterministic errors and exhausted rate limits for this campaign."""
 
+    if isinstance(error, LinkedInRateLimitException):
+        return False
     message = str(error).casefold()
     if any(marker in message for marker in _PERMANENT_ERROR_MARKERS):
         return False
@@ -104,6 +111,7 @@ async def collect_all(
     disabled_sources: set[str] = set()
     lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(max(1, concurrency))
+    linkedin_lock = asyncio.Lock()
 
     tasks: list[tuple[dict[str, Any], str]] = []
     for definition in definitions:
@@ -115,7 +123,7 @@ async def collect_all(
     total_tasks = len(tasks)
     log(f"Starting collection campaign: {total_tasks} site queries with concurrency={concurrency}")
 
-    async def _collect_single_query(definition: dict[str, Any], source: str, task_idx: int) -> None:
+    async def _collect_query(definition: dict[str, Any], source: str, task_idx: int) -> None:
         async with semaphore:
             key = (definition["name"], source)
             cached = checkpoint.completed.get(key) if checkpoint is not None else None
@@ -166,7 +174,7 @@ async def collect_all(
                             async with lock:
                                 disabled_sources.add(source)
                             log(
-                                f"[{task_idx}/{total_tasks}] FAILED permanently; "
+                                f"[{task_idx}/{total_tasks}] FAILED; "
                                 f"opened circuit for {source}: "
                                 f"{definition['name']} / {source} "
                                 f"({type(error).__name__}: {error})",
@@ -239,6 +247,15 @@ async def collect_all(
                     f"{len(seen_for_query)} source jobs (unique total: {len(collected)})"
                 )
 
+    async def _collect_single_query(definition: dict[str, Any], source: str, task_idx: int) -> None:
+        if source == "linkedin":
+            # Wait outside the global semaphore so Indeed can keep collecting
+            # while LinkedIn is throttled. Recheck the source circuit inside.
+            async with linkedin_lock:
+                await _collect_query(definition, source, task_idx)
+        else:
+            await _collect_query(definition, source, task_idx)
+
     await asyncio.gather(
         *[_collect_single_query(defn, src, idx) for idx, (defn, src) in enumerate(tasks, start=1)]
     )
@@ -308,9 +325,10 @@ async def hydrate_linkedin_descriptions(
     failed = 0
     stale_fallbacks = 0
     counter_lock = asyncio.Lock()
+    rate_limited = False
 
     async def _fetch(job: NormalizedJob) -> None:
-        nonlocal fetched, failed, stale_fallbacks
+        nonlocal fetched, failed, stale_fallbacks, rate_limited
         if job.source_fingerprint in hydrated:
             return
         if not job.source_job_id:
@@ -319,7 +337,15 @@ async def hydrate_linkedin_descriptions(
             return
         async with semaphore:
             try:
-                details = await asyncio.to_thread(fetch_linkedin_details, job.source_job_id)
+                details = (
+                    {}
+                    if rate_limited
+                    else await asyncio.to_thread(fetch_linkedin_details, job.source_job_id)
+                )
+            except LinkedInRateLimitException as error:
+                rate_limited = True
+                log(f"Paused LinkedIn detail fetches: {error}", level="WARN")
+                details = {}
             except Exception as error:
                 log(
                     f"LinkedIn detail fetch failed for {job.source_job_id}: "
@@ -491,6 +517,19 @@ async def run(
             },
         )
         scraped_at = datetime.now(UTC)
+        timings = DedupeTimings()
+        dedupe_seconds: dict[str, float] = {}
+
+        def log_persistence(persisted: Counter[str]) -> None:
+            elapsed = time.monotonic() - persistence_started
+            dedupe_seconds.update(timings.summary(elapsed))
+            log(
+                f"Dedupe stage complete in {elapsed:.1f}s: created={persisted['created']}, "
+                f"merged={persisted['merged']}, updated={persisted['updated']}, "
+                f"unchanged={persisted['unchanged']}"
+            )
+            log(f"Dedupe timing (seconds): {json.dumps(dedupe_seconds)}")
+
         persistence_started = time.monotonic()
         pipeline = await run_ingestion_pipeline(
             pool=database.pool,
@@ -499,12 +538,8 @@ async def run(
             scraped_at=scraped_at,
             batch_size=batch_size,
             outcomes=counts,
-            after_persist=lambda persisted: log(
-                f"Dedupe stage complete in "
-                f"{time.monotonic() - persistence_started:.1f}s: "
-                f"created={persisted['created']}, "
-                f"merged={persisted['merged']}, unchanged={persisted['unchanged']}"
-            ),
+            timings=timings,
+            after_persist=log_persistence,
         )
 
         # Stages 3 and 4: deterministic post-deduplication enrichment
@@ -536,6 +571,7 @@ async def run(
             duration_seconds=duration,
             status=result_status,
             unique_jobs_collected=len(normalized_jobs),
+            dedupe_seconds=dedupe_seconds,
             database_stats={
                 "created": counts["created"],
                 "merged": counts["merged"],

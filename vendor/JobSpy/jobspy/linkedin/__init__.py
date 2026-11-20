@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import math
-import random
-import time
 from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse, urlunparse, unquote
@@ -11,8 +9,9 @@ import regex as re
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from jobspy.exception import LinkedInException
+from jobspy.exception import LinkedInException, LinkedInRateLimitException
 from jobspy.linkedin.constant import headers
+from jobspy.linkedin.request import request_gate
 from jobspy.linkedin.util import (
     is_job_remote,
     job_type_code,
@@ -46,8 +45,6 @@ log = create_logger("LinkedIn")
 
 class LinkedIn(Scraper):
     base_url = "https://www.linkedin.com"
-    delay = 3
-    band_delay = 4
     jobs_per_page = 25
 
     def __init__(
@@ -60,8 +57,8 @@ class LinkedIn(Scraper):
         self.session = create_session(
             proxies=self.proxies,
             ca_cert=ca_cert,
-            has_retry=True,
-            delay=5,
+            # Shared request_gate owns 429 retries; avoid nested HTTP retries.
+            has_retry=False,
             clear_cookies=True,
         )
         self.session.headers.update(headers)
@@ -115,21 +112,19 @@ class LinkedIn(Scraper):
 
             params = {k: v for k, v in params.items() if v is not None}
             try:
-                response = self.session.get(
+                response = request_gate.get(
+                    self.session,
                     f"{self.base_url}/jobs-guest/jobs/api/seeMoreJobPostings/search?",
                     params=params,
                     timeout=10,
                 )
                 if response.status_code not in range(200, 400):
-                    if response.status_code == 429:
-                        err = (
-                            f"429 Response - Blocked by LinkedIn for too many requests"
-                        )
-                    else:
-                        err = f"LinkedIn response status code {response.status_code}"
-                        err += f" - {response.text}"
+                    err = f"LinkedIn response status code {response.status_code}"
+                    err += f" - {response.text}"
                     log.error(err)
                     return JobResponse(jobs=job_list)
+            except LinkedInRateLimitException:
+                raise
             except Exception as e:
                 if "Proxy responded with" in str(e):
                     log.error(f"LinkedIn: Bad proxy")
@@ -159,11 +154,12 @@ class LinkedIn(Scraper):
                             job_list.append(job_post)
                         if not continue_search():
                             break
+                    except LinkedInRateLimitException:
+                        raise
                     except Exception as e:
                         raise LinkedInException(str(e))
 
             if continue_search():
-                time.sleep(random.uniform(self.delay, self.delay + self.band_delay))
                 start += len(job_cards)
 
         job_list = job_list[: scraper_input.results_wanted]
@@ -266,11 +262,13 @@ class LinkedIn(Scraper):
         :return: dict
         """
         try:
-            response = self.session.get(
-                f"{self.base_url}/jobs/view/{job_id}", timeout=5
+            response = request_gate.get(
+                self.session, f"{self.base_url}/jobs/view/{job_id}", timeout=5
             )
             response.raise_for_status()
-        except:
+        except LinkedInRateLimitException:
+            raise
+        except Exception:
             return {}
         if "linkedin.com/signup" in response.url:
             return {}

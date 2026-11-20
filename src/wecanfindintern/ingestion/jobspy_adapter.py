@@ -179,10 +179,11 @@ def scrape_checked(query: JobSpyQuery):
     """
 
     errors: list[str] = []
+    source_loggers = {f"jobspy:{site.casefold()}" for site in query.sites}
 
     class JobSpyErrorCapture(logging.Handler):
         def emit(self, record: logging.LogRecord) -> None:
-            if record.levelno >= logging.ERROR and record.name.startswith("JobSpy"):
+            if record.levelno >= logging.ERROR and record.name.casefold() in source_loggers:
                 errors.append(record.getMessage())
 
     handler = JobSpyErrorCapture()

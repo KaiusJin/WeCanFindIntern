@@ -172,10 +172,7 @@ class Location(BaseModel):
             location_parts.append(self.state)
         if isinstance(self.country, str):
             location_parts.append(self.country)
-        elif self.country and self.country not in (
-            Country.US_CANADA,
-            Country.WORLDWIDE,
-        ):
+        elif self.country and self.country != Country.WORLDWIDE:
             country_name = self.country.value[0]
             if "," in country_name:
                 country_name = country_name.split(",")[0]
