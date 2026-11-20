@@ -174,8 +174,8 @@ keeps that storage isolation intact.
 
 | Feature | Primary path | Fallback or termination | Data effect |
 |---|---|---|---|
-| Salary | structured source data | regex, then DeepSeek; unresolved stays absent | valid current salary remains |
-| Recruiting term | cache, then regex | DeepSeek; failure records the generation | later selection uses changed hash or unfinished state |
+| Salary | structured source data | post-deduplication regex; unresolved stays absent | valid current salary remains |
+| Recruiting term | cache, then regex | unresolved stays absent; no LLM fallback | changed input hash triggers recalculation |
 | Recommendation | lexical + vector | lexical/skill overlap without vector | the model cannot invent candidates |
 | ATS score/match | deterministic | independent of LLM | provider failure cannot remove the score |
 | ATS commentary | LLM | retain deterministic score and report commentary error | primary score remains unchanged |

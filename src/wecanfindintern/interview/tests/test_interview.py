@@ -1,6 +1,7 @@
 """Unit tests for Mock Interview coaching module."""
 
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
@@ -154,29 +155,59 @@ def test_tts_default_backend_is_gtts(monkeypatch):
     assert tts.selected_backend() == "gtts"
 
 
-def test_tts_local_backend_produces_wav(monkeypatch, tmp_path):
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_tts_local_backend_produces_wav(monkeypatch, platform):
     from wecanfindintern.interview import tts
 
     monkeypatch.setenv(tts.TTS_BACKEND_ENV, "local")
+    # This is a mocked native-backend test, independent of the host running pytest.
+    # Replace only this module's sys reference, not the process-wide platform.
+    monkeypatch.setattr(tts, "sys", SimpleNamespace(platform=platform))
     tts._synthesize_local.cache_clear()
-
     captured = {}
+    text = "Tell me about yourself."
 
     def fake_run(command, **kwargs):
         captured["command"] = command
-        wav_path = command[2]
-        tmp_path.joinpath("out.wav").write_bytes(b"RIFF-fake-wav")
-        # say writes to the requested path; emulate by copying our fake bytes.
-        import shutil
-
-        shutil.copyfile(tmp_path / "out.wav", wav_path)
+        captured["kwargs"] = kwargs
+        wav_path = command[2] if platform == "darwin" else kwargs["env"]["WECANFINDINTERN_TTS_PATH"]
+        captured["path"] = Path(wav_path)
+        captured["path"].write_bytes(b"RIFF-fake-wav")
 
     monkeypatch.setattr(tts.subprocess, "run", fake_run)
-    audio = tts.generate_tts_audio("Tell me about yourself.")
-    assert audio.data == b"RIFF-fake-wav"
-    assert audio.media_type == "audio/wav"
-    assert captured["command"][0] == "say"
+    try:
+        audio = tts.generate_tts_audio(text)
+        assert audio.data == b"RIFF-fake-wav"
+        assert audio.media_type == "audio/wav"
+        assert captured["command"][0] == ("say" if platform == "darwin" else "powershell.exe")
+        assert captured["kwargs"]["check"] is True
+        assert captured["kwargs"]["timeout"] == 60
+        if platform == "darwin":
+            assert captured["command"][-1] == text
+            assert captured["kwargs"]["env"] is None
+        else:
+            assert captured["kwargs"]["env"]["WECANFINDINTERN_TTS_TEXT"] == text
+        assert not captured["path"].exists()
+    finally:
+        tts._synthesize_local.cache_clear()
+
+
+def test_tts_local_backend_rejects_linux_without_running_command(monkeypatch):
+    from wecanfindintern.interview import tts
+
+    monkeypatch.setenv(tts.TTS_BACKEND_ENV, "local")
+    monkeypatch.setattr(tts, "sys", SimpleNamespace(platform="linux"))
     tts._synthesize_local.cache_clear()
+
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("Unsupported local TTS must not start a native command")
+
+    monkeypatch.setattr(tts.subprocess, "run", forbidden_run)
+    try:
+        with pytest.raises(tts.TTSError, match="requires macOS or Windows"):
+            tts.generate_tts_audio("Tell me about yourself.")
+    finally:
+        tts._synthesize_local.cache_clear()
 
 
 def test_tts_unknown_backend_falls_back_to_default(monkeypatch):

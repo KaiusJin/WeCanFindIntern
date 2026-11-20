@@ -207,13 +207,12 @@ Comparison uses title, location/work mode, date distance, direct URL, and
 five-token description shingles. A match adds a source edge to the canonical
 job; a non-match creates its own canonical job.
 
-Salary precedence is provider-structured data, deterministic description regex,
-then DeepSeek. Only descriptions containing a salary signal reach the model.
-`salary_enrichment_input_hash`, status (`complete`, `not_found`, or `error`),
-check time, and model prevent repeated work on unchanged descriptions while
-leaving provider errors eligible for retry. Recruiting terms use content cache,
-regex, then constrained DeepSeek output. Neither enrichment path clears a valid
-stored value after an unresolved result.
+Salary precedence is provider-structured data, then deterministic description
+regex after deduplication. No LLM is called. `salary_enrichment_input_hash`,
+status (`complete` or `not_found`), and check time prevent repeated work on
+unchanged descriptions. Recruiting terms likewise use the content cache and
+regex over the title/full JD; unresolved values remain absent. Conditional
+salary writes preserve valid stored values and avoid writing against a changed JD.
 
 ## 6. WaterlooWorks workflow
 

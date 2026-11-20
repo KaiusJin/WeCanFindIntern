@@ -23,7 +23,7 @@ class SalaryEnrichmentCandidate:
 
 
 class SalaryRepository:
-    """Query and persist LLM/regex salary results for deduplicated jobs."""
+    """Query and persist regex salary results for deduplicated jobs."""
 
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self.pool = pool
@@ -89,9 +89,8 @@ class SalaryRepository:
         job_id: int,
         description_hash: str,
         salary: SalaryRange,
-        model: str | None = None,
     ) -> bool:
-        """Persist an LLM salary only if the deduplicated job JD is unchanged."""
+        """Persist a regex salary only if the deduplicated job JD is unchanged."""
 
         async with self.pool.connection() as connection:
             result = await connection.execute(
@@ -107,7 +106,7 @@ class SalaryRepository:
                     salary_enrichment_input_hash = %s,
                     salary_enrichment_status = 'complete',
                     salary_enrichment_checked_at = now(),
-                    salary_enrichment_model = %s,
+                    salary_enrichment_model = NULL,
                     updated_at = now()
                 WHERE id = %s
                   AND description_hash = %s
@@ -124,7 +123,6 @@ class SalaryRepository:
                     salary.annualized_minimum,
                     salary.annualized_maximum,
                     bytes.fromhex(description_hash),
-                    model,
                     job_id,
                     bytes.fromhex(description_hash),
                 ),
@@ -137,9 +135,8 @@ class SalaryRepository:
         job_id: int,
         description_hash: str,
         status: str,
-        model: str | None = None,
     ) -> bool:
-        """Cache a definitive miss; errors are recorded but remain retryable."""
+        """Cache a definitive regex miss for an unchanged description."""
 
         async with self.pool.connection() as connection:
             result = await connection.execute(
@@ -148,7 +145,7 @@ class SalaryRepository:
                 SET salary_enrichment_input_hash = %s,
                     salary_enrichment_status = %s,
                     salary_enrichment_checked_at = now(),
-                    salary_enrichment_model = %s,
+                    salary_enrichment_model = NULL,
                     updated_at = now()
                 WHERE id = %s
                   AND description_hash = %s
@@ -159,7 +156,6 @@ class SalaryRepository:
                 (
                     bytes.fromhex(description_hash),
                     status,
-                    model,
                     job_id,
                     bytes.fromhex(description_hash),
                 ),

@@ -16,7 +16,6 @@ The `Public job feed` workflow runs the existing JobSpy campaign at 00:17 and 12
    | --- | --- | --- |
    | Secret | `SUPABASE_DATABASE_URL` | Collector session DSN |
    | Secret | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Bucket-scoped key pair |
-   | Secret | `DEEPSEEK_API_KEY` | Used by the existing optional LLM enrichment |
    | Variable | `R2_ENDPOINT_URL` | S3 API endpoint from the R2 account |
    | Variable | `R2_BUCKET` | Dedicated bucket name |
    | Variable | `WCFI_PUBLIC_JOBS_MANIFEST_URL` | Full custom-domain URL ending in `/manifest.json` |
@@ -29,7 +28,7 @@ The `Public job feed` workflow runs the existing JobSpy campaign at 00:17 and 12
 
 Completed provider queries are checkpointed in compressed form during a sweep. A restarted runner restores matching queries for up to six hours. Batches already written to PostgreSQL use the collector's existing deduplication. A partial run publishes available changes and reports failure in Actions so the operator can investigate the affected providers.
 
-The exporter compares hashes of canonical job and ordered source fields inside PostgreSQL. A sighting advances the collector's observation clocks. Only a changed projection advances the job's `sync_seq`. The on-device last-seen times reflect the observation included in the last distributed content change. An existing closed status is distributed as recorded. A complete successful campaign expires jobs last seen over 14 days ago. Closed and expired jobs are purged seven days after closure, generating tombstones. Raw history is pruned after one day except for the latest cached LinkedIn payload. Detailed decision and enrichment history is kept for seven days.
+The exporter compares hashes of canonical job and ordered source fields inside PostgreSQL. A sighting advances the collector's observation clocks. Only a changed projection advances the job's `sync_seq`. The on-device last-seen times reflect the observation included in the last distributed content change. An existing closed status is distributed as recorded. A complete successful campaign expires jobs last seen over 14 days ago. Closed and expired jobs are purged seven days after closure, generating tombstones. Raw history is pruned after one day except for the latest cached LinkedIn payload. Detailed deduplication decision history is kept for seven days. Collection enrichment uses regex only and requires no LLM API key.
 
 Every changed version has a current full gzip snapshot. The runner assembles it from the preceding R2 snapshot plus database changes. Each manifest advertises SHA-256 over the compressed bytes, length, record count and the last 42 delta packages. Packages are uploaded before replacing the manifest. Cleanup keeps all referenced objects and skips unreferenced packages uploaded in the last 48 hours.
 

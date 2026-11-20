@@ -86,11 +86,11 @@ Opportunity type and schedule are independent dimensions. A `software developer 
 Validated provider-structured salary is persisted with the canonical job during
 the initial ingest, even when the posting has no JD. Values reported as
 description-derived by a provider are not treated as structured data. Salary
-extraction from JD text runs only after deduplication: deterministic regex first,
-salary-signal detection second, then the bounded DeepSeek fallback for the
-remaining signaled candidates. The repository stores the checked description
-hash, `complete`/`not_found`/`error` status, check time, and model so unchanged
-definitive results are reused and provider errors remain retryable.
+extraction from the full JD runs only after deduplication, using deterministic
+amount-candidate scoring and regex normalization. There is no LLM fallback.
+Unresolved or ambiguous salary remains absent and is cached as `not_found`;
+successful extraction is `complete`. Content hashes avoid repeating the same
+work for unchanged descriptions.
 
 Annualization uses hourly × 2,080, daily × 260, weekly × 52, monthly × 12, and yearly/annual × 1. The database constraints enforce interval-specific amount ranges and annual minimum/maximum ordering. Unknown or invalid compensation is kept absent instead of being converted to a misleading zero.
 
@@ -98,7 +98,14 @@ Annualization uses hourly × 2,080, daily × 260, weekly × 52, monthly × 12, a
 
 `domain/recruiting_term.py` extracts a normalized season and year from titles and descriptions. The supported seasons are Winter, Spring, Summer, and Fall. It preserves the normalized `recruiting_term` string together with separate `recruiting_season` and `recruiting_year` fields for filtering.
 
-Regex extraction is attempted first. `ingestion/recruiting_term_llm.py` provides a constrained DeepSeek JSON fallback when the text is ambiguous. `ingestion/recruiting_term_enrichment.py` persists a content hash and generated result, so an unchanged title/JD pair is not sent to the model repeatedly.
+After deduplication, `ingestion/recruiting_term_enrichment.py` runs deterministic
+normalization over the title and full JD. Explicit work dates, field context,
+and candidate scores determine the primary term. January-April maps to Winter,
+May-August to Summer, September-December to Fall; an explicitly named Spring
+term is preserved. The normalizer also returns covered terms, while the current
+database stores the primary term. Unknown or ambiguous terms are persisted as
+`not_found`; an unchanged title/JD hash is skipped. No LLM or model-generation
+record is involved.
 
 ## Deduplication inputs
 

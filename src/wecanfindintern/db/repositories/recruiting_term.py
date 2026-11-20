@@ -5,9 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
-from uuid import UUID
 
-from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from wecanfindintern.domain.recruiting_term import RecruitingTerm
@@ -75,7 +73,6 @@ class RecruitingTermRepository:
         job_id: int,
         input_hash: str,
         term: RecruitingTerm | None,
-        model: str | None = None,
     ) -> bool:
         """Persist positive or negative extraction against an exact content hash."""
 
@@ -89,7 +86,7 @@ class RecruitingTermRepository:
                     recruiting_term_evidence = %s,
                     recruiting_term_input_hash = %s,
                     recruiting_term_checked_at = now(),
-                    recruiting_term_model = %s,
+                    recruiting_term_model = NULL,
                     updated_at = now()
                 WHERE id = %s
                   AND digest(title || E'\\n' || coalesce(description, ''), 'sha256') = %s
@@ -100,65 +97,8 @@ class RecruitingTermRepository:
                     term.source if term else "not_found",
                     term.evidence if term else None,
                     bytes.fromhex(input_hash),
-                    model,
                     job_id,
                     bytes.fromhex(input_hash),
                 ),
             )
         return result.rowcount == 1
-
-    async def start_recruiting_term_generation(
-        self,
-        *,
-        job_id: int,
-        input_hash: str,
-        input_context: str,
-        model: str,
-    ) -> UUID:
-        """Create an addressable pending generation before calling DeepSeek."""
-
-        async with self.pool.connection() as connection:
-            row = await (
-                await connection.execute(
-                    """
-                    INSERT INTO recruiting_term_generations (
-                        job_id, input_hash, input_context, model
-                    ) VALUES (%s, %s, %s, %s)
-                    RETURNING id
-                    """,
-                    (job_id, bytes.fromhex(input_hash), input_context, model),
-                )
-            ).fetchone()
-        return row["id"]
-
-    async def finish_recruiting_term_generation(
-        self,
-        generation_id: UUID,
-        *,
-        response_json: dict | None,
-        prompt_tokens: int | None,
-        completion_tokens: int | None,
-        error_type: str | None,
-    ) -> None:
-        status = "complete" if error_type is None else "error"
-        async with self.pool.connection() as connection:
-            await connection.execute(
-                """
-                UPDATE recruiting_term_generations
-                SET status = %s,
-                    response_json = %s,
-                    prompt_tokens = %s,
-                    completion_tokens = %s,
-                    error_type = %s,
-                    finished_at = now()
-                WHERE id = %s
-                """,
-                (
-                    status,
-                    Jsonb(response_json) if response_json is not None else None,
-                    prompt_tokens,
-                    completion_tokens,
-                    error_type,
-                    generation_id,
-                ),
-            )

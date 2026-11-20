@@ -50,7 +50,6 @@ flowchart TD
 |---|---|---|
 | Database | `DATABASE_URL`, `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, `DB_STATEMENT_TIMEOUT_MS` | FastAPI, scripts, schema initialization |
 | Recommendation vectors | `RECOMMEND_EMBEDDING_PROVIDER`, model, dimensions, key and base URL | background indexer and backfill |
-| Collection enrichment | `DEEPSEEK_*` salary/term model, enablement, timeout and API settings | salary and recruiting-term enrichment |
 | Collection sweep | `WCFI_COLLECTION_RECENT_HOURS`, `WCFI_COLLECTION_FULL_SWEEP_EVERY` | durable recent/full provider sweep selection |
 | LinkedIn details | `WCFI_LINKEDIN_DETAIL_TTL_SECONDS`, `WCFI_LINKEDIN_DETAIL_CONCURRENCY` | post-deduplication detail reuse and fetch fan-out |
 | LLM provider bases | `DEEPSEEK_API_BASE`, `GLM_API_BASE`, `QWEN_API_BASE`, `OLLAMA_API_BASE` | shared gateway |

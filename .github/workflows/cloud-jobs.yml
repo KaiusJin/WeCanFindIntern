@@ -35,7 +35,7 @@ jobs:
             vendor/JobSpy/pyproject.toml
             .github/workflows/cloud-jobs.yml
       - name: Install collector dependencies
-        run: python -m pip install ./vendor/JobSpy 'psycopg[binary,pool]>=3.2,<4' 'boto3>=1.36,<2' 'openai>=2,<3'
+        run: python -m pip install ./vendor/JobSpy 'psycopg[binary,pool]>=3.2,<4' 'boto3>=1.36,<2'
       - name: Validate Supabase database
         if: ${{ inputs.validate_database_only }}
         env:
@@ -88,7 +88,6 @@ jobs:
           R2_BUCKET: ${{ vars.R2_BUCKET }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DB_POOL_MAX_SIZE: '4'
           DB_STATEMENT_TIMEOUT_MS: '60000'
         run: python -m scripts.cloud.run

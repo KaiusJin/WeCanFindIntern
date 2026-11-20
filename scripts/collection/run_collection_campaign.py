@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect every configured query first, then dedupe, regex, and DeepSeek."""
+"""Collect every configured query first, then deduplicate and normalize with regex."""
 
 from __future__ import annotations
 
@@ -392,9 +392,7 @@ async def run(
     raw_config = json.loads(config_path.read_text(encoding="utf-8"))
     definitions = expand_collection_catalog(raw_config)
     defaults = raw_config.get("defaults", {}) if isinstance(raw_config, dict) else {}
-    recent_hours = int(
-        os.getenv("WCFI_COLLECTION_RECENT_HOURS", defaults.get("recent_hours", 48))
-    )
+    recent_hours = int(os.getenv("WCFI_COLLECTION_RECENT_HOURS", defaults.get("recent_hours", 48)))
     full_sweep_every = int(
         os.getenv(
             "WCFI_COLLECTION_FULL_SWEEP_EVERY",
@@ -509,17 +507,17 @@ async def run(
             ),
         )
 
-        # Stages 3 and 4: LLM Enrichments
+        # Stages 3 and 4: deterministic post-deduplication enrichment
         salary = pipeline.salary
         log(
             f"Salary stages complete: source={salary.structured}, "
-            f"regex={salary.regex}, deepseek={salary.llm}"
+            f"regex={salary.regex}, not_found={salary.not_found}, failed={salary.failed}"
         )
 
         term = pipeline.recruiting_term
         log(
             f"Recruiting term stages complete: regex={term.regex}, "
-            f"deepseek={term.llm}, not_found={term.not_found}, "
+            f"not_found={term.not_found}, "
             f"cached={term.skipped_cached}, failed={term.failed}"
         )
 
@@ -547,11 +545,11 @@ async def run(
             salary_stats={
                 "structured": salary.structured,
                 "regex": salary.regex,
-                "deepseek": salary.llm,
+                "not_found": salary.not_found,
+                "failed": salary.failed,
             },
             recruiting_term_stats={
                 "regex": term.regex,
-                "deepseek": term.llm,
                 "not_found": term.not_found,
                 "cached": term.skipped_cached,
                 "failed": term.failed,

@@ -69,7 +69,8 @@ async def run_ingestion_pipeline(
     salary = SalaryEnrichmentStats(
         structured=sum(job.salary is not None for job in canonical_jobs),
         regex=enriched_salary.regex,
-        llm=enriched_salary.llm,
+        not_found=enriched_salary.not_found,
+        failed=enriched_salary.failed,
     )
     recruiting_term = await enrich_recruiting_terms(
         RecruitingTermRepository(pool),

@@ -160,19 +160,18 @@ The `Public job feed` workflow is the operational entry point for collection and
 - Invalid source payload: row-level normalization converts missing values to `None`/empty lists where the model permits; malformed values do not enter public records.
 - Unknown country/location: the original location text is preserved; canonical structured fields remain unset rather than guessed.
 - Database failure: the persistence stage fails the run; collection results are not silently reported as fully ingested.
-- LLM enrichment failure: existing structured values are retained; the checked
-  description hash, status, timestamp, and model record the attempt without
-  erasing the job.
+- Unresolved regex enrichment: salary and recruiting term remain absent; an
+  unchanged content hash is cached as `not_found`. Conditional writes do not
+  overwrite a concurrently changed JD.
 
 The campaign is `partial` when one or more source queries exhaust retries but the
 database pipeline completes. A database or pipeline exception is fatal to the
 current command, but committed earlier batches remain valid and the next run can
-reconcile them. Enrichment is intentionally best-effort: source salary wins,
-then regex, then DeepSeek. Descriptions with no salary signal are recorded as
-`not_found` without a model call. A successful extraction is `complete`, a
-definitive miss is `not_found`, and transport/provider failure is `error`.
-`complete` and `not_found` are skipped until the description hash changes;
-`error` remains retryable.
+reconcile them. After deduplication, provider-structured salary wins; missing
+salary and recruiting terms are normalized directly by deterministic regex.
+There are no LLM requests, model retries, or deferred model batches.
+A successful salary extraction is `complete`, and a definitive miss is
+`not_found`. Both are skipped until the description hash changes.
 
 ## Operator scenarios
 

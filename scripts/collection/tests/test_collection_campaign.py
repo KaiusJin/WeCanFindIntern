@@ -82,18 +82,10 @@ def test_collection_error_classification() -> None:
 
 
 def test_collection_window_starts_full_then_refreshes_every_ten() -> None:
-    assert campaign.collection_hours_window(
-        0, recent_hours=48, full_sweep_every=10
-    ) is None
-    assert campaign.collection_hours_window(
-        1, recent_hours=48, full_sweep_every=10
-    ) == 48
-    assert campaign.collection_hours_window(
-        9, recent_hours=48, full_sweep_every=10
-    ) == 48
-    assert campaign.collection_hours_window(
-        10, recent_hours=48, full_sweep_every=10
-    ) is None
+    assert campaign.collection_hours_window(0, recent_hours=48, full_sweep_every=10) is None
+    assert campaign.collection_hours_window(1, recent_hours=48, full_sweep_every=10) == 48
+    assert campaign.collection_hours_window(9, recent_hours=48, full_sweep_every=10) == 48
+    assert campaign.collection_hours_window(10, recent_hours=48, full_sweep_every=10) is None
 
 
 def test_campaign_result_payload_is_json_ready() -> None:
@@ -103,10 +95,9 @@ def test_campaign_result_payload_is_json_ready() -> None:
         status="partial",
         unique_jobs_collected=8,
         database_stats={"created": 6, "merged": 2, "updated": 0, "unchanged": 0},
-        salary_stats={"structured": 1, "regex": 2, "deepseek": 0},
+        salary_stats={"structured": 1, "regex": 2, "not_found": 0, "failed": 0},
         recruiting_term_stats={
             "regex": 3,
-            "deepseek": 0,
             "not_found": 4,
             "cached": 0,
             "failed": 1,

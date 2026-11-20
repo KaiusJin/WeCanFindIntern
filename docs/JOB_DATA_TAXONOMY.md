@@ -77,7 +77,7 @@ Requirement tags cover visa sponsorship, security clearance, driver licence, tra
 
 Salary has `interval`, `minimum`, `maximum`, `currency`, `source`, `annualized_minimum`, and `annualized_maximum`. Annualization uses 2,080 hours/year, 260 days/year, 52 weeks/year, or 12 months/year. Annual/yearly uses multiplier 1.
 
-Structured provider compensation is preferred; description regex and cached/DeepSeek enrichment handle missing values. Invalid or implausible amounts are omitted rather than displayed as zero. The database validates interval/amount consistency and annual min/max order.
+Structured provider compensation is preferred; post-deduplication regex and content-hash caching handle missing values. Invalid or implausible amounts are omitted rather than displayed as zero. The database validates interval/amount consistency and annual min/max order.
 
 ## Dates and source links
 

@@ -74,9 +74,6 @@ def maintain(db, *, expire):
               )
         """)
         db.execute("DELETE FROM dedupe_decisions WHERE created_at < now()-interval '7 days'")
-        db.execute("""
-            DELETE FROM recruiting_term_generations WHERE started_at < now()-interval '7 days'
-        """)
         # Successful sweep count is the existing collector's durable full-scan clock.
         # Keep those lightweight counters, and clear obsolete diagnostic text.
         db.execute("""

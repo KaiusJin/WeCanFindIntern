@@ -1,8 +1,4 @@
 from wecanfindintern.domain.recruiting_term import extract_recruiting_term_regex
-from wecanfindintern.ingestion.recruiting_term_llm import (
-    _has_conflicting_month_seasons,
-    _normalize,
-)
 
 
 def term(value: str) -> tuple[str, int] | None:
@@ -37,17 +33,6 @@ def test_does_not_force_ambiguous_or_missing_term() -> None:
     assert term("Internship Spring/Summer 2027") is None
     assert term("Fall 2026 or Winter 2027 Internship") is None
     assert term("Generic Software Intern") is None
-
-
-def test_llm_evidence_normalization_ignores_markdown_punctuation() -> None:
-    assert _normalize("Term start: January 2027") in _normalize(
-        "* **Term start** : January 2027"
-    )
-
-
-def test_conflicting_start_months_do_not_force_one_season() -> None:
-    assert _has_conflicting_month_seasons("Term start: January or May 2027")
-    assert not _has_conflicting_month_seasons("Term start: January 2027")
 
 
 def test_job_list_filters_recruiting_term_parsing() -> None:
@@ -95,3 +80,86 @@ def test_job_list_filters_normalize_multiple_facet_values() -> None:
     assert filters.regions == ["ON,CA", "NY,US"]
     assert filters.work_modes == ["remote", "hybrid"]
     assert filters.recruiting_terms == ["Summer 2027", "Fall 2026"]
+
+
+def test_month_ranges_normalize_to_four_month_work_terms():
+    from wecanfindintern.domain.recruiting_term import extract_recruiting_terms_regex
+
+    cases = {
+        "May to August 2027": [("summer", 2027)],
+        "January through April 2027": [("winter", 2027)],
+        "September–December 2027": [("fall", 2027)],
+        "January–August 2027": [("winter", 2027), ("summer", 2027)],
+        "January 4 to April 23, 2027": [("winter", 2027)],
+        "September 2027–April 2028": [("fall", 2027), ("winter", 2028)],
+    }
+    for text, expected in cases.items():
+        result = extract_recruiting_terms_regex(text, None)
+        assert [(x.season, x.year) for x in result] == expected
+        assert all(x.evidence in text for x in result)
+    assert term("January–August 2027") == ("winter", 2027)
+
+
+def test_month_only_start_dates_are_extracted():
+
+    for text, expected in [
+        ("Start Date:\nMay 2027", ("summer", 2027)),
+        ("This position is starting January, 2027.", ("winter", 2027)),
+        ("Job Assignment: May 2027 to August 2027", ("summer", 2027)),
+    ]:
+        result = extract_recruiting_term_regex("Engineering Intern", text)
+        assert (result.season, result.year) == expected
+
+
+def test_dates_for_deadlines_and_graduation_do_not_become_work_terms():
+    for text in [
+        "Application deadline: May 2027",
+        "Expected graduation: January through April 2027",
+        "Date: September 21, 2026",
+        "The company was founded in January 2027.",
+    ]:
+        assert extract_recruiting_term_regex("Engineering Intern", text) is None
+
+
+def test_primary_and_covered_terms_and_duration_are_separate():
+    from wecanfindintern.domain.recruiting_term import normalize_recruiting_term
+
+    result = normalize_recruiting_term("Engineering Intern", "Program Dates: January–August 2027")
+    assert result.primary_term.display_name == "Winter 2027"
+    assert [x.display_name for x in result.covered_terms] == ["Winter 2027", "Summer 2027"]
+    assert not result.coverage_inferred
+    result = normalize_recruiting_term("Intern", "Starting January 2027 for 8 months")
+    assert result.primary_term.display_name == "Winter 2027"
+    assert [x.display_name for x in result.covered_terms] == ["Winter 2027", "Summer 2027"]
+    assert result.coverage_inferred
+    assert (
+        normalize_recruiting_term("June 2027, 12 weeks").primary_term.display_name == "Summer 2027"
+    )
+
+
+def test_abbreviated_full_dates_and_priority_over_title():
+    from wecanfindintern.domain.recruiting_term import normalize_recruiting_term
+
+    result = normalize_recruiting_term(
+        "Summer 2027 Intern", "Internship period: Jan 4 – Apr 23, 2027"
+    )
+    assert result.primary_term.display_name == "Winter 2027"
+    assert [x.display_name for x in result.covered_terms] == ["Winter 2027"]
+
+
+def test_work_date_is_not_confused_with_other_fields():
+    from wecanfindintern.domain.recruiting_term import normalize_recruiting_term
+
+    result = normalize_recruiting_term(
+        "Engineering Intern",
+        "Apply by September 2026. Start Date: May 2027. Graduate by December 2028.",
+    )
+    assert result.primary_term.display_name == "Summer 2027"
+    for text in [
+        "Apply by May 2027",
+        "Posted on May 2027",
+        "Benefits effective May 2027",
+        "2027 Internship",
+        "Summer Internship",
+    ]:
+        assert normalize_recruiting_term("", text).primary_term is None

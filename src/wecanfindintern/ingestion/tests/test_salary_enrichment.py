@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from wecanfindintern.db.repositories.salary import SalaryEnrichmentCandidate
 from wecanfindintern.domain.jobs import structured_salary_range
 from wecanfindintern.ingestion import salary_enrichment
-from wecanfindintern.ingestion.salary_llm import SalaryLLMCall
 
 
 def source_salary(*, interval, minimum, maximum, source):
@@ -21,9 +20,7 @@ def source_salary(*, interval, minimum, maximum, source):
 
 def test_rejects_implausible_direct_yearly_salary() -> None:
     salary = structured_salary_range(
-        source_salary(
-            interval="yearly", minimum=24, maximum=29, source="direct_data"
-        ).salary,
+        source_salary(interval="yearly", minimum=24, maximum=29, source="direct_data").salary,
         country_code="US",
     )
     assert salary is None
@@ -31,9 +28,7 @@ def test_rejects_implausible_direct_yearly_salary() -> None:
 
 def test_description_salary_always_uses_internal_extraction_pipeline() -> None:
     salary = structured_salary_range(
-        source_salary(
-            interval="hourly", minimum=24, maximum=29, source="description"
-        ).salary,
+        source_salary(interval="hourly", minimum=24, maximum=29, source="description").salary,
         country_code="US",
     )
     assert salary is None
@@ -77,14 +72,7 @@ def test_salary_enrichment_caches_definitive_misses(monkeypatch) -> None:
             self.checks.append(kwargs)
             return True
 
-    calls = []
-
-    def llm_call(*_args, **_kwargs):
-        calls.append(True)
-        return SalaryLLMCall(None, "test-model")
-
     repository = FakeRepository()
-    monkeypatch.setattr(salary_enrichment, "extract_salary_with_deepseek_call", llm_call)
     stats = asyncio.run(
         salary_enrichment.enrich_missing_salaries(
             repository,
@@ -92,8 +80,8 @@ def test_salary_enrichment_caches_definitive_misses(monkeypatch) -> None:
         )
     )
 
-    assert stats.llm == 0
-    assert len(calls) == 1
+    assert stats.regex == 0
+    assert stats.not_found == 2
     assert [(check["job_id"], check["status"]) for check in repository.checks] == [
         (1, "not_found"),
         (2, "not_found"),
