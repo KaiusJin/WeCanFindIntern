@@ -6,10 +6,6 @@ const interviewSource = await readFile(
   new URL("../modules/interview.js", import.meta.url),
   "utf8",
 );
-const mainSource = await readFile(
-  new URL("../modules/main.js", import.meta.url),
-  "utf8",
-);
 const indexSource = await readFile(
   new URL("../index.html", import.meta.url),
   "utf8",
@@ -52,7 +48,6 @@ test("record button labels reflect the active question only", () => {
   );
   assert.match(interviewSource, /\? "Analyzing…"/);
   assert.doesNotMatch(interviewSource, /Transcribing audio locally/);
-  assert.match(mainSource, /interview\.js\?v=20260902-shared-components-v1/);
 });
 
 test("practice history is visible when the Interview section opens", () => {

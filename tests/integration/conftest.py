@@ -4,8 +4,8 @@ Run with::
 
     PYTHONPATH=src python -m pytest -m db
 
-Skipped automatically (without failing unit-test runs) when the test
-database is not reachable. Point ``TEST_DATABASE_URL`` at a disposable
+Skipped when the default test database is unreachable and no URL is configured.
+An explicitly configured database must be reachable. Point ``TEST_DATABASE_URL`` at a disposable
 database — the suite initializes the schema and truncates tables between
 tests, so never point it at a database with data you care about.
 """
@@ -52,6 +52,8 @@ def event_loop():
 @pytest.fixture(scope="session")
 def database(event_loop):
     if not _database_available(TEST_DATABASE_URL):
+        if os.getenv("TEST_DATABASE_URL"):
+            pytest.fail("Configured TEST_DATABASE_URL is not reachable", pytrace=False)
         pytest.skip("TEST_DATABASE_URL is not reachable — skipping db integration tests")
     initialize_database(TEST_DATABASE_URL, SCHEMA_PATH)
     database = Database(Settings(database_url=TEST_DATABASE_URL))

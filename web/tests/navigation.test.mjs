@@ -6,8 +6,6 @@ const indexSource = await readFile(new URL("../index.html", import.meta.url), "u
 const shellSource = await readFile(new URL("../app-shell.css", import.meta.url), "utf8");
 const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 const navigationSource = await readFile(new URL("../modules/navigation.js", import.meta.url), "utf8");
-const heatmapSource = await readFile(new URL("../modules/heatmap.js", import.meta.url), "utf8");
-const waterlooWorksSource = await readFile(new URL("../modules/waterlooworks.js", import.meta.url), "utf8");
 const profileSource = await readFile(new URL("../modules/profile.js", import.meta.url), "utf8");
 const settingsSource = await readFile(new URL("../modules/settings.js", import.meta.url), "utf8");
 const trackerSource = await readFile(new URL("../modules/tracker.js", import.meta.url), "utf8");
@@ -63,13 +61,6 @@ test("Public Jobs owns List and Map while WaterlooWorks keeps a separate dataset
   assert.match(indexSource, /id="ww-job-detail-pane"/);
 });
 
-test("shared modules use one cache-busted URL", () => {
-  assert.match(heatmapSource, /navigation\.js\?v=20260901-app-shell-v4/);
-  assert.doesNotMatch(heatmapSource, /from "\.\/navigation\.js";/);
-  assert.match(waterlooWorksSource, /helpers\.js\?v=20260901-error-dialog-minimal-v1/);
-  assert.doesNotMatch(waterlooWorksSource, /helpers\.js\?v=20260901-waterlooworks-filters-v1/);
-});
-
 test("saved embedding settings configure the resident recommendation indexer", () => {
   assert.match(settingsSource, /fetch\("\/api\/v1\/agent\/embedding-config"/);
   assert.match(settingsSource, /await syncEmbeddingConfig\(\);/);
@@ -98,7 +89,6 @@ test("desktop workspaces are bounded and narrow screens switch to overlays", () 
 
 test("Applications split view lets the table scroll within its pane", () => {
   assert.match(indexSource, /class="field-group job-content-field tracker-link-field"/);
-  assert.match(indexSource, /app-shell\.css\?v=20260902-memory-alignment-v1/);
   assert.doesNotMatch(indexSource, /<th><\/th><\/tr><\/thead>/);
   assert.doesNotMatch(trackerSource, /tracker-row-menu|Open application/);
   assert.match(

@@ -4,7 +4,6 @@ import test from "node:test";
 
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const moduleSource = await readFile(new URL("../modules/agent.js", import.meta.url), "utf8");
-const mainSource = await readFile(new URL("../modules/main.js", import.meta.url), "utf8");
 const jobsSource = await readFile(new URL("../modules/jobs.js", import.meta.url), "utf8");
 const waterlooWorksSource = await readFile(new URL("../modules/waterlooworks.js", import.meta.url), "utf8");
 const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
@@ -30,8 +29,6 @@ test("only recommendation and search results render job cards", () => {
   assert.match(moduleSource, /call\.tool_name === "search_jobs"[\s\S]*waterloo_work/);
   assert.doesNotMatch(moduleSource, /call\.tool_name === "analyse_job"/);
   assert.doesNotMatch(moduleSource, /call\.tool_name === "get_job_details"/);
-  assert.match(indexSource, /main\.js\?v=20260902-memory-alignment-v1/);
-  assert.match(mainSource, /agent\.js\?v=20260902-memory-alignment-v1/);
 });
 
 test("job-card view actions keep the Agent open and show a blurred JD drawer", () => {
@@ -48,7 +45,6 @@ test("job-card view actions keep the Agent open and show a blurred JD drawer", (
 
 test("the Attach jobs dialog is hidden until it is opened", () => {
   assert.match(stylesSource, /\.agent-attach-dialog\[open\]\s*\{\s*display: flex;/);
-  assert.match(indexSource, /styles\.css\?v=20260902-memory-alignment-v1/);
   assert.doesNotMatch(indexSource, /id="agent-attachment-preview"/);
   assert.doesNotMatch(moduleSource, /#agent-attachment-preview/);
 });

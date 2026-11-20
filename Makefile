@@ -1,19 +1,28 @@
-.PHONY: check lint test contract frontend-check format-check
+PYTHON ?= .venv/bin/python
+RUFF ?= .venv/bin/ruff
+NODE ?= node
+
+.PHONY: check lint test test-db contract frontend-check format-check
 
 check: lint test contract frontend-check
 
 lint:
-	.venv/bin/ruff check src tests scripts desktop/build
+	$(RUFF) check src tests scripts desktop/build
 
 test:
-	PYTHONPATH=src .venv/bin/python -m pytest
+	PYTHONPATH=src $(PYTHON) -m pytest -m "not db"
+
+test-db:
+	@test -n "$$TEST_DATABASE_URL" || (echo "Set TEST_DATABASE_URL to a disposable PostgreSQL database" >&2; exit 1)
+	PYTHONPATH=src $(PYTHON) -m pytest tests/integration -m db
 
 contract:
-	PYTHONPATH=src .venv/bin/python scripts/dev/verify_frontend_api_contract.py
+	PYTHONPATH=src $(PYTHON) scripts/dev/verify_frontend_api_contract.py
 
 frontend-check:
-	for f in web/modules/*.js; do node --input-type=module --check < "$$f"; done
-	node --test web/tests desktop/tests
+	@set -e; for f in web/modules/*.js; do $(NODE) --input-type=module --check < "$$f"; done
+	@set -e; for f in desktop/src/*.js desktop/forge.config.js; do $(NODE) --check "$$f"; done
+	$(NODE) --test web/tests/*.test.mjs desktop/tests/*.test.mjs
 
 format-check:
-	.venv/bin/ruff format --check src tests scripts desktop/build
+	$(RUFF) format --check src tests scripts desktop/build

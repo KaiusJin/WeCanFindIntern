@@ -35,14 +35,23 @@ Run from the repository root:
 # One module, including tests in its nested modules
 .venv/bin/python -m pytest src/wecanfindintern/agent
 
-# Recursively run web and desktop JavaScript tests
-node --test web/tests desktop/tests
+# Run web and desktop JavaScript test files (Node does not accept directory entries)
+node --test web/tests/*.test.mjs desktop/tests/*.test.mjs
 ```
 
 Live database tests use the `db` marker and `TEST_DATABASE_URL`. Use only a
 disposable test database: the fixtures initialize the schema and truncate tables.
-These tests currently skip when the database is unreachable. CI provides a
-PostgreSQL 16/pgvector service and runs the `db` suite separately.
+Without an explicit URL these tests skip when the default database is unreachable.
+An explicitly configured but unreachable database fails the suite. CI provides
+a PostgreSQL 16/pgvector service and runs `make test-db` separately.
 
-`make check` and `.github/workflows/ci.yml` use these discovery roots; adding
-tests inside them does not require listing each module in CI.
+`make check` runs lint, Python unit tests, the frontend/API contract check, and
+JavaScript checks. `make test-db` requires `TEST_DATABASE_URL` and runs the database
+suite. Override `PYTHON`, `RUFF`, or `NODE` to select other installed tools.
+
+CI is split into `static-checks.yml` (independent lint and API contract jobs),
+`backend-tests.yml`, `database-tests.yml`, and `frontend-tests.yml`. Only database
+tests start PostgreSQL. The workflows run on PRs and pushes to `main` to avoid
+duplicate branch-push/PR runs, and support manual runs on other branches.
+The Node runtime is explicitly set to 24. All workflows use the Makefile entry
+points; Python discovery roots remain configured in `pyproject.toml`.
