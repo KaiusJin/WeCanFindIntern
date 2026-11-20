@@ -1,0 +1,45 @@
+/* Native dialogs own focus and stacking; their GlassSheet surfaces share one
+   responsive layout. Desktop dialogs sit at the center and size to content. */
+.app-modal-sheet {
+  --modal-sheet-width: 560px;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+.app-modal-sheet::backdrop { background: transparent; backdrop-filter: none; }
+.app-modal-sheet .lg-sheet-layer {
+  box-sizing: border-box;
+  align-items: center;
+  padding: clamp(16px, 3vw, 40px);
+}
+.app-modal-sheet .lg-sheet {
+  --lg-glass-fill: var(--lg-menu-fill);
+  width: min(var(--modal-sheet-width), 100%);
+  max-height: 100%;
+  margin: 0;
+  border-radius: 24px;
+  color: var(--ink);
+}
+.app-modal-sheet .lg-sheet__grabber-zone { display: none; }
+.app-modal-sheet .lg-sheet__content { padding: 28px; }
+
+@media (max-width: 600px) {
+  .app-modal-sheet .lg-sheet-layer {
+    align-items: flex-end;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  .app-modal-sheet .lg-sheet__grabber-zone { display: flex; }
+  .app-modal-sheet .lg-sheet__content { padding: 12px 20px 20px; }
+}

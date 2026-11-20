@@ -95,7 +95,7 @@ Invalid file type, MIME mismatch, unsafe content, extraction failure, and invali
 
 ## Frontend editing behavior
 
-`web/modules/profile.js` renders repeated sections dynamically, preserves stable
+`desktop/renderer/web/modules/profile.js` renders repeated sections dynamically, preserves stable
 entry IDs, autosaves normal edits, autosaves import reviews to the draft route,
 and reserves the current-profile mutation for explicit Apply. It also supports
 discard, refreshes resume history, and asks for confirmation before deleting a

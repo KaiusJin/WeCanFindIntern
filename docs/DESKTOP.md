@@ -6,6 +6,8 @@ bundled Python service and PostgreSQL runtime directly from Electron; Docker and
 a separately installed Python/PostgreSQL runtime are development dependencies,
 not desktop runtime dependencies.
 
+The renderer source is in `desktop/renderer/src/`. Run `npm ci` and `npm run build` from `desktop/renderer/` before the first development launch or package build, and after editing its TSX files. Development loads the runtime assets from `desktop/renderer/web/`. Installed npm dependencies and generated Liquid Glass bundles are ignored by Git; dependency manifests and lockfiles remain versioned. Release CI builds these assets before packaging. Forge copies that directory to `Resources/web` on macOS and `resources/web` on Windows.
+
 ## Runtime architecture
 
 ```mermaid

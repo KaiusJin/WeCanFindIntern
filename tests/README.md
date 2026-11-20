@@ -9,7 +9,7 @@ Keep tests spanning multiple modules in the repository-level `tests/` directory.
 | `src/wecanfindintern/agent/memory/tests/` | Agent memory behavior |
 | `src/wecanfindintern/agent/recommend/tests/` | Recommendation behavior |
 | `scripts/collection/tests/` | Collection campaign scripts |
-| `web/tests/` | Web UI and ES modules |
+| `desktop/renderer/web/tests/` | Web UI and ES modules |
 | `desktop/tests/` | Electron runtime and packaging |
 | `tests/integration/` | Cross-module flows and live PostgreSQL integration |
 
@@ -36,7 +36,7 @@ Run from the repository root:
 .venv/bin/python -m pytest src/wecanfindintern/agent
 
 # Run web and desktop JavaScript test files (Node does not accept directory entries)
-node --test web/tests/*.test.mjs desktop/tests/*.test.mjs
+node --test desktop/renderer/web/tests/*.test.mjs desktop/tests/*.test.mjs
 ```
 
 Live database tests use the `db` marker and `TEST_DATABASE_URL`. Use only a

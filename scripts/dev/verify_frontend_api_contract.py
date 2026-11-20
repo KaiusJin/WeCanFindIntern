@@ -14,7 +14,7 @@ from pathlib import Path
 from wecanfindintern.api.app import app
 
 ROOT = Path(__file__).resolve().parents[2]
-WEB_DIR = ROOT / "web"
+WEB_DIR = ROOT / "desktop" / "renderer" / "web"
 MODULES_DIR = WEB_DIR / "modules"
 
 

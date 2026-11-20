@@ -1,0 +1,66 @@
+/* Keep dense controls and native pickers on the same material as the React controls. */
+:root {
+  --control-fill: color-mix(in srgb, var(--lg-fill) 76%, var(--surface));
+  --control-edge: color-mix(in srgb, var(--line) 65%, var(--glass-edge));
+  --control-depth: inset 0 1px 0 var(--glass-edge), 0 2px 6px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+button.control-glass, input.control-glass, select.control-glass, a.control-glass {
+  border: 1px solid var(--control-edge); border-radius: 999px; color: var(--ink);
+  background: linear-gradient(150deg, var(--glass-edge), transparent 45%), var(--control-fill);
+  box-shadow: var(--control-depth); -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px);
+}
+button.control-glass:hover:not(:disabled), a.control-glass:hover { color: var(--accent); }
+button.control-glass:focus-visible, a.control-glass:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.app-nav .lg-button { --lg-glass-blur: 0px; box-shadow: none; }
+.app-nav .lg-button::before { opacity: 0; }
+.app-nav .lg-button:is(.active, :focus-visible, :hover)::before { opacity: .72; }
+#toolbar-nav-host .nav-group:not(.direct-group) .nav-tab { justify-content: flex-start; }
+
+[data-career-field], [data-career-editor] { min-width: 0; }
+[data-career-field] .lg-input, [data-career-editor] .writing-glass { width: 100%; box-sizing: border-box; }
+[data-career-field] .lg-input__field { min-height: 38px; }
+[data-career-field] input { color: var(--ink); font: inherit; font-size: 13px; }
+.writing-glass { --lg-glass-fill: var(--control-fill); }
+:is(#tab-ats-score, #tab-ats-match, #tab-cover-letter, #tab-interview) .writing-glass textarea.career-textarea {
+  display: block; width: 100%; min-width: 0; margin: 0; padding: 13px 16px;
+  border-radius: inherit; border: 1px solid transparent;
+  box-shadow: none; color: var(--ink); background: transparent; resize: vertical;
+}
+.writing-glass:focus-within, [data-career-field] .lg-input__field:focus-within {
+  outline: 2px solid var(--focus); outline-offset: 1px;
+}
+.writing-glass textarea:focus { outline: none; }
+[data-career-secondary] { display: inline-flex; align-items: center; }
+[data-career-secondary]:has(button[hidden]) { display: none; }
+[data-career-drop] + [data-career-secondary] { margin-top: 10px; }
+[data-career-secondary] .lg-button { --lg-h: 36px; font-size: 13px; }
+[data-career-action] .lg-button, [data-career-secondary] .lg-button, .preferences-footer .lg-button {
+  padding-inline: 16px; line-height: 1; gap: 7px;
+}
+.workspace-actions { display: flex; align-items: center; gap: 12px; }
+.workspace-actions > * { flex-shrink: 0; }
+.practice-heading, .letter-heading { min-height: 50px; }
+[data-career-secondary] .lg-button .icon { width: 15px; height: 15px; }
+
+.settings-picker:has(button[aria-expanded=true]) { position: relative; z-index: 2; }
+.settings-picker .lg-menu-anchor { display: flex; }
+.settings-picker .lg-button[data-icon-only] { width: 100%; padding-inline: 17px; min-height: 42px; }
+.settings-picker .lg-button__icon {
+  width: 100%; height: auto; display: flex; align-items: center; justify-content: space-between;
+  color: var(--ink); font-size: 14px; font-weight: 500;
+}
+.settings-picker .lg-button__icon .icon { width: 14px; height: 14px; color: var(--muted); }
+.settings-picker .lg-menu__content { max-height: min(265px, 38vh); overflow-y: auto; overscroll-behavior: contain; }
+.settings-picker .lg-menu__item { min-height: 34px; font-size: 13px; }
+.settings-picker .lg-menu.lg-glass { --lg-glass-fill: var(--lg-menu-fill); }
+.settings-dimensions > input { background: var(--control-fill); border-color: var(--control-edge); border-radius: 12px; box-shadow: var(--control-depth); }
+#tab-interview .step-badge.control-glass { min-width: 32px; }
+#tab-interview .step-badge.active { color: var(--on-action); background: var(--action); }
+#tab-interview .history-delete.control-glass { color: var(--danger); }
+#tab-interview .history-row:focus-within .history-delete { opacity: 1; }
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  button.control-glass, input.control-glass, select.control-glass, a.control-glass {
+    backdrop-filter: none; background: var(--surface); border: 1px solid var(--line-strong);
+  }
+}

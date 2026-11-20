@@ -107,6 +107,12 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      - name: Install renderer dependencies
+        run: npm ci --prefix desktop/renderer
+
+      - name: Build renderer assets
+        run: npm --prefix desktop/renderer run build
+
       - name: Build macOS PostgreSQL runtime
         if: runner.os == 'macOS' && steps.postgres-runtime.outputs.cache-hit != 'true'
         env:

@@ -129,7 +129,7 @@ Facets are generated from active jobs and return counts for opportunities, sched
 ### `GET /api/v1/jobs/geo-distribution`
 
 Returns active-job counts per Canadian province/territory and US state, with
-country and overall totals for `web/modules/heatmap.js`.
+country and overall totals for `desktop/renderer/web/modules/heatmap.js`.
 
 ## Query and index design
 
