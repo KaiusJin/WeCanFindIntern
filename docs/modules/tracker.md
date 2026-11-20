@@ -87,7 +87,7 @@ Job descriptions and source details are resolved for the tracker drawer. If a so
 
 ## Frontend behavior
 
-`web/modules/tracker.js` handles filter persistence in the browser URL, list paging, page-size selection, selection and bulk stage/delete actions, the detail drawer, event timeline loading, custom-job creation, copy/open-link actions, and CSV export. Shared bookmark state and mutations live in `web/modules/bookmarks.js`; it emits invalidation/open requests that `main.js` routes to the lazily loaded Tracker module, avoiding a Tracker↔bookmarks module cycle.
+`desktop/renderer/web/modules/tracker.js` handles filter persistence in the browser URL, list paging, page-size selection, selection and bulk stage/delete actions, the detail drawer, event timeline loading, custom-job creation, copy/open-link actions, and CSV export. Shared bookmark state and mutations live in `desktop/renderer/web/modules/bookmarks.js`; it emits invalidation/open requests that `main.js` routes to the lazily loaded Tracker module, avoiding a Tracker↔bookmarks module cycle.
 
 ## Agent integration
 

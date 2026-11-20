@@ -54,6 +54,11 @@ class DesktopPaths:
 
     @property
     def web(self) -> Path:
+        # Forge copies the renderer under Resources/web. In development Electron
+        # passes the repository root as the resource directory for the schema.
+        development = self.resources / "desktop" / "renderer" / "web"
+        if development.is_dir():
+            return development
         return self.resources / "web"
 
     @classmethod

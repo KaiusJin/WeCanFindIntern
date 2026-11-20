@@ -50,7 +50,7 @@ flowchart LR
 | [Frontend](modules/frontend.md) | Static application shell, native ES modules, navigation, API/SSE integration, rendering safety, and state |
 
 The compact [module index](modules/README.md) is useful when working entirely
-inside `src/wecanfindintern/` or `web/`.
+inside `src/wecanfindintern/` or `desktop/renderer/`.
 
 ## Contract references
 

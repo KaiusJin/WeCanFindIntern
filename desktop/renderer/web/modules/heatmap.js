@@ -1,0 +1,257 @@
+import { $, escapeHtml, showToast } from "./helpers.js?v=20260901-error-dialog-minimal-v1";
+import { switchTab } from "./navigation.js?v=20260901-app-shell-v4";
+import { applyRegionFilter } from "./jobs.js?v=20260902-shared-components-v1";
+
+// =========================================================
+// JOB DISTRIBUTION HEATMAP — real choropleth (d3-geo).
+// US: us-atlas TopoJSON + geoAlbersUsa; CA: vendored Natural
+// Earth provinces with geoMercator. Click a region to open the
+// Jobs tab filtered to it.
+// =========================================================
+
+// Keep the map on the same blue scale as the rest of the product.
+
+
+const US_NAME_TO_CODE = {
+  Alabama: "AL", Alaska: "AK", Arizona: "AZ", Arkansas: "AR",
+  California: "CA", Colorado: "CO", Connecticut: "CT", Delaware: "DE",
+  "District of Columbia": "DC", Florida: "FL", Georgia: "GA", Hawaii: "HI",
+  Idaho: "ID", Illinois: "IL", Indiana: "IN", Iowa: "IA", Kansas: "KS",
+  Kentucky: "KY", Louisiana: "LA", Maine: "ME", Maryland: "MD",
+  Massachusetts: "MA", Michigan: "MI", Minnesota: "MN", Mississippi: "MS",
+  Missouri: "MO", Montana: "MT", Nebraska: "NE", Nevada: "NV",
+  "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM",
+  "New York": "NY", "North Carolina": "NC", "North Dakota": "ND",
+  Ohio: "OH", Oklahoma: "OK", Oregon: "OR", Pennsylvania: "PA",
+  "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD",
+  Tennessee: "TN", Texas: "TX", Utah: "UT", Vermont: "VT", Virginia: "VA",
+  Washington: "WA", "West Virginia": "WV", Wisconsin: "WI", Wyoming: "WY",
+};
+
+function heatColor(count, maxCount) {
+  if (!count) return "var(--map-empty)";
+  const weight = Math.round(100 * Math.sqrt(count / (maxCount || 1)));
+  return `color-mix(in srgb, var(--map-low), var(--map-high) ${weight}%)`;
+}
+
+let d3 = null;
+let topojsonLib = null;
+
+async function ensureD3() {
+  if (d3 && window.topojson) return d3;
+  const [geo, selection] = await Promise.all([
+    import("/vendor/d3-geo.esm.js"),
+    import("/vendor/d3-selection.esm.js"),
+  ]);
+  d3 = { ...geo, ...selection };
+  await loadScript("/vendor/topojson-client.min.js");
+  return d3;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      existing.addEventListener("load", resolve);
+      existing.addEventListener("error", reject);
+      if (existing.dataset.loaded === "true") resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = () => {
+      script.dataset.loaded = "true";
+      resolve();
+    };
+    script.onerror = () => { script.remove(); reject(new Error(`Failed to load ${src}`)); };
+    document.head.appendChild(script);
+  });
+}
+
+function getTopojson() {
+  if (!topojsonLib) topojsonLib = window.topojson;
+  return topojsonLib;
+}
+
+function showTooltip(event, text) {
+  const tooltip = $("#heatmap-tooltip");
+  if (!tooltip) return;
+  tooltip.hidden = false;
+  tooltip.textContent = text;
+  const bounds = tooltip.parentElement.getBoundingClientRect();
+  tooltip.style.left = `${event.clientX - bounds.left + 14}px`;
+  tooltip.style.top = `${event.clientY - bounds.top + 14}px`;
+}
+
+function hideTooltip() {
+  const tooltip = $("#heatmap-tooltip");
+  if (tooltip) tooltip.hidden = true;
+}
+
+function createMapSvg(container, width, height, ariaLabel) {
+  return d3
+    .select(container)
+    .append("svg")
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("role", "group")
+    .attr("aria-label", ariaLabel);
+}
+
+function renderUsMap(states, counts, maxCount) {
+  const container = $("#heatmap-us");
+  if (!container) return;
+  const width = 960;
+  const height = 600;
+  const projection = d3.geoAlbersUsa().fitSize([width, height], states);
+  const path = d3.geoPath(projection);
+
+  const svg = createMapSvg(container, width, height, "United States job distribution map");
+
+  const country = "US";
+  svg
+    .selectAll("path")
+    .data(states.features)
+    .join("path")
+    .attr("d", path)
+    .attr("fill", (feature) => {
+      const code = US_NAME_TO_CODE[feature.properties.name];
+      return heatColor(code ? counts[`${country}:${code}`] || 0 : 0, maxCount);
+    })
+    .attr("stroke", "var(--surface)")
+    .attr("stroke-width", 0.7)
+    .attr("class", (feature) =>
+      US_NAME_TO_CODE[feature.properties.name] ? "heatmap-region" : "heatmap-region heatmap-region-disabled",
+    )
+    .each(function (feature) {
+      const code = US_NAME_TO_CODE[feature.properties.name];
+      this.__country = country;
+      this.__regionCode = code || null;
+      this.__regionName = feature.properties.name;
+      this.__regionCount = code ? counts[`${country}:${code}`] || 0 : 0;
+    })
+    .call(attachRegionSelection);
+}
+
+// d3 .call helper: hover tooltip + click-through to the filtered Jobs tab.
+function attachRegionSelection(selection) {
+  selection
+    .attr("tabindex", function () { return this.__regionCode ? 0 : null; })
+    .attr("role", function () { return this.__regionCode ? "button" : null; })
+    .attr("aria-label", function () { return `${this.__regionName}, ${this.__regionCount} jobs`; })
+    .on("keydown", function (event) {
+      if (!["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      this.dispatchEvent(new Event("click"));
+    })
+    .on("mousemove", function (event) {
+      showTooltip(event, `${this.__regionName} — ${this.__regionCount} jobs`);
+      d3.select(this).attr("stroke-width", 1.6);
+    })
+    .on("mouseleave", function () {
+      hideTooltip();
+      d3.select(this).attr("stroke-width", 0.7);
+    })
+    .on("click", function () {
+      if (!this.__regionCode) return;
+      applyRegionFilter(this.__country, this.__regionCode);
+      switchTab("tab-jobs");
+    });
+}
+
+function renderCaMap(geojson, counts, maxCount) {
+  const container = $("#heatmap-ca");
+  if (!container) return;
+  const width = 760;
+  const height = 560;
+  const projection = d3.geoMercator().fitSize([width, height], geojson);
+  const path = d3.geoPath(projection);
+
+  const svg = createMapSvg(container, width, height, "Canada job distribution map");
+
+  svg
+    .selectAll("path")
+    .data(geojson.features)
+    .join("path")
+    .attr("d", path)
+    .attr("fill", (feature) =>
+      heatColor(counts[`CA:${feature.properties.code}`] || 0, maxCount),
+    )
+    .attr("stroke", "var(--surface)")
+    .attr("stroke-width", 0.7)
+    .attr("class", "heatmap-region")
+    .each(function (feature) {
+      this.__country = "CA";
+      this.__regionCode = feature.properties.code;
+      this.__regionName = feature.properties.name;
+      this.__regionCount = counts[`CA:${feature.properties.code}`] || 0;
+    })
+    .call(attachRegionSelection);
+}
+
+let loaded = false;
+async function loadHeatmap() {
+  if (loaded) return;
+  loaded = true;
+  try {
+    const response = await fetch("/api/v1/jobs/geo-distribution");
+    if (!response.ok) throw new Error("Could not load distribution data.");
+    const data = await response.json();
+
+    const counts = {};
+    for (const region of data.regions) {
+      counts[`${region.country}:${region.region_code}`] = region.count;
+    }
+    const maxCount = data.regions.length ? data.regions[0].count : 0;
+
+    $("#heatmap-us-total").textContent = `${data.by_country?.US ?? 0} jobs`;
+    $("#heatmap-ca-total").textContent = `${data.by_country?.CA ?? 0} jobs`;
+    $("#heatmap-legend-min").textContent = "0";
+    $("#heatmap-legend-max").textContent = `${maxCount}+`;
+    $("#heatmap-legend-note").textContent =
+      "Select a state or province to see its job openings.";
+
+    renderTopList(data.regions, data.total);
+
+    await ensureD3();
+    const usTopo = await (await fetch("/vendor/us-states-10m.json")).json();
+    const caGeo = await (await fetch("/vendor/canada-provinces.geojson")).json();
+    $("#heatmap-us").replaceChildren();
+    $("#heatmap-ca").replaceChildren();
+    renderUsMap(getTopojson().feature(usTopo, usTopo.objects.states), counts, maxCount);
+    renderCaMap(caGeo, counts, maxCount);
+  } catch {
+    loaded = false;
+    showToast("Could not load the opportunity map. Try reopening the map.", { variant: "error" });
+  }
+}
+
+function renderTopList(regions, total) {
+  const list = $("#heatmap-top-list");
+  if (!list) return;
+  const top = regions.slice(0, 12);
+  if (!top.length) {
+    list.textContent = "No regional openings yet.";
+    return;
+  }
+  list.innerHTML = top
+    .map((region) => {
+      const width = total ? Math.round((region.count / total) * 100) : 0;
+      const flag = region.country === "CA" ? "CA" : "US";
+      return `
+      <button class="heatmap-top-row control-glass" type="button" data-country="${escapeHtml(region.country)}" data-region="${escapeHtml(region.region_code)}">
+        <span class="heatmap-top-country">${flag}</span>
+        <span class="heatmap-top-name">${escapeHtml(region.region_name)}</span>
+        <span class="heatmap-top-bar"><span style="width: ${width}%"></span></span>
+        <span class="heatmap-top-count">${region.count}</span>
+      </button>`;
+    })
+    .join("");
+  list.onclick = (event) => {
+    const row = event.target.closest("button[data-region]");
+    if (!row) return;
+    applyRegionFilter(row.dataset.country, row.dataset.region);
+    switchTab("tab-jobs");
+  };
+}
+
+export { loadHeatmap };

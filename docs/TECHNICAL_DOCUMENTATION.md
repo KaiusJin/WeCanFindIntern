@@ -51,7 +51,7 @@ src/wecanfindintern/
 ├── llm/                 provider gateway, JSON parsing, prompts, shared cache
 └── desktop/             sidecar server, schema initialization, security, resident collection
 
-web/                     static HTML, CSS, and native ES modules
+desktop/renderer/        React pages, static renderer assets and feature modules
 desktop/                 Electron main/preload, PostgreSQL, backups, packaging
 └── build/               backend.spec and native desktop build tools
 database/                final desktop PostgreSQL schema
@@ -390,7 +390,7 @@ preferences, corpus/document versions, filters, and provider profiles.
 
 ## 9. API and frontend
 
-FastAPI registers route families before mounting `web/` at `/`:
+FastAPI registers route families before mounting `desktop/renderer/web/` at `/`:
 
 | Prefix | Delivered contract |
 |---|---|
@@ -423,8 +423,9 @@ Public Jobs exposes a List/Map view, filter sheet, total count, update timestamp
 cursor-based infinite scrolling, and a sibling detail pane. WaterlooWorks uses
 the same list/detail pattern with multi-select filters and a sync dialog that can
 queue postings, submitted applications, or both. Tracker uses numbered paging,
-selection, bulk actions, a detail/event pane, and URL-backed filters. At 900px
-and below, navigation becomes a drawer and detail panes become overlays.
+selection, bulk actions, a detail/event pane, and URL-backed filters. At 1040px
+and below, the toolbar offers a workspace picker. At 900px and below, detail
+panes become overlays.
 
 Feature modules are imported on first activation. Failed initial imports can be
 retried because `main.js` clears the cached rejected promise. A filter change

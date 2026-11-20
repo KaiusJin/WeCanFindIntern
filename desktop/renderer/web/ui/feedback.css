@@ -1,0 +1,59 @@
+.feedback-announcement {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.inline-save-status { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.inline-save-status[data-state=error] { color: var(--danger); }
+.inline-save-status[data-state=saved] { color: color-mix(in srgb, var(--lg-green) 40%, var(--ink)); }
+.lg-button[data-action-feedback], #btn-next-question {
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+.lg-button[data-action-feedback][data-feedback=success], #btn-next-question[data-feedback=success] {
+  color: color-mix(in srgb, var(--lg-green) 40%, var(--ink));
+  background-color: color-mix(in srgb, var(--lg-green) 22%, var(--lg-fill));
+  border-color: color-mix(in srgb, var(--lg-green) 45%, var(--glass-edge));
+}
+.lg-button[data-feedback=success] .lg-button__icon { display: none; }
+.lg-button[data-feedback=success] .lg-button__label::before { content: "✓"; margin-inline-end: 6px; }
+.toast-region {
+  position: fixed; inset: auto 0 24px; width: max-content; max-width: min(400px, calc(100% - 24px));
+  padding: 0; margin: 0 auto; border: 0; color: var(--ink); background: transparent;
+  overflow: visible; pointer-events: none;
+}
+.toast-region:popover-open { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 8px; }
+.feedback-toast {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center;
+  width: max-content; max-width: 100%; padding: 10px 12px 10px 16px; border-radius: 16px; border: 1px solid var(--glass-edge);
+  background: var(--lg-menu-fill); backdrop-filter: blur(18px); box-shadow: var(--popover-shadow);
+  animation: toast-in 160ms ease-out;
+}
+.toast-copy { display: grid; gap: 2px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; max-height: 7.5rem; overflow: auto; }
+.toast-copy strong { font-weight: 620; }
+.feedback-toast[data-variant=error] .toast-copy strong { color: var(--danger); }
+.feedback-toast button {
+  display: grid; place-content: center; border: 0; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--lg-tab-selection); color: var(--muted); font-size: 16px; cursor: pointer; pointer-events: auto;
+}
+@keyframes toast-in { from { opacity: 0; transform: translateY(5px); } }
+.feedback-toast .toast-action { width: auto; height: auto; justify-self: start; padding: 0; color: var(--accent); font-size: 12px; background: transparent; }
+.field-error-message {
+  margin: 5px 2px 0; padding: 0; grid-column: 1 / -1; color: var(--danger);
+  font: 500 12px/1.45 var(--lg-font); text-align: start;
+}
+:where(input, textarea, select, button, div, label).has-field-error,
+.has-field-error :is(.lg-input__field, .lg-track__glass), .has-field-error:focus-within {
+  outline: 1px solid color-mix(in srgb, var(--danger) 70%, transparent) !important;
+  outline-offset: 0;
+}
+.lg-input.has-field-error { outline: none !important; }
+.feedback-sheet { --modal-sheet-width: 480px; }
+.feedback-sheet-content h2 { margin: 0 0 8px; font-size: 21px; letter-spacing: -.035em; line-height: 1.2; }
+.feedback-sheet-content p {
+  margin: 0; font-size: 14px; line-height: 1.55; white-space: pre-line; color: var(--muted); overflow-wrap: anywhere;
+}
+.feedback-sheet-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 24px; }
+body:has(.feedback-sheet[open]) #app-main { overflow: hidden; }
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .feedback-toast { background: var(--surface); backdrop-filter: none; }
+  .feedback-sheet::backdrop { backdrop-filter: none; }
+}

@@ -9,7 +9,8 @@ __pycache__/
 .env
 .runtime/
 logs/
-desktop/node_modules/
+# Installed JavaScript dependencies at any depth
+node_modules/
 desktop/out/
 desktop/resources/public-job-manifest.txt
 desktop/resources/backend/
@@ -21,3 +22,8 @@ data/raw/*
 
 # Local task notes
 /ticket/
+
+# Generated renderer dependency bundles (rebuilt from package-lock.json)
+/desktop/renderer/web/vendor/liquid-glass.js
+/desktop/renderer/web/vendor/liquid-glass.css
+/desktop/renderer/web/vendor/liquid-glass-LICENSE.txt

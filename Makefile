@@ -1,6 +1,7 @@
 PYTHON ?= .venv/bin/python
 RUFF ?= .venv/bin/ruff
 NODE ?= node
+RENDERER_WEB := desktop/renderer/web
 
 .PHONY: check lint test test-db contract frontend-check format-check
 
@@ -20,9 +21,9 @@ contract:
 	PYTHONPATH=src $(PYTHON) scripts/dev/verify_frontend_api_contract.py
 
 frontend-check:
-	@set -e; for f in web/modules/*.js; do $(NODE) --input-type=module --check < "$$f"; done
+	@set -e; for f in $(RENDERER_WEB)/modules/*.js $(RENDERER_WEB)/ui/*.js; do $(NODE) --input-type=module --check < "$$f"; done
 	@set -e; for f in desktop/src/*.js desktop/forge.config.js; do $(NODE) --check "$$f"; done
-	$(NODE) --test web/tests/*.test.mjs desktop/tests/*.test.mjs
+	$(NODE) --test $(RENDERER_WEB)/tests/*.test.mjs desktop/tests/*.test.mjs
 
 format-check:
 	$(RUFF) format --check src tests scripts desktop/build

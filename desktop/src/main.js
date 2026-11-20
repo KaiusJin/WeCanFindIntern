@@ -1,10 +1,12 @@
 const crypto = require("node:crypto");
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, session, shell, Tray } = require("electron");
 const { BackendSidecar } = require("./backend");
 const { DatabaseBackups } = require("./backups");
 const { desktopPaths } = require("./paths");
 const { EmbeddedPostgres } = require("./postgres");
 const { getOrCreateSecret, getSecrets, setSecrets } = require("./secrets");
+
+const { loadWindowStyle, saveWindowStyle, windowMaterial, windowTitleBar } = require("./window-style");
 
 const AI_SECRET_NAMES = ["deepseekKey", "geminiKey", "openaiKey", "glmKey", "qwenKey"];
 
@@ -25,6 +27,7 @@ let runtimePaths;
 let quitting = false;
 let shutdownStarted = false;
 let shutdownPromise;
+let restoreSelection;
 
 function trustedExternalUrl(rawUrl) {
   try {
@@ -63,15 +66,25 @@ function configureSession(origin, token) {
 }
 
 function createWindow(show) {
+  const style = loadWindowStyle(runtimePaths.userData);
+  nativeTheme.themeSource = style.theme;
+  const material = windowMaterial();
+  const nativeBackdrop = Boolean(material.vibrancy || material.backgroundMaterial);
   mainWindow = new BrowserWindow({
+    ...material,
+    ...windowTitleBar(process.platform, nativeTheme.shouldUseDarkColors),
     width: 1440,
     height: 940,
     minWidth: 1050,
     minHeight: 700,
     show: false,
-    backgroundColor: "#f6f8f4",
+    backgroundColor: nativeBackdrop ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#1a1c21" : "#f7f6f2",
     webPreferences: {
       preload: require("node:path").join(__dirname, "preload.js"),
+      additionalArguments: [
+        `--wcfi-theme=${style.theme}`,
+        ...(nativeBackdrop ? ["--wcfi-native-backdrop"] : []),
+      ],
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -79,6 +92,11 @@ function createWindow(show) {
       allowRunningInsecureContent: false,
     },
   });
+  if (process.platform === "win32") {
+    const updateTitleBar = () => mainWindow.setTitleBarOverlay(windowTitleBar("win32", nativeTheme.shouldUseDarkColors).titleBarOverlay);
+    nativeTheme.on("updated", updateTitleBar);
+    mainWindow.once("closed", () => nativeTheme.off("updated", updateTitleBar));
+  }
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (trustedExternalUrl(url)) shell.openExternal(url);
     return { action: "deny" };
@@ -117,21 +135,66 @@ async function requestJobSync(path, options = {}) {
   return payload;
 }
 
+function trayError(title) {
+  return error => {
+    console.error(error);
+    mainWindow.show();
+    mainWindow.webContents.send("desktop:operation-error", title, error.message);
+  };
+}
+
 function createTray() {
   tray = new Tray(trayImage());
   tray.setToolTip("WeCanFindIntern — public job sync");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open WeCanFindIntern", click: () => mainWindow.show() },
-    { label: "Sync public jobs now", click: () => requestJobSync("/desktop/sync/run", { method: "POST" }).catch(console.error) },
-    { label: "Back up database now", click: () => backups.create("manual").catch(console.error) },
-    { label: "Restore database backup…", click: () => chooseRestoreBackup().catch(console.error) },
+    { label: "Sync public jobs now", click: () => requestJobSync("/desktop/sync/run", { method: "POST" }).catch(trayError("Job sync failed")) },
+    { label: "Back up database now", click: () => backups.create("manual").catch(trayError("Backup failed")) },
+    { label: "Restore database backup…", click: () => chooseRestoreBackup().catch(trayError("Restore could not be scheduled")) },
     { type: "separator" },
     { label: "Quit", click: () => { quitting = true; app.quit(); } },
   ]));
   tray.on("double-click", () => mainWindow.show());
 }
 
-async function chooseRestoreBackup() {
+function confirmDatabaseRestore() {
+  const contents = mainWindow.webContents;
+  if (contents.isDestroyed() || contents.isLoadingMainFrame()) return Promise.resolve(false);
+  const requestId = crypto.randomUUID();
+  return new Promise(resolve => {
+    function finish(approved) {
+      ipcMain.off("desktop:restore-answer", answer);
+      contents.off("render-process-gone", cancel);
+      contents.off("destroyed", cancel);
+      contents.off("did-start-navigation", navigating);
+      resolve(approved);
+    }
+    function cancel() { finish(false); }
+    function navigating(info) {
+      if (info.isMainFrame && !info.isSameDocument) cancel();
+    }
+    function answer(event, id, approved) {
+      if (event.sender === contents && event.senderFrame === contents.mainFrame && id === requestId) {
+        finish(approved === true);
+      }
+    }
+    ipcMain.on("desktop:restore-answer", answer);
+    contents.once("destroyed", cancel);
+    contents.once("render-process-gone", cancel);
+    contents.on("did-start-navigation", navigating);
+    mainWindow.show();
+    contents.send("desktop:confirm-restore", requestId);
+  });
+}
+
+function chooseRestoreBackup() {
+  if (!restoreSelection) {
+    restoreSelection = selectAndScheduleRestore().finally(() => { restoreSelection = null; });
+  }
+  return restoreSelection;
+}
+
+async function selectAndScheduleRestore() {
   const selection = await dialog.showOpenDialog(mainWindow, {
     title: "Restore WeCanFindIntern database backup",
     defaultPath: backups.paths.backups,
@@ -139,16 +202,7 @@ async function chooseRestoreBackup() {
     filters: [{ name: "WeCanFindIntern database backup", extensions: ["dump"] }],
   });
   if (selection.canceled || selection.filePaths.length !== 1) return { scheduled: false };
-  const confirmation = await dialog.showMessageBox(mainWindow, {
-    type: "warning",
-    buttons: ["Cancel", "Restore and restart"],
-    defaultId: 0,
-    cancelId: 0,
-    title: "Replace the local database?",
-    message: "The current database will be backed up automatically before restore.",
-    detail: "WeCanFindIntern will restart. If restore fails, it will automatically roll back to the safety backup.",
-  });
-  if (confirmation.response !== 1) return { scheduled: false };
+  if (!await confirmDatabaseRestore()) return { scheduled: false };
   await backups.scheduleRestore(selection.filePaths[0]);
   setTimeout(() => {
     quitting = true;
@@ -201,6 +255,10 @@ function shutdownAndQuit() {
   shutdown().finally(() => app.quit());
 }
 
+ipcMain.handle("desktop:set-window-style", (_event, key, value) => {
+  saveWindowStyle(runtimePaths.userData, key, value);
+  if (key === "theme") nativeTheme.themeSource = value;
+});
 ipcMain.handle("desktop:get-version", () => app.getVersion());
 ipcMain.handle("desktop:get-sync-status", () => requestJobSync("/desktop/status"));
 ipcMain.handle("desktop:run-sync", () => requestJobSync("/desktop/sync/run", { method: "POST" }));

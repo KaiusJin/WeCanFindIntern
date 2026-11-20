@@ -2,15 +2,16 @@
 
 ## Architecture
 
-The web UI is a static HTML/CSS/ES-module application served by FastAPI from `web/`. There is no build step in the repository. `index.html` provides the DOM and feature sections; `styles.css` preserves the feature-level visual system; `app-shell.css` defines the desktop shell, bounded workspaces, and narrow-screen overlays; `modules/main.js` wires feature initialization and shared navigation.
+The Electron renderer lives in `desktop/renderer/`. React and TypeScript define the pages under `src/`. Run `npm ci` to install the build dependencies and `npm run build` before the first launch and after editing TSX. The build produces `web/index.html` and bundles the interactive Liquid Glass controls, styles and licenses in `web/vendor/`. Installed npm dependencies and generated Liquid Glass bundles are ignored by Git; `package.json` and `package-lock.json` remain versioned so builds can reproduce them. `npm run check` regenerates the ignored bundles and verifies the checked-in HTML. The map's manually vendored D3, TopoJSON and geographic data remain versioned because they have no build-time restoration step. The FastAPI sidecar serves these local files in the Electron window. The controls mount before the feature modules initialize navigation and API calls.
 
-The primary navigation is grouped by user task: Discover contains Public Jobs and a separate WaterlooWorks workspace, Manage contains Applications, Career Tools exposes Resume ATS Score, Job Match, Cover Letter, and Interview Coach, and Workspace contains Assistant and Profile. Settings remains persistently available at the bottom of the sidebar. Opportunity Map is a List/Map view inside Public Jobs rather than a separate global destination.
+The desktop toolbar links directly to LinkedIn / Indeed public jobs, WaterlooWorks, Applications, AI Assistant, Profile and Settings. Career tools groups the four writing, matching and practice tools. Narrow windows use a workspace picker in the toolbar. Settings contains appearance, AI model and embedding preferences. Public Jobs includes a List/Map switch. WaterlooWorks uses its own dataset and sync controls.
 
 The browser calls the versioned REST API directly with `fetch`. API route order is defined before the static mount so `/api/...` paths are not shadowed by the HTML fallback.
 
 ```mermaid
 flowchart LR
-    H[index.html and styles.css] --> M[main.js]
+    T[React page components] --> H[Generated index.html]
+    H --> M[main.js]
     M --> N[navigation and lazy section loaders]
     N --> F[Feature ES modules]
     F -->|fetch and SSE| A[FastAPI routes]
@@ -24,7 +25,7 @@ flowchart LR
 | Module | Main responsibility |
 |---|---|
 | `main.js` | Application startup and global interactions |
-| `navigation.js` | Sidebar/tab activation, URL hashes, Public Jobs List/Map state, and mobile drawer behavior |
+| `navigation.js` | Toolbar navigation, URL hashes and Public Jobs List/Map state |
 | `helpers.js` | HTML escaping, Markdown rendering, labels, dates, salary formatting, timeout fetch, drop zones |
 | `pagination.js` | IntersectionObserver-based infinite scrolling within a selected scroll root |
 | `bookmarks.js` | Shared public/WaterlooWorks bookmark state and mutations |
@@ -54,12 +55,12 @@ loading/error state, requests a page, appends or replaces cards, renders
 `total_count` and `last_updated_at`, saves `next_cursor`, and stops infinite
 scrolling when `has_more=false`.
 
-Opening a card requests `/api/v1/jobs/{uuid}` and renders canonical title/company/location, salary, tags, description, source links, and Tracker action in an adjacent detail pane. Filters use a temporary sheet instead of consuming a permanent column. Infinite scroll is scoped to the results pane; Opportunity Map is selected with the local List/Map switch while Public Jobs remains the active global destination.
+Opening a card requests `/api/v1/jobs/{uuid}` and renders canonical title/company/location, salary, tags, description, source links, and Tracker action in an adjacent detail pane. The Filters button opens a nonmodal panel with Role, Location and Pay sections. Infinite scrolling runs inside the results pane. The List/Map switch opens Opportunity Map within the public jobs destination.
 
 ## WaterlooWorks flow
 
-`waterlooworks.js` polls `/status` while connecting or synchronizing and uses one
-sync dialog to select job postings, submitted applications, or both. When both
+`waterlooworks.js` polls `/status` while connecting or synchronizing and uses a
+sync panel to select job postings, submitted applications, or both. When both
 are selected, posting collection finishes first and application synchronization
 is queued next. Board source, work mode, and opportunity type are multi-select
 filters; company, skill, category, location hierarchy, and posted date are also
@@ -77,7 +78,7 @@ list.
 The Tracker module keeps filters and numbered paging in the URL, fetches
 applications and both bookmark lists in parallel, and updates cards/buttons
 after mutations. The desktop layout presents the application list and selected
-application as sibling panes; the drawer becomes a narrow-screen detail overlay.
+application as sibling panes.
 Bulk actions operate on selected application IDs; custom-job creation calls the
 full tracker create endpoint.
 
@@ -98,9 +99,9 @@ and memory deletion use their dedicated endpoints.
 
 ## Rendering and safety
 
-`escapeHtml()` is used for ordinary dynamic text. Markdown rendering handles job descriptions and generated text through the shared helper rather than injecting raw provider output. Buttons and links are created from validated IDs/URLs where possible. API errors are converted into plain user-facing notices.
+`escapeHtml()` is used for ordinary dynamic text. Markdown rendering handles job descriptions and generated text through the shared helper rather than injecting raw provider output. Buttons and links are created from validated IDs/URLs where possible. Editable errors appear next to the field. Button actions report progress and success in place: saves show Saving… then a green Saved state until the next edit, while Copy and exports briefly show Copied or Download started before restoring their original appearance. Profile autosaves use a persistent status beside the editor. Successful deletions update their lists and announce the result to screen readers without a second visual notice. Transient toasts report errors and results that need additional explanation. Destructive decisions and application faults use a Liquid Glass sheet.
 
-The API contract verifier scans front-end fetch/link references and checks that corresponding FastAPI routes exist. Node syntax checks run over every ES module. These checks catch path drift even though the UI has no bundler.
+The API contract verifier scans front-end fetch/link references and checks that corresponding FastAPI routes exist. Node syntax checks run over every feature ES module.
 
 ## Browser state
 
@@ -115,7 +116,7 @@ task is active, and the displayed board counters remain usable when one board
 fails. Agent approval buttons are disabled/updated from the returned approval
 state so a browser retry cannot assume that a write occurred.
 
-Desktop sections use a fixed application shell. Long content scrolls within sibling result, detail, editor, or chat panes instead of creating nested page scroll. At `900px` and below, the sidebar becomes a drawer, master/detail panes become list plus full-screen detail, and form/result tools return to a natural single-column document flow.
+Public Jobs pairs a searchable index with a reading view. Applications opens a record inspector beside the pipeline ledger. Profile displays one editable chapter at a time. The ATS and writing tools move from source material into a report or draft. The Electron window supports desktop sizes from 1050 × 700.
 
 The frontend does not implement an independent automatic retry loop for every
 HTTP request. It displays the server's readable error and lets the user retry;
@@ -141,6 +142,6 @@ backup, tray, and public job synchronization commands.
 
 `scripts/dev/verify_frontend_api_contract.py` compares frontend route references
 with FastAPI routes. `make frontend-check` runs Node syntax validation for every
-`web/modules/*.js` file and checks the navigation/layout contract in
-`web/tests/navigation.test.mjs`. Route/service tests validate the response
+`desktop/renderer/web/modules/*.js` file and checks the navigation/layout contract in
+`desktop/renderer/web/tests/navigation.test.mjs`. Route/service tests validate the response
 contracts the modules consume.

@@ -22,4 +22,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
+      - run: npm ci --prefix desktop/renderer
+      - run: npm --prefix desktop/renderer run check
       - run: make frontend-check

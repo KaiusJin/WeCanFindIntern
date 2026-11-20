@@ -1,0 +1,153 @@
+/* GlassMenu and GlassSheet own their spring animations. Native menus use the
+   same gentle growth from the trigger, with a shorter return on dismissal. */
+:root {
+  --menu-open-duration: 280ms;
+  --menu-close-duration: 180ms;
+  --menu-easing: cubic-bezier(.16, 1, .3, 1);
+}
+
+#toolbar-nav-host .nav-group:not(.direct-group) .nav-items,
+.facet-picker .multi-filter-menu {
+  opacity: 0;
+  translate: 0 -6px;
+  scale: .96;
+  transform-origin: top left;
+  transition:
+    opacity var(--menu-close-duration) ease,
+    translate var(--menu-close-duration) var(--menu-easing),
+    scale var(--menu-close-duration) var(--menu-easing),
+    display var(--menu-close-duration) allow-discrete;
+}
+
+#toolbar-nav-host .group-toggle[aria-expanded="true"] + .nav-items,
+.facet-picker.open .multi-filter-menu:not([hidden]) {
+  opacity: 1;
+  translate: 0 0;
+  scale: 1;
+  transition-duration: var(--menu-open-duration);
+}
+
+/* Discrete display transitions retain the outgoing surface until it settles.
+   Starting styles also cover the first opening and newly mounted controls. */
+@starting-style {
+  #toolbar-nav-host .group-toggle[aria-expanded="true"] + .nav-items,
+  .facet-picker.open .multi-filter-menu:not([hidden]) {
+    opacity: 0;
+    translate: 0 -6px;
+    scale: .96;
+  }
+}
+
+#toolbar-nav-host .group-toggle:not([aria-expanded="true"]) + .nav-items,
+.facet-picker .multi-filter-menu[hidden] {
+  pointer-events: none;
+}
+
+.group-toggle .icon:last-child,
+.multi-filter-trigger .icon:last-child {
+  transition: rotate var(--menu-open-duration) var(--menu-easing);
+}
+.group-toggle[aria-expanded="true"] .icon:last-child,
+.multi-filter-trigger[aria-expanded="true"] .icon:last-child { rotate: 180deg; }
+
+/* Native popovers stay in the top layer for their exit transition, including
+   light dismissal and Escape. Avoid the library's manually promoted menus. */
+:is(.filter-sheet, .workspace-form-popover)[popover] {
+  opacity: 0;
+  translate: 0 -8px;
+  scale: .97;
+  transform-origin: top right;
+  transition:
+    opacity var(--menu-close-duration) ease,
+    translate var(--menu-close-duration) var(--menu-easing),
+    scale var(--menu-close-duration) var(--menu-easing),
+    display var(--menu-close-duration) allow-discrete,
+    overlay var(--menu-close-duration) allow-discrete;
+}
+.workspace-form-popover[popover] { transform-origin: center; }
+:is(.filter-sheet, .workspace-form-popover)[popover]:popover-open {
+  opacity: 1;
+  translate: 0 0;
+  scale: 1;
+  transition-duration: var(--menu-open-duration);
+}
+:is(.filter-sheet, .workspace-form-popover)[popover]:not(:popover-open) { pointer-events: none; }
+
+@starting-style {
+  :is(.filter-sheet, .workspace-form-popover)[popover]:popover-open {
+    opacity: 0;
+    translate: 0 -8px;
+    scale: .97;
+  }
+}
+
+/* A history dropdown is positioned outside the details flow. Retain its
+   content during closing without clipping the floating menu to zero height. */
+.conversation-history::details-content {
+  transition: content-visibility var(--menu-close-duration) allow-discrete;
+}
+.conversation-history-menu {
+  opacity: 0;
+  translate: 0 -6px;
+  scale: .96;
+  transform-origin: top right;
+  transition:
+    opacity var(--menu-close-duration) ease,
+    translate var(--menu-close-duration) var(--menu-easing),
+    scale var(--menu-close-duration) var(--menu-easing);
+}
+.conversation-history[open] > .conversation-history-menu {
+  opacity: 1;
+  translate: 0 0;
+  scale: 1;
+  transition-duration: var(--menu-open-duration);
+}
+.conversation-history:not([open]) > .conversation-history-menu { pointer-events: none; }
+@starting-style {
+  .conversation-history[open] > .conversation-history-menu {
+    opacity: 0;
+    translate: 0 -6px;
+    scale: .96;
+  }
+}
+
+/* Animate in-flow filter lists and disclosures to their intrinsic height so
+   nearby fields move with the expansion instead of jumping to make room. */
+@supports (interpolate-size: allow-keywords) {
+  .facet-picker .multi-filter-menu {
+    interpolate-size: allow-keywords;
+    block-size: 0;
+    overflow: clip;
+    transition-property: opacity, translate, scale, display, block-size, margin-block-start, padding-block, border-block-width;
+  }
+  .facet-picker .multi-filter-menu[hidden] { margin-block-start: 0; padding-block: 0; border-block-width: 0; }
+  .facet-picker.open .multi-filter-menu:not([hidden]) { block-size: auto; }
+  @starting-style {
+    .facet-picker.open .multi-filter-menu:not([hidden]) {
+      block-size: 0;
+      margin-block-start: 0;
+      padding-block: 0;
+      border-block-width: 0;
+    }
+  }
+  details:not(.conversation-history, .job-tools-menu)::details-content {
+    interpolate-size: allow-keywords;
+    block-size: 0;
+    opacity: 0;
+    overflow: clip;
+    transition:
+      block-size var(--menu-open-duration) var(--menu-easing),
+      opacity var(--menu-close-duration) ease,
+      content-visibility var(--menu-open-duration) allow-discrete;
+  }
+  details[open]:not(.conversation-history, .job-tools-menu)::details-content { block-size: auto; opacity: 1; }
+}
+
+@media (max-width: 480px) {
+  .conversation-history-menu { transform-origin: top left; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --menu-open-duration: 0ms; --menu-close-duration: 0ms; }
+  .group-toggle .icon:last-child, .multi-filter-trigger .icon:last-child { transition: none; }
+}

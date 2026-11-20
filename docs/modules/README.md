@@ -1,7 +1,7 @@
 # Module Documentation
 
 Module guides follow the runtime ownership boundaries in `src/wecanfindintern/`
-and `web/`. Each guide records the current components, primary flow,
+and `desktop/renderer/`. Each guide records the current components, primary flow,
 implementation rules, normal and failure outcomes, operator actions, and
 verification surface for that module.
 

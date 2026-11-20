@@ -2,10 +2,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const projectRoot = path.resolve(__dirname, "..");
+const rendererWeb = path.join(__dirname, "renderer", "web");
 const nativeTarget = `${process.platform}-${process.arch}`;
 const macInstallGuide = path.join(__dirname, "assets", "INSTALL-macOS.txt");
 const extraResource = [
-  path.join(projectRoot, "web"),
+  rendererWeb,
   path.join(projectRoot, "database"),
   path.join(__dirname, "resources", "public-job-manifest.txt"),
   path.join(__dirname, "resources", "backend"),
@@ -20,7 +21,7 @@ module.exports = {
     appBundleId: "com.wecanfindintern.desktop",
     icon: path.join(__dirname, "assets", process.platform === "darwin" ? "icon.icns" : "icon.ico"),
     extraResource,
-    ignore: [/^\/build(?:\/|$)/, /^\/assets(?:\/|$)/, /^\/resources(?:\/|$)/, /^\/out(?:\/|$)/],
+    ignore: [/^\/(build|assets|resources|renderer|out)(?:\/|$)/],
     // Seal the complete bundle even when no Apple Developer ID is available.
     // Gatekeeper will still require the user to approve the app manually, but
     // strict code-signature verification can distinguish it from a damaged app.
@@ -67,7 +68,10 @@ module.exports = {
     prePackage: async () => {
       const executableSuffix = process.platform === "win32" ? ".exe" : "";
       const required = [
-        path.join(projectRoot, "web", "index.html"),
+        path.join(rendererWeb, "index.html"),
+        path.join(rendererWeb, "modules", "main.js"),
+        path.join(rendererWeb, "ui", "tokens.css"),
+        path.join(rendererWeb, "ui", "icons.svg"),
         path.join(projectRoot, "database", "schema.sql"),
         path.join(__dirname, "resources", "public-job-manifest.txt"),
         path.join(

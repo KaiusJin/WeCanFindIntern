@@ -1,0 +1,21 @@
+{
+  "name": "wecanfindintern-renderer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && node --import tsx src/render.tsx",
+    "check": "tsc --noEmit && node --import tsx src/render.tsx --check"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@zakisheriff/liquid-glass": "4.0.3",
+    "esbuild": "0.28.1",
+    "prettier": "^3.10.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

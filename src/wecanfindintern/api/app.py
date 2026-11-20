@@ -28,9 +28,8 @@ from wecanfindintern.db.pool import Database
 from wecanfindintern.llm import cache as llm_cache
 from wecanfindintern.waterlooworks import WaterlooWorksService
 
-WEB_DIR = Path(
-    os.getenv("WCFI_WEB_DIR", str(Path(__file__).resolve().parents[3] / "web"))
-)
+DEFAULT_WEB_DIR = Path(__file__).resolve().parents[3] / "desktop" / "renderer" / "web"
+WEB_DIR = Path(os.getenv("WCFI_WEB_DIR", str(DEFAULT_WEB_DIR)))
 logger = logging.getLogger(__name__)
 
 DESKTOP_CSP = (
