@@ -2,7 +2,7 @@ html { scrollbar-gutter: auto; }
 body {
   background: var(--canvas);
   color: var(--ink);
-  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font: 14px/1.5 var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 button, input, textarea, select { font-family: inherit; }
@@ -17,12 +17,12 @@ button, input, textarea, select { font-family: inherit; }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.glass, .settings-dialog-header, .app-message-card {
+.glass, .settings-dialog-header {
   background: var(--surface);
   box-shadow: var(--glass-shadow);
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .glass, .settings-dialog-header, .app-message-card {
+  .glass, .settings-dialog-header {
     background-color: var(--glass);
     background-image: linear-gradient(155deg, color-mix(in srgb, var(--glass-edge) 40%, transparent), transparent 30%, transparent 78%, color-mix(in srgb, var(--glass-edge) 18%, transparent));
     -webkit-backdrop-filter: blur(var(--blur)) saturate(115%);
@@ -100,7 +100,7 @@ button, input, textarea, select { font-family: inherit; }
 .app-stage {
   grid-area: 2 / 1; height: auto; min-height: 0; min-width: 0;
 }
-.app-stage > main { height: 100%; min-height: 0; padding: 0 var(--app-gutter) 16px; background: transparent; scroll-behavior: auto; }
+.app-stage > main { height: 100%; min-height: 0; background: transparent; scroll-behavior: auto; }
 .hero.section-heading, #tab-agent > .hero { padding: clamp(19px, 3vh, 32px) 0 18px; }
 .hero h1, #tab-agent > .hero h1 { font-size: var(--title-size); font-weight: 650; letter-spacing: -.047em; line-height: 1.15; }
 .section-heading-copy .hero-copy, #tab-agent > .hero .hero-copy { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
@@ -132,7 +132,8 @@ dialog[open] { animation: pane-in var(--ease); }
 
 .preferences-workspace { max-width: 980px; margin: auto; padding: clamp(24px, 5vh, 52px) 0 26px; }
 .preferences-heading { margin-bottom: 24px; }
-.preferences-heading h1 { margin: 0; font: 500 clamp(32px, 3.6vw, 52px)/1.12 var(--reading-serif); letter-spacing: -.045em; }
+:is(.preferences-heading, .letter-heading, .practice-heading) h1 { font-weight: 500; }
+.preferences-heading h1 { margin: 0; font-size: clamp(32px, 3.6vw, 52px); line-height: 1.12; letter-spacing: -.045em; }
 .preferences-layout { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: clamp(20px, 2.2vw, 32px); align-items: start; }
 @media (max-width: 740px) {
   .preferences-layout { grid-template-columns: minmax(0, 1fr); }
@@ -170,7 +171,7 @@ dialog[open] { animation: pane-in var(--ease); }
 .settings-key-field button { display: grid; place-items: center; background: transparent; border: 0; margin-right: 6px; width: 32px; height: 32px; border-radius: 50%; color: var(--muted); }
 .settings-dimensions { display: grid; grid-template-columns: 1fr 78px; align-items: center; gap: 0 14px; margin: 18px 0 9px; }
 .settings-dimensions .field-label { margin: 0 8px; }
-.settings-dimensions > input { width: 100%; box-sizing: border-box; padding: 4px 8px; color: var(--ink); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--glass); font-variant-numeric: tabular-nums; }
+.settings-dimensions > input { width: 100%; box-sizing: border-box; padding: 4px 8px; color: var(--ink); border: 1px solid var(--line-strong);   font-variant-numeric: tabular-nums; }
 .settings-dimensions > .lg-slider { grid-column: 1 / -1; width: auto; margin-inline: 7px; }
 .preferences-footer { justify-content: flex-end; }
 .tab-pane.active { animation: pane-in var(--ease); }
@@ -205,11 +206,10 @@ dialog[open] { animation: pane-in var(--ease); }
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
   :root, :root[data-theme] { --glass: var(--surface); --blur: 0px; }
-  dialog::backdrop, .agent-job-detail-backdrop {
+  dialog::backdrop {
     -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
   }
-  .lg-glass, .glass, .settings-dialog-header, .app-message-card,
-  #toolbar-nav-host .nav-group:not(.direct-group) .nav-items {
+  .lg-glass, .glass, .settings-dialog-header, #toolbar-nav-host .nav-group:not(.direct-group) .nav-items {
     background: var(--surface) !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
   }
   .lg-glass::before, .lg-glass::after { display: none; }

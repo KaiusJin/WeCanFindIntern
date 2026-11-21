@@ -170,7 +170,6 @@ function setupFilterPopover(sheet, trigger) {
 
 export {
   clearMultiFilter,
-  closeMultiFilters,
   renderMultiFilter,
   selectedMultiFilterValues,
   setMultiFilterSelections,

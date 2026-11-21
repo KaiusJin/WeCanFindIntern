@@ -69,7 +69,7 @@
 .record-heading h2 {
   margin: 0;
   color: var(--ink);
-  font: 500 clamp(23px, 2vw, 32px)/1.14 var(--reading-serif);
+  font: 500 clamp(23px, 2vw, 32px)/1.14 var(--font-sans);
   letter-spacing: -.042em;
   overflow-wrap: anywhere;
 }
@@ -96,7 +96,7 @@
 .record-body h3, .record-form-body h3 {
   margin: 0 0 11px;
   color: var(--ink);
-  font: 620 15px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font: 620 15px/1.3 var(--font-sans);
   letter-spacing: -.022em;
 }
 .record-progress.lg-card {
@@ -114,7 +114,7 @@
 .record-field, .record-glass-input, .record-field-grid .tracker-link-field { display: flex; flex-direction: column; align-items: stretch; gap: 7px; }
 :is(.record-body,.record-form-body) :is(.field-label,.lg-input__label) {
   display: block; margin: 0; padding: 0;
-  color: var(--muted); font: 530 12px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color: var(--muted); font: 530 12px/1.3 var(--font-sans);
   letter-spacing: 0; text-transform: none;
 }
 :is(.record-body,.record-form-body) :is(.career-input,.career-select,.career-textarea) {
@@ -160,7 +160,7 @@
   padding: 13px 24px; border-top: 1px solid var(--line); background: color-mix(in srgb,var(--surface-2) 40%,var(--surface));
 }
 .record-footer .lg-button .icon, .pipeline-actions .lg-button .icon { width: 15px; height: 15px; }
-.record-footer .danger-text { color: var(--danger); font-size: 12px; }
+
 .record-activity .tracker-timeline { display: grid; gap: 0; }
 .record-activity .timeline-header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .record-activity .timeline-title { color: var(--ink); font-size: 14px; }

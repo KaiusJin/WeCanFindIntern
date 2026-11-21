@@ -180,7 +180,6 @@ function renderWaterlooWorksStatus(data) {
   ], "All board sources");
   updateWaterlooWorksFilterCount();
   const launchButton = $("#ww-launch");
-  const connectionStatus = $("#ww-connection-status");
   const actionBusy = ["browser_starting", "collecting", "importing", "syncing_applications"].includes(status);
   launchButton.disabled = actionBusy;
   if (actionBusy) {
@@ -191,14 +190,6 @@ function renderWaterlooWorksStatus(data) {
     $("#ww-launch-label").textContent = "Open / check WaterlooWorks ↗";
   } else {
     $("#ww-launch-label").textContent = "Log into WaterlooWorks ↗";
-  }
-  if (connectionStatus) {
-    connectionStatus.classList.toggle("connected", wwBrowserOpen && WW_READY_STATUSES.has(status));
-    connectionStatus.textContent = wwBrowserOpen && WW_READY_STATUSES.has(status)
-      ? "Connected · Ready to sync"
-      : (["waiting_for_login", "waiting_for_job_page"].includes(status)
-        ? "Finish signing in in the WaterlooWorks window"
-        : (actionBusy ? (data.message || "WaterlooWorks sync in progress") : "Not connected"));
   }
   for (const board of data.boards || []) {
     const row = document.querySelector(`[data-ww-board="${board.name}"]`);
@@ -372,10 +363,7 @@ async function loadWaterlooWorksStatus() {
     wwBrowserOpen = false;
     wwStatus = "idle";
     wwBusy = false;
-    const connectionStatus = $("#ww-connection-status");
     const launchButton = $("#ww-launch");
-    connectionStatus?.classList.remove("connected");
-    if (connectionStatus) connectionStatus.textContent = "Not connected";
     if (launchButton) {
       launchButton.disabled = false;
       $("#ww-launch-label").textContent = "Log into WaterlooWorks ↗";
@@ -580,6 +568,5 @@ export {
   loadWaterlooWorksStatus,
   loadWaterlooWorksJobs,
   loadWaterlooWorksJobDetail,
-  openWaterlooWorksJob,
   startWaterlooWorksPolling,
 };

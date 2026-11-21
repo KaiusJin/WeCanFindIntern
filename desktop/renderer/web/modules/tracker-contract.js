@@ -70,7 +70,6 @@ function trackerSourceOptions(selected = "other") {
 
 export {
   TRACKER_SOURCE_LABELS,
-  TRACKER_STAGE_LABELS,
   loadTrackerContract,
   trackerSourceOptions,
   trackerStageLabel,

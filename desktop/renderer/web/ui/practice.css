@@ -22,7 +22,8 @@
 .practice-heading h1 {
   margin: 0;
   color: var(--ink);
-  font: 400 clamp(32px, 3.7vw, 51px)/1.07 var(--reading-serif);
+  font-size: clamp(32px, 3.7vw, 51px);
+  line-height: 1.07;
   letter-spacing: -.052em;
 }
 .practice-heading .text-button, .practice-start-actions .text-button {
@@ -33,7 +34,7 @@
 .diagnostic-source, .studio-setup { margin: 0; }
 .diagnostic-source, .diagnostic-report, .studio-session, .practice-room #interview-history-card {
   border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
+  border-radius: var(--radius);
   background: var(--surface);
   padding: clamp(18px, 2.2vw, 30px);
 }
@@ -110,7 +111,7 @@
   background: var(--surface-2); border: 0; margin: 0 0 9px; padding: 18px 22px;
   border-radius: 14px;
 }
-:is(.diagnostic-report, .practice-room) .report-score .score-number { font: 400 clamp(43px, 5vw, 72px)/1.05 var(--reading-serif); color: var(--ink); letter-spacing: -.055em; }
+:is(.diagnostic-report, .practice-room) .report-score .score-number { font: 400 clamp(43px, 5vw, 72px)/1.05 var(--font-sans); color: var(--ink); letter-spacing: -.055em; }
 :is(.diagnostic-report, .practice-room) .score-level-pill { background: none; color: var(--accent); font-weight: 650; font-size: 14px; margin: 0 0 4px; padding: 0; }
 :is(.diagnostic-report, .practice-room) .score-meta-text { min-width: min(100%, 200px); }
 .diagnostic-report .report-block { display: grid; grid-template-columns: minmax(125px, .46fr) minmax(0, 1fr); gap: 8px 22px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 18px; }
@@ -148,8 +149,8 @@
 .practice-room #interview-history-card { margin-top: 18px; }
 .practice-room #interview-history-heading { scroll-margin: 20px; }
 .practice-room .interview-trend-summary { border: 0; }
-.practice-room .history-stat strong { color: var(--ink); font-family: var(--reading-serif); font-weight: 400; font-size: 26px; }
-.practice-room .question-prompt-box h3 { max-width: 38ch; font: 400 clamp(24px, 3vw, 38px)/1.22 var(--reading-serif); letter-spacing: -.04em; margin: 8px 0 22px; }
+.practice-room .history-stat strong { color: var(--ink); font-family: var(--font-sans); font-weight: 400; font-size: 26px; }
+.practice-room .question-prompt-box h3 { max-width: 38ch; font: 400 clamp(24px, 3vw, 38px)/1.22 var(--font-sans); letter-spacing: -.04em; margin: 8px 0 22px; }
 .practice-room .answer-actions { align-items: center; gap: 12px; margin-top: 16px; }
 .practice-room .history-delete { min-width: 32px; min-height: 32px; }
 .practice-room .history-open:hover { color: var(--accent); }

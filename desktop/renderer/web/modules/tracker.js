@@ -598,6 +598,5 @@ export {
   openTrackerDrawer,
   toggleBookmarkJob,
   toggleWaterlooWorksBookmark,
-  trackerState,
   updateBookmarkButtons,
 };

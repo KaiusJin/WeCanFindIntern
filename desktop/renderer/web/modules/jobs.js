@@ -517,7 +517,6 @@ export {
   loadJobs,
   loadFacets,
   loadPublicJobDetail,
-  openJob,
   updateSliderFill,
   setupBackToTop,
   applyRegionFilter,
