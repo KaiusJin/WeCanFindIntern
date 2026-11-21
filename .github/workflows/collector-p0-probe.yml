@@ -1,0 +1,53 @@
+name: Collector P0 probe
+
+# Temporary measurement workflow for docs/plans/COLLECTOR_REFACTOR_PLAN.md (P0).
+# Runs only from the probe branch; touches no database, bucket or secrets.
+on:
+  push:
+    branches: [probe/collector-p0]
+    paths:
+      - scripts/probes/collector_p0.py
+      - .github/workflows/collector-p0-probe.yml
+  workflow_dispatch:
+    inputs:
+      linkedin_minutes:
+        description: LinkedIn probe budget (minutes)
+        default: '85'
+      indeed_minutes:
+        description: Indeed probe budget (minutes)
+        default: '40'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collector-p0-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'requests>=2.32,<3' 'beautifulsoup4>=4.12,<5'
+      - name: Run probe
+        env:
+          PROBE_OUT: results
+          PROBE_LINKEDIN_MINUTES: ${{ inputs.linkedin_minutes || '85' }}
+          PROBE_INDEED_MINUTES: ${{ inputs.indeed_minutes || '40' }}
+        run: python scripts/probes/collector_p0.py
+      - name: Publish summary
+        if: always()
+        run: test -f results/summary.md && cat results/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: collector-p0-${{ github.run_id }}
+          path: results/
+          if-no-files-found: ignore
