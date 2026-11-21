@@ -1,10 +1,7 @@
 import {
   $,
-  formatDate,
   formatRelativeTime,
-  formatSalary,
   label,
-  renderJobCard,
   renderJobDetail,
   skillLabel,
   showToast,
@@ -16,17 +13,12 @@ import {
   bookmarkState,
   loadPublicBookmarks,
   toggleBookmarkJob,
-  updateBookmarkButtons,
 } from "./bookmarks.js";
 import {
   publicJobContext,
   setActiveJobContext,
 } from "./job-context.js?v=20260831-jobboard-parity-v3";
-import {
-  closeJobDetailPane,
-  openJobDetailPane,
-  setupJobSplit,
-} from "./job-detail-pane.js?v=20260902-shared-components-v1";
+import { setupPostingWorkspace } from "./posting-workspace.js";
 import {
   renderMultiFilter,
   selectedMultiFilterValues,
@@ -44,8 +36,10 @@ const state = {
   totalCount: 0,
 };
 let jobsAbortController = null;
-let readerCollapsed = false;
-let visibleJob = null;
+const workspace = setupPostingWorkspace($("#tab-jobs"), {
+  loadDetail: loadPublicJobDetail,
+  activateJob: job => setActiveJobContext(publicJobContext(job)),
+});
 
 const filterParamMap = {
   "recruiting-term": "recruiting_term",
@@ -153,30 +147,6 @@ function updateLastUpdatedBadge(lastUpdatedIso) {
   }
 }
 
-function renderJob(job, selectedId) {
-  return renderJobCard(job, {
-    isSaved: bookmarkState.publicJobs.has(job.id),
-    selected: String(job.id) === selectedId,
-  });
-}
-
-function showEmptyResults(title, message, actionLabel, onAction) {
-  const empty = $("#empty-state");
-  empty.querySelector("h3").textContent = title;
-  empty.querySelector("p").textContent = message;
-  const button = $("#jobs-empty-action");
-  button.textContent = actionLabel;
-  button.onclick = onAction;
-  button.hidden = !onAction;
-  empty.hidden = false;
-}
-
-function previewFirstResult() {
-  if (readerCollapsed || window.matchMedia("(max-width: 680px)").matches || $("#tab-jobs").hidden || $("#public-job-detail-pane.open")) return;
-  const first = $("#job-list .job-card");
-  if (first) void openJob(first.dataset.id, false);
-}
-
 function applyRegionFilter(countryCode, regionCode) {
   // The map includes regions with zero openings, which can be absent from the facets.
   setMapFacetOptions("country", state.facets?.countries, "All countries", [countryCode]);
@@ -230,23 +200,14 @@ async function loadJobs({ append = false } = {}) {
     const page = await response.json();
     await bookmarksPromise;
     if (controller.signal.aborted) return;
-    const existingIds = new Set(
-      [...list.querySelectorAll(".job-card")].map((card) => card.dataset.id),
-    );
-    const newItems = page.items.filter((job) => !existingIds.has(String(job.id)));
-    const selectedId = $("#public-job-detail-pane.open")?.dataset.selectedId;
-    list.insertAdjacentHTML("beforeend", newItems.map((job) => renderJob(job, selectedId)).join(""));
-    // Normalize freshly inserted bookmark buttons through the same renderer
-    // used after bookmark mutations. This prevents the initial SVG from
-    // looking different until the user clicks the button.
-    updateBookmarkButtons();
+    const added = workspace.renderRows(page.items, append);
     state.cursor = page.next_cursor;
     state.hasMore = page.has_more;
     if (page.last_updated_at) {
       updateLastUpdatedBadge(page.last_updated_at);
     }
     if (!append) {
-      state.totalCount = typeof page.total_count === "number" ? page.total_count : newItems.length;
+      state.totalCount = typeof page.total_count === "number" ? page.total_count : added;
     }
     const total = state.totalCount ?? 0;
     const formattedCount = total.toLocaleString("en-US");
@@ -255,14 +216,10 @@ async function loadJobs({ append = false } = {}) {
     $("#facet-results-label").textContent = "Show " + countLabel;
     if (!list.children.length) {
       if (filtered) {
-        showEmptyResults("No matching jobs", "Try a broader search term or remove a filter.", "Clear search", () => $("#clear-filters").click());
+        workspace.showEmpty("No matching jobs", "Try a broader search term or remove a filter.", "Clear search", () => $("#clear-filters").click());
       } else {
-        showEmptyResults("No public jobs yet", "New postings will appear here after the next job sync.", "", null);
+        workspace.showEmpty("No public jobs yet", "New postings will appear here after the next job sync.");
       }
-    }
-    if (!append) {
-      if (selectedId && !newItems.some((job) => String(job.id) === selectedId)) closePublicJobDetail(false);
-      previewFirstResult();
     }
     if (endOfResults) {
       endOfResults.hidden = Boolean(page.has_more || !list.children.length);
@@ -272,10 +229,10 @@ async function loadJobs({ append = false } = {}) {
     if (append) {
       showToast("Could not load more jobs. Try refreshing the list.", { variant: "error" });
     } else {
-      closePublicJobDetail(false);
+      workspace.closeDetail(false);
       $("#result-status").textContent = "Unavailable";
       $("#facet-results-label").textContent = "Show results";
-      showEmptyResults("Job feed unavailable", "The job service could not be reached. Try reloading the feed.", "Retry", () => loadJobs());
+      workspace.showEmpty("Job feed unavailable", "The job service could not be reached. Try reloading the feed.", "Retry", () => loadJobs());
     }
   } finally {
     if (controller.signal.aborted) return;
@@ -310,56 +267,11 @@ async function loadPublicJobDetail(jobId, signal) {
   const response = await fetch(`/api/v1/jobs/${jobId}`, { signal });
   if (!response.ok) throw new Error("Could not load job details");
   const job = await response.json();
-  if (!signal || (!signal.aborted && !$("#tab-jobs").hidden)) setActiveJobContext(publicJobContext(job));
-  return {
-    job,
-    html: renderJobDetail(job, {
-      isSaved: bookmarkState.publicJobs.has(job.id),
-      eyebrow: [job.opportunity_type, job.job_category].filter((value) => value && value !== "unknown").map(label).join(" · "),
-      company: job.company_name,
-      location: job.location?.display_name,
-      meta: job.date_posted ? formatDate(job.date_posted) : "",
-      skills: job.source_skills?.length ? job.source_skills : job.skill_tags,
-      facts: [
-        { label: "Location", value: job.location?.display_name || "Not specified" },
-        { label: "Work mode", value: workModeLabel(job.work_mode) },
-        { label: "Salary", value: formatSalary(job.salary) },
-        { label: "Recruiting term", value: job.recruiting_term?.display_name || "Not specified" },
-      ],
-      links: (job.sources || []).map((source) => source.direct_url || source.url),
-    }),
-  };
-}
-
-async function openJob(jobId, focus = true) {
-  if (focus) readerCollapsed = false;
-  const result = await openJobDetailPane({
-    paneSelector: "#public-job-detail-pane",
-    detailSelector: "#public-job-detail",
-    cardsSelector: "#job-list .job-card",
-    selectedId: jobId,
-    getCardId: (card) => card.dataset.id,
-    loadDetail: loadPublicJobDetail,
-    errorTitle: "Job details unavailable",
-    focus,
-  });
-  if (result) {
-    visibleJob = result.job;
-    updateBookmarkButtons();
-  }
+  if (!signal) setActiveJobContext(publicJobContext(job));
+  return { job, html: renderJobDetail(job, { isSaved: bookmarkState.publicJobs.has(job.id) }) };
 }
 
 setupFilterPopover($("#job-filters-sheet"), $("#open-job-filters"));
-
-function closePublicJobDetail(userInitiated = true) {
-  if (userInitiated) readerCollapsed = true;
-  visibleJob = null;
-  closeJobDetailPane({
-    paneSelector: "#public-job-detail-pane",
-    selectedCardsSelector: "#job-list .job-card.selected",
-    restoreFocus: userInitiated,
-  });
-}
 
 function updateSliderFill() {
   const minSlider = $("#hourly-slider-min");
@@ -374,28 +286,10 @@ function updateSliderFill() {
   fill.style.width = `${Math.max(0, maxPct - minPct)}%`;
 }
 
-function setupBackToTop() {
-  const backToTopBtn = $("#back-to-top");
-  if (!backToTopBtn) return;
-  const scrollRoot = $("#tab-jobs .results-scroll-content");
-  scrollRoot?.addEventListener(
-    "scroll",
-    () => {
-      backToTopBtn.hidden = scrollRoot.scrollTop < 500;
-    },
-    { passive: true },
-  );
-  backToTopBtn.addEventListener("click", () => {
-    scrollRoot?.scrollTo({ top: 0, behavior: "smooth" });
-  });
-}
-
 // =========================================================
 // SEARCH AND FILTER EVENT LISTENERS
 // =========================================================
 
-setupJobSplit($("#tab-jobs .discovery-divider"));
-new ResizeObserver(previewFirstResult).observe($("#tab-jobs"));
 $("#reset-job-search")?.addEventListener("click", () => $("#clear-filters").click());
 $("#search-form")?.addEventListener("submit", (event) => { event.preventDefault(); if (validHourlyRange(true)) loadJobs(); });
 $("#refresh")?.addEventListener("click", () => loadJobs());
@@ -417,7 +311,7 @@ setupMultiFilterInteractions("#job-filters-sheet", {
   closeOnOutsideClick: true,
   onClear: () => debouncedLoadJobs(100),
 });
-$(".filters-panel")?.addEventListener("change", (event) => {
+$("#job-filters-sheet").addEventListener("change", (event) => {
   if (event.target.id !== "hourly-min" && event.target.id !== "hourly-max" && !event.target.classList.contains("dual-range-slider")) {
     debouncedLoadJobs(150);
   }
@@ -482,33 +376,10 @@ document.addEventListener("click", (event) => {
   document.querySelectorAll(".posting-actions details[open]").forEach((menu) => {
     if (!menu.contains(event.target)) menu.open = false;
   });
-  if (visibleJob && event.target.closest("#public-job-detail [data-ai-target]")) {
-    setActiveJobContext(publicJobContext(visibleJob));
-  }
   const bookmarkBtn = event.target.closest(".job-bookmark-btn");
   if (bookmarkBtn) {
     event.stopPropagation();
-    const jobId = bookmarkBtn.dataset.jobId;
-    toggleBookmarkJob(jobId);
-    return;
-  }
-
-  const card = event.target.closest(".job-card");
-  if (card && !card.classList.contains("ww-job-card") && !event.target.closest(".btn-ai-action") && !event.target.closest(".job-bookmark-btn")) {
-    openJob(card.dataset.id);
-  }
-});
-$("#close-public-job-detail")?.addEventListener("click", () => closePublicJobDetail());
-document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return;
-  if (document.querySelector('dialog:modal, [popover="auto"]:popover-open')) return;
-  if ($("#tab-jobs.active #public-job-detail-pane.open")) {
-    if ($("#public-job-detail posting-menu [aria-expanded=true]")) return;
-    const menu = $("#public-job-detail .posting-actions details[open]");
-    if (menu) {
-      menu.open = false;
-      menu.querySelector("summary").focus();
-    } else closePublicJobDetail();
+    toggleBookmarkJob(bookmarkBtn.dataset.jobId);
   }
 });
 
@@ -518,6 +389,5 @@ export {
   loadFacets,
   loadPublicJobDetail,
   updateSliderFill,
-  setupBackToTop,
   applyRegionFilter,
 };

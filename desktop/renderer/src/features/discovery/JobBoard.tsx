@@ -1,4 +1,4 @@
-import { CampusSearchControls } from "./CampusControls";
+import { CampusConnection } from "./CampusControls";
 import { PostingSearchControls } from "./PostingSearch";
 import { PublicViewControl } from "./DiscoveryControls";
 import { Icon } from "../../layouts/AppChrome";
@@ -13,22 +13,13 @@ export function ViewSwitcher({ active }: { active: "list" | "map" }) {
 
 type BoardProps = { waterlooWorks?: boolean };
 
-export function JobSearch({ waterlooWorks = false }: BoardProps) {
-  if (!waterlooWorks) {
-    return (
-      <form id="search-form" className="posting-search" role="search" aria-label="Search public jobs">
-        <div id="posting-search-controls"><PostingSearchControls /></div>
-      </form>
-    );
-  }
+function JobSearch({ waterlooWorks = false }: BoardProps) {
   return (
-    <form
-      id="ww-job-search-form"
-      role="search"
-      className="campus-search"
-      aria-label="Search WaterlooWorks"
-    >
-      <div id="ww-search-controls"><CampusSearchControls /></div>
+    <form id={waterlooWorks ? "ww-job-search-form" : "search-form"} className="posting-search" role="search"
+      aria-label={waterlooWorks ? "Search WaterlooWorks" : "Search public jobs"}>
+      <div id={waterlooWorks ? "ww-search-controls" : "posting-search-controls"} className="posting-search-controls">
+        <PostingSearchControls waterlooWorks={waterlooWorks} />
+      </div>
     </form>
   );
 }
@@ -37,19 +28,19 @@ function SyncStatus({ waterlooWorks = false }: BoardProps) {
   const prefix = waterlooWorks ? "ww-" : "";
   return (
     <div className="results-meta">
+      <button
+        id={prefix + "back-to-top"}
+        className="posting-to-top glass"
+        type="button"
+        aria-controls={prefix + "job-list"}
+        aria-label="Back to top of job list"
+        title="Back to top of job list"
+        hidden
+      >
+        <Icon name="chevron-right" /> Top
+      </button>
       {!waterlooWorks && (
         <>
-          <button
-            id="back-to-top"
-            className="posting-to-top glass"
-            type="button"
-            aria-controls="job-list"
-            aria-label="Back to top of job list"
-            title="Back to top of job list"
-            hidden
-          >
-            <Icon name="chevron-right" /> Top
-          </button>
           <span id="job-sync-status-text" className="job-sync-status-text" role="status" hidden />
           <span id="job-sync-status-separator" className="meta-dot desktop-only-meta" aria-hidden="true">
             ·
@@ -82,8 +73,8 @@ export function JobWorkspace({ waterlooWorks = false }: BoardProps) {
   const resultsToolbar = (
     <div className="results-toolbar">
       <div>
-        <h2 id={waterlooWorks ? undefined : "results-title"}>
-          {waterlooWorks ? "WaterlooWorks jobs" : "Latest jobs"}
+        <h2 id={prefix + "results-title"}>
+          Latest jobs
         </h2>
         <span
           id={waterlooWorks ? "ww-jobs-total" : "result-status"}
@@ -104,56 +95,30 @@ export function JobWorkspace({ waterlooWorks = false }: BoardProps) {
     </div>
   );
   return (
-    <section
-      className={
-        waterlooWorks
-          ? "ww-workspace discovery-workspace"
-          : "workspace public-jobs-workspace discovery-workspace"
-      }
-    >
-      <section
-        id={waterlooWorks ? "ww-jobs-card" : undefined}
-        className="results-panel"
-        aria-label="Job index"
-      >
-        {!waterlooWorks && (
-          <header className="posting-index-head">
-            <div className="posting-view-heading">
-              <h1>Public Jobs</h1>
-              <ViewSwitcher active="list" />
-            </div>
-          </header>
-        )}
-        {waterlooWorks && resultsToolbar}
-        {waterlooWorks && (
-          <div className="discovery-column-head" aria-hidden="true">
-            <span>Role &amp; company</span>
-            <span>Location</span>
-            <span>Compensation</span>
+    <section className="posting-workspace discovery-workspace">
+      <section className="results-panel" aria-label="Job index">
+        <header className="posting-index-head">
+          <div className="posting-view-heading">
+            {!waterlooWorks && <h1>Public Jobs</h1>}
+            {waterlooWorks
+              ? <div id="ww-connection-control"><CampusConnection /></div>
+              : <ViewSwitcher active="list" />}
           </div>
-        )}
+        </header>
         <div id={waterlooWorks ? "ww-jobs-scroll-content" : undefined} className="results-scroll-content">
-          {!waterlooWorks && (
-            <>
-              <JobSearch />
-              {resultsToolbar}
-            </>
-          )}
-          <div id={prefix + "job-list"} className={waterlooWorks ? "job-list ww-job-list" : "job-list"}>
-            {waterlooWorks && <p className="muted-copy">No WaterlooWorks jobs stored yet.</p>}
-          </div>
-          {!waterlooWorks && (
-            <div id="empty-state" className="empty-state" hidden>
-              <div className="empty-icon">
-                <Icon name="search" />
-              </div>
-              <h3>No matching jobs</h3>
-              <p>Try removing a filter or using a broader search term.</p>
-              <button id="jobs-empty-action" className="secondary-button" type="button" hidden>
-                Clear filters
-              </button>
+          <JobSearch waterlooWorks={waterlooWorks} />
+          {resultsToolbar}
+          <div id={prefix + "job-list"} className="job-list" />
+          <div id={prefix + "empty-state"} className="empty-state" hidden>
+            <div className="empty-icon">
+              <Icon name="search" />
             </div>
-          )}
+            <h3>No matching jobs</h3>
+            <p>Try removing a filter or using a broader search term.</p>
+            <button id={prefix + "jobs-empty-action"} className="secondary-button" type="button" hidden>
+              Clear filters
+            </button>
+          </div>
           <div id={prefix + "infinite-scroll-sentinel"} className="infinite-scroll-sentinel">
             <div id={prefix + "loading-indicator"} className="loading-indicator" hidden>
               <div className="spinner" />
@@ -171,15 +136,15 @@ export function JobWorkspace({ waterlooWorks = false }: BoardProps) {
         role="separator"
         aria-label="Resize job list"
         aria-controls={detailId + "-pane"}
-        aria-valuemin={waterlooWorks ? 35 : 26}
-        aria-valuemax={waterlooWorks ? 64 : 55}
-        aria-valuenow={waterlooWorks ? 45 : 34}
+        aria-valuemin={26}
+        aria-valuemax={55}
+        aria-valuenow={34}
         aria-orientation="vertical"
         tabIndex={0}
       />
       <aside
         id={detailId + "-pane"}
-        className={waterlooWorks ? "job-detail-pane ww-job-detail-pane" : "job-detail-pane"}
+        className="job-detail-pane"
         aria-label={waterlooWorks ? "Selected WaterlooWorks job" : "Selected public job"}
         aria-hidden="true"
       >

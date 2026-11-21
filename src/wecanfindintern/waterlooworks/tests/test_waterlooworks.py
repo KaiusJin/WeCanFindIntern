@@ -386,6 +386,17 @@ def test_storage_record_includes_salary():
     assert json.loads(record["skill_tags"]) == ["python", "excel", "windows"]
 
 
+def test_us_posting_uses_its_location_for_dollar_amounts_in_the_jd():
+    record = _storage_record({
+        "id": "123456",
+        "title": "Software Developer",
+        "location": {"city": "Seattle", "province": "WA", "country": "United States"},
+        "fullJdText": "The base pay for this internship is $25–$35 per hour.",
+    })
+    assert (record["salary_min"], record["salary_max"]) == ("25", "35")
+    assert (record["salary_interval"], record["salary_currency"]) == ("hourly", "USD")
+
+
 def test_board_refresh_keeps_existing_waterlooworks_job_immutable(tmp_path):
     db = tmp_path / "waterlooworks.sqlite3"
     repo = WaterlooWorksRepository(db)

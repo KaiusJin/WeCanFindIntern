@@ -1,11 +1,8 @@
-import { CampusConnection, CampusSyncActions } from "../features/discovery/CampusControls";
+import { CampusSyncActions } from "../features/discovery/CampusControls";
 import { JobFilters } from "../features/discovery/JobFilters";
 import { Icon } from "../layouts/AppChrome";
 import { WaterlooSyncChoice } from "../features/discovery/DiscoveryControls";
-import {
-  JobSearch,
-  JobWorkspace,
-} from "../features/discovery/JobBoard";
+import { JobWorkspace } from "../features/discovery/JobBoard";
 
 function SyncDialog() {
   return (
@@ -116,15 +113,9 @@ function SyncDialog() {
 
 export function WaterlooWorks() {
   return (
-    <div id="tab-waterlooworks" className="tab-pane" hidden>
-      <header className="campus-header">
-        <div id="ww-connection-control"><CampusConnection /></div>
-      </header>
-      <div className="campus-find">
-        <JobSearch waterlooWorks />
-      </div>
-      <JobFilters waterlooWorks />
+    <div id="tab-waterlooworks" className="tab-pane posting-page" hidden>
       <JobWorkspace waterlooWorks />
+      <JobFilters waterlooWorks />
       <SyncDialog />
     </div>
   );

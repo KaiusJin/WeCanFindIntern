@@ -157,8 +157,8 @@
       </header>
       <div class="app-stage">
         <main id="app-main">
-          <div id="tab-jobs" class="tab-pane active">
-            <section class="workspace public-jobs-workspace discovery-workspace">
+          <div id="tab-jobs" class="tab-pane posting-page active">
+            <section class="posting-workspace discovery-workspace">
               <section class="results-panel" aria-label="Job index">
                 <header class="posting-index-head">
                   <div class="posting-view-heading">
@@ -188,7 +188,7 @@
                 </header>
                 <div class="results-scroll-content">
                   <form id="search-form" class="posting-search" role="search" aria-label="Search public jobs">
-                    <div id="posting-search-controls">
+                    <div id="posting-search-controls" class="posting-search-controls">
                       <div class="posting-query">
                         <label class="lg-input" data-liquid-glass="" style="--lg-input-tint: var(--focus)">
                           <div class="lg-glass lg-input__field">
@@ -615,61 +615,104 @@
               </div>
             </section>
           </div>
-          <div id="tab-waterlooworks" class="tab-pane" hidden="">
-            <header class="campus-header">
-              <div id="ww-connection-control">
-                <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-shimmer="" id="ww-launch">
-                  <span class="lg-button__label"><span id="ww-launch-label">Log into WaterlooWorks ↗</span></span>
-                </button>
-              </div>
-            </header>
-            <div class="campus-find">
-              <form id="ww-job-search-form" role="search" class="campus-search" aria-label="Search WaterlooWorks">
-                <div id="ww-search-controls">
-                  <label class="lg-input" data-liquid-glass="">
-                    <div class="lg-glass lg-input__field">
-                      <span class="lg-input__icon">
-                        <span
-                          aria-hidden="true"
-                          class="lg-symbol"
-                          style="
-                            --lg-symbol-size: 20px;
-                            -webkit-mask-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 256 256&#x27; fill=&#x27;black&#x27;%3E%3Cpath d=&#x27;M232.49,215.51,185,168a92.12,92.12,0,1,0-17,17l47.53,47.54a12,12,0,0,0,17-17ZM44,112a68,68,0,1,1,68,68A68.07,68.07,0,0,1,44,112Z&#x27;/%3E%3C/svg%3E&quot;);
-                            mask-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 256 256&#x27; fill=&#x27;black&#x27;%3E%3Cpath d=&#x27;M232.49,215.51,185,168a92.12,92.12,0,1,0-17,17l47.53,47.54a12,12,0,0,0,17-17ZM44,112a68,68,0,1,1,68,68A68.07,68.07,0,0,1,44,112Z&#x27;/%3E%3C/svg%3E&quot;);
-                          "
-                        ></span>
-                      </span>
-                      <input type="search" id="ww-job-query" autocomplete="off" aria-label="Keywords or job ID" placeholder="Title, organization, or Job ID" value="" />
+          <div id="tab-waterlooworks" class="tab-pane posting-page" hidden="">
+            <section class="posting-workspace discovery-workspace">
+              <section class="results-panel" aria-label="Job index">
+                <header class="posting-index-head">
+                  <div class="posting-view-heading">
+                    <div id="ww-connection-control">
+                      <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-shimmer="" id="ww-launch">
+                        <span class="lg-button__label"><span id="ww-launch-label">Log into WaterlooWorks ↗</span></span>
+                      </button>
                     </div>
-                  </label>
-                  <label class="lg-input" data-liquid-glass="">
-                    <div class="lg-glass lg-input__field">
-                      <span class="lg-input__icon">
-                        <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#pin"></use></svg>
-                      </span>
-                      <input type="search" id="ww-job-location" autocomplete="off" aria-label="Location" placeholder="City or region" value="" />
+                  </div>
+                </header>
+                <div id="ww-jobs-scroll-content" class="results-scroll-content">
+                  <form id="ww-job-search-form" class="posting-search" role="search" aria-label="Search WaterlooWorks">
+                    <div id="ww-search-controls" class="posting-search-controls">
+                      <div class="posting-query">
+                        <label class="lg-input" data-liquid-glass="" style="--lg-input-tint: var(--focus)">
+                          <div class="lg-glass lg-input__field">
+                            <span class="lg-input__icon"><span aria-hidden="true"></span></span>
+                            <input type="search" id="ww-job-query" placeholder="Title, organization, or Job ID" aria-label="Keywords or job ID" autocomplete="off" name="query" value="" />
+                          </div>
+                        </label>
+                        <button type="submit" class="posting-query-submit" aria-label="Search WaterlooWorks" title="Search">
+                          <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#search"></use></svg>
+                        </button>
+                      </div>
+                      <label class="lg-input posting-location" data-liquid-glass="" style="--lg-input-tint: var(--focus)">
+                        <div class="lg-glass lg-input__field">
+                          <span class="lg-input__icon">
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#pin"></use></svg>
+                          </span>
+                          <input type="search" id="ww-job-location" autocomplete="off" aria-label="Location" placeholder="City or region" name="location" value="" />
+                        </div>
+                      </label>
+                      <button
+                        type="button"
+                        class="lg-glass lg-button lg-button--md lg-button--glass posting-filter-button"
+                        data-liquid-glass=""
+                        data-shimmer=""
+                        id="ww-open-job-filters"
+                        popovertarget="ww-job-filters-sheet"
+                        aria-haspopup="dialog"
+                        aria-controls="ww-job-filters-sheet"
+                        aria-expanded="false"
+                      >
+                        <span class="lg-button__icon">
+                          <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#sliders"></use></svg>
+                        </span>
+                        <span class="lg-button__label"><span id="ww-filter-trigger-label">Filters</span></span>
+                      </button>
                     </div>
-                  </label>
-                  <button
-                    type="button"
-                    class="lg-glass lg-button lg-button--sm lg-button--glass"
-                    data-liquid-glass=""
-                    data-shimmer=""
-                    id="ww-open-job-filters"
-                    popovertarget="ww-job-filters-sheet"
-                    aria-controls="ww-job-filters-sheet"
-                    aria-haspopup="dialog"
-                    aria-expanded="false"
-                  >
-                    <span class="lg-button__icon">
-                      <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#sliders"></use></svg>
-                    </span>
-                    <span class="lg-button__label"><span id="ww-filter-trigger-label">Filters</span></span>
-                  </button>
-                  <button type="submit" class="lg-glass lg-button lg-button--sm lg-button--filled" data-liquid-glass="" data-shimmer="" id="ww-job-search"><span class="lg-button__label">Search</span></button>
+                  </form>
+                  <div class="results-toolbar">
+                    <div>
+                      <h2 id="ww-results-title">Latest jobs</h2>
+                      <span id="ww-jobs-total" class="result-tally" role="status">Loading…</span>
+                      <button id="ww-reset-job-search" class="text-button discovery-reset control-glass" type="button" hidden="">Clear search</button>
+                    </div>
+                  </div>
+                  <div id="ww-job-list" class="job-list"></div>
+                  <div id="ww-empty-state" class="empty-state" hidden="">
+                    <div class="empty-icon">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#search"></use></svg>
+                    </div>
+                    <h3>No matching jobs</h3>
+                    <p>Try removing a filter or using a broader search term.</p>
+                    <button id="ww-jobs-empty-action" class="secondary-button" type="button" hidden="">Clear filters</button>
+                  </div>
+                  <div id="ww-infinite-scroll-sentinel" class="infinite-scroll-sentinel">
+                    <div id="ww-loading-indicator" class="loading-indicator" hidden="">
+                      <div class="spinner"></div>
+                      <span>Loading more opportunities…</span>
+                    </div>
+                    <div id="ww-end-of-results" class="end-of-results" hidden=""><span>End of results</span></div>
+                  </div>
                 </div>
-              </form>
-            </div>
+                <div class="results-meta">
+                  <button id="ww-back-to-top" class="posting-to-top glass" type="button" aria-controls="ww-job-list" aria-label="Back to top of job list" title="Back to top of job list" hidden="">
+                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
+                    Top
+                  </button>
+                  <span id="ww-jobs-updated-at" class="last-updated-text" title="Last WaterlooWorks job sync time">Not updated yet</span>
+                  <button id="ww-refresh" class="icon-button control-glass" type="button" title="Refresh jobs" aria-label="Refresh jobs">
+                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#refresh"></use></svg>
+                  </button>
+                </div>
+              </section>
+              <div class="discovery-divider" role="separator" aria-label="Resize job list" aria-controls="ww-job-detail-pane" aria-valuemin="26" aria-valuemax="55" aria-valuenow="34" aria-orientation="vertical" tabindex="0"></div>
+              <aside id="ww-job-detail-pane" class="job-detail-pane" aria-label="Selected WaterlooWorks job" aria-hidden="true">
+                <div class="job-detail-pane-toolbar">
+                  <button id="close-ww-job-detail" class="job-detail-pane-close control-glass" type="button" aria-label="Close job details">
+                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
+                    Show full list
+                  </button>
+                </div>
+                <div id="ww-job-detail" class="job-detail-content"></div>
+              </aside>
+            </section>
             <div popover="auto" role="dialog" data-workspace-popover="tab-waterlooworks" id="ww-job-filters-sheet" class="filters-panel filter-sheet glass" aria-label="WaterlooWorks job filters">
               <div id="ww-filter-controls" class="facet-panel">
                 <header class="facet-panel-heading">
@@ -827,48 +870,6 @@
                 </footer>
               </div>
             </div>
-            <section class="ww-workspace discovery-workspace">
-              <section id="ww-jobs-card" class="results-panel" aria-label="Job index">
-                <div class="results-toolbar">
-                  <div>
-                    <h2>WaterlooWorks jobs</h2>
-                    <span id="ww-jobs-total" class="result-tally" role="status">Loading…</span>
-                    <button id="ww-reset-job-search" class="text-button discovery-reset control-glass" type="button" hidden="">Clear search</button>
-                  </div>
-                </div>
-                <div class="discovery-column-head" aria-hidden="true">
-                  <span>Role &amp; company</span>
-                  <span>Location</span>
-                  <span>Compensation</span>
-                </div>
-                <div id="ww-jobs-scroll-content" class="results-scroll-content">
-                  <div id="ww-job-list" class="job-list ww-job-list"><p class="muted-copy">No WaterlooWorks jobs stored yet.</p></div>
-                  <div id="ww-infinite-scroll-sentinel" class="infinite-scroll-sentinel">
-                    <div id="ww-loading-indicator" class="loading-indicator" hidden="">
-                      <div class="spinner"></div>
-                      <span>Loading more opportunities…</span>
-                    </div>
-                    <div id="ww-end-of-results" class="end-of-results" hidden=""><span>End of results</span></div>
-                  </div>
-                </div>
-                <div class="results-meta">
-                  <span id="ww-jobs-updated-at" class="last-updated-text" title="Last WaterlooWorks job sync time">Not updated yet</span>
-                  <button id="ww-refresh" class="icon-button control-glass" type="button" title="Refresh jobs" aria-label="Refresh jobs">
-                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#refresh"></use></svg>
-                  </button>
-                </div>
-              </section>
-              <div class="discovery-divider" role="separator" aria-label="Resize job list" aria-controls="ww-job-detail-pane" aria-valuemin="35" aria-valuemax="64" aria-valuenow="45" aria-orientation="vertical" tabindex="0"></div>
-              <aside id="ww-job-detail-pane" class="job-detail-pane ww-job-detail-pane" aria-label="Selected WaterlooWorks job" aria-hidden="true">
-                <div class="job-detail-pane-toolbar">
-                  <button id="close-ww-job-detail" class="job-detail-pane-close control-glass" type="button" aria-label="Close job details">
-                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
-                    Show full list
-                  </button>
-                </div>
-                <div id="ww-job-detail" class="job-detail-content"></div>
-              </aside>
-            </section>
             <div role="dialog" popover="auto" data-workspace-popover="tab-waterlooworks" id="ww-sync-dialog" class="settings-dialog ww-sync-dialog workspace-form-popover" aria-labelledby="ww-sync-dialog-title">
               <div class="settings-dialog-header">
                 <div class="settings-title-wrap">

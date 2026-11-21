@@ -92,7 +92,7 @@ test("desktop workspaces keep the index and reader independently scrollable", ()
   assert.match(shellSource, /#tab-waterlooworks:not\(\[hidden\]\)/);
   assert.match(managementSource, /#tab-tracker:not\(\[hidden\]\)/);
   assert.match(shellSource, /#tab-profile:not\(\[hidden\]\)/);
-  assert.match(publicJobsStyle, /\.public-jobs-workspace:has\(> \.job-detail-pane\.open\)/);
+  assert.match(publicJobsStyle, /\.posting-workspace:has\(> \.job-detail-pane\.open\)/);
   assert.match(shellSource, /\.results-scroll-content/);
 });
 

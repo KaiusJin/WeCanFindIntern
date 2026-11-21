@@ -103,7 +103,7 @@ body {
   font-weight: 650;
 }
 
-.public-jobs-workspace {
+.posting-workspace {
   align-items: stretch;
   display: grid;
   gap: 16px;
@@ -117,11 +117,11 @@ body {
   height: 100%;
 }
 
-#tab-jobs .public-jobs-workspace {
+.posting-page .posting-workspace {
   flex: 1 1 auto;
 }
 
-.public-jobs-workspace > .job-detail-pane {
+.posting-workspace > .job-detail-pane {
   min-height: 0;
   overflow-y: auto;
   scrollbar-color: var(--scrollbar-thumb) transparent;
@@ -129,22 +129,22 @@ body {
   scrollbar-width: thin;
 }
 
-.public-jobs-workspace > .job-detail-pane::-webkit-scrollbar {
+.posting-workspace > .job-detail-pane::-webkit-scrollbar {
   width: 10px;
 }
 
-.public-jobs-workspace > .job-detail-pane::-webkit-scrollbar-track {
+.posting-workspace > .job-detail-pane::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.public-jobs-workspace > .job-detail-pane::-webkit-scrollbar-thumb {
+.posting-workspace > .job-detail-pane::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   background-clip: padding-box;
   border: 3px solid transparent;
   border-radius: 999px;
 }
 
-.public-jobs-workspace > .results-panel {
+.posting-workspace > .results-panel {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -181,7 +181,7 @@ body {
 }
 
 /* Keep every Job Board posting in a single readable column, including wide screens. */
-#tab-jobs .job-list {
+.posting-workspace .job-list {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -509,7 +509,7 @@ body {
 }
 
 @media (max-width: 1180px) {
-  .public-jobs-workspace {
+  .posting-workspace {
     grid-template-columns: minmax(330px, 0.9fr) minmax(390px, 1.1fr);
   }
 
