@@ -30,32 +30,15 @@
   --popover-shadow: 0 16px 44px rgb(24 32 39 / 16%), var(--glass-shadow);
   --radius: 20px;
   --control-radius: 12px;
-  --app-gutter: clamp(16px, 2.7vw, 48px);
   --bar-height: 58px;
-  --space: 8px;
-  --reading-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  --control-height: 38px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --lg-font: var(--font-sans);
   --title-size: clamp(25px, 2.2vw, 33px);
   --ease: 150ms ease;
   --focus: #496dd2;
   --scrollbar-thumb: var(--line-strong);
   --scrollbar-thumb-hover: var(--muted);
-
-  /* The existing feature controls also use the shared palette. */
-  --paper: var(--canvas);
-  --card: var(--surface);
-  --border: var(--line);
-  --dark-mint: var(--accent);
-  --accent-green: var(--accent);
-  --mint: var(--accent-soft);
-  --soft-green: var(--accent-soft);
-  --surface-blue: var(--accent-soft);
-  --palette-yale: var(--accent);
-  --palette-baltic: var(--accent);
-  --palette-cerulean: var(--accent);
-  --palette-alabaster: var(--line);
-  --palette-sky: var(--line-strong);
-  --panel-radius: var(--radius);
 }
 
 :root[data-theme="dark"] {

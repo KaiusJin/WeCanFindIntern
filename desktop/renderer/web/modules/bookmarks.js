@@ -130,8 +130,6 @@ async function toggleWaterlooWorksBookmark(sourceJobId) {
 }
 
 export {
-  BOOKMARK_FILLED,
-  BOOKMARK_OUTLINE,
   bookmarkState,
   loadPublicBookmarks,
   loadWaterlooWorksBookmarks,

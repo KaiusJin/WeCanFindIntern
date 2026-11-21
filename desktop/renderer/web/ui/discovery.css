@@ -8,10 +8,6 @@
   border-radius: 18px;
 }
 
-.ww-searchbar.discovery-search {
-  grid-template-columns: minmax(150px, 1.6fr) minmax(106px, 1fr) auto auto;
-}
-
 .discovery-search :is(.search-input, .search-location) {
   min-width: 0;
   height: 38px;
@@ -19,11 +15,6 @@
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
-}
-
-.discovery-search .search-location {
-  border-inline-start-color: var(--line);
-  border-radius: 0;
 }
 
 .discovery-search label:focus-within {
@@ -43,34 +34,6 @@
   padding-inline: 15px;
   white-space: nowrap;
 }
-
-.discovery-search .search-filter-button {
-  gap: 7px;
-  background: var(--surface);
-  color: var(--ink);
-}
-
-:is(.discovery-search, #tab-heatmap) .section-view-switcher {
-  gap: 1px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-2);
-}
-
-.discovery-search .section-view-switcher { margin-left: 5px; }
-
-.section-view-switcher .section-view-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 6px 10px;
-  border-radius: 9px;
-}
-
-.section-view-button .icon,
-.search-filter-button .icon { width: 16px; height: 16px; }
-.section-view-switcher .section-view-button.active { background: var(--surface); color: var(--ink); }
 
 .discovery-workspace {
   --list-width: 45%;
@@ -477,7 +440,7 @@
   --map-low: var(--accent-soft);
   --map-high: var(--action);
 }
-#tab-heatmap .heatmap-map-card, #tab-heatmap .heatmap-card { border-radius: var(--radius); }
+
 #tab-heatmap .heatmap-legend-bar { background: linear-gradient(to right, var(--map-low), var(--map-high)); }
 #tab-heatmap .heatmap-top-name { white-space: normal; }
 #tab-heatmap .heatmap-region:focus-visible { stroke: var(--ink); }
@@ -502,20 +465,13 @@
 
 @media (max-width: 1080px) {
   .discovery-search:not(.ww-searchbar) { grid-template-columns: minmax(106px, 1.35fr) minmax(80px, .9fr) auto auto auto; }
-  .discovery-search .section-view-button { padding-inline: 7px; }
-  .discovery-search .section-view-button .icon { display: none; }
+
 }
 
-.campus-header, .campus-identity { display: flex; align-items: center; gap: 14px; }
-.campus-header { justify-content: space-between; padding: clamp(18px, 3vh, 32px) 0 16px; }
-.campus-header h1 { margin: 0; font: 500 clamp(26px, 2.4vw, 36px)/1.1 var(--reading-serif); letter-spacing: -.04em; }
-.campus-symbol { display: grid; place-items: center; width: 44px; height: 48px; color: var(--warning); background: var(--warning-soft); border-radius: 10px 10px 18px 18px; }
-.campus-symbol .icon { width: 25px; height: 25px; }
-.campus-header .ww-connection-status { margin: 3px 0 0; text-align: left; white-space: normal; }
-.campus-header .ww-connection-status::before { content: ""; display: inline-block; vertical-align: middle; margin-right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); }
-.campus-header .connected::before { background: var(--success); }
+.campus-header { display: flex; align-items: center; gap: 14px; }
+.campus-header { justify-content: flex-end; padding: clamp(18px, 3vh, 32px) 0 16px; }
 .campus-find { margin-bottom: 15px; }
-.campus-find .ww-searchbar.discovery-search { max-width: 770px; margin: 0; }
+
 #tab-waterlooworks .results-panel { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: none; background: var(--surface); }
 #tab-waterlooworks .results-toolbar { padding: 16px var(--row-inset); border: 0; }
 #tab-waterlooworks .results-toolbar > div { width: 100%; align-items: center; gap: 8px 12px; }
@@ -531,7 +487,7 @@
 #tab-waterlooworks .job-card { background: transparent; }
 #tab-waterlooworks .job-card.selected { background: var(--accent-soft); }
 .campus-empty { grid-column: 1/-1; padding: clamp(32px, 10vh, 100px) 12px; text-align: center; }
-.campus-empty h3 { font: 500 24px/1.25 var(--reading-serif); margin: 0 0 8px; color: var(--ink); }
+.campus-empty h3 { font: 500 24px/1.25 var(--font-sans); margin: 0 0 8px; color: var(--ink); }
 .campus-empty p { font-size: 13px; color: var(--muted); max-width: 42ch; margin: 0 auto; }
 
 .workspace-form-popover[popover] {

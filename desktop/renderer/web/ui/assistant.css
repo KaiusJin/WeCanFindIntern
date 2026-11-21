@@ -66,7 +66,7 @@
   --composer-overlap: 70px;
   min-height: 0;
   border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
+  border-radius: var(--radius);
   background: var(--surface);
   box-shadow: none;
 }
@@ -75,7 +75,7 @@
 .agent-welcome { display: grid; align-content: center; justify-items: start; padding: 8px 0; }
 .assistant-mark { display: inline-flex; color: var(--accent); margin-bottom: 15px; }
 .assistant-mark .icon { height: 32px; width: 32px; }
-.agent-welcome h2 { font: 400 clamp(31px, 4.2vw, 57px)/1.06 var(--reading-serif); letter-spacing: -.055em; color: var(--ink); margin: 0 0 18px; }
+.agent-welcome h2 { font: 400 clamp(31px, 4.2vw, 57px)/1.06 var(--font-sans); letter-spacing: -.055em; color: var(--ink); margin: 0 0 18px; }
 .agent-suggestion-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
 .agent-suggestion-list button {
   display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 6px 11px;
@@ -131,7 +131,7 @@
   gap: 14px;
   padding: clamp(16px, 1.4vw, 20px);
   border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
+  border-radius: var(--radius);
   color: var(--ink);
   background: var(--surface);
 }

@@ -5,7 +5,14 @@ import { $, showToast, showSystemFault, showFieldError, clearFieldError, createA
 // =========================================================
 
 const SETTINGS_STORAGE_KEY = "wecanfindintern_ai_settings_v3";
-const SECRET_FIELDS = ["deepseekKey", "geminiKey", "openaiKey", "glmKey", "qwenKey"];
+const PROVIDER_KEY_FIELDS = {
+  DeepSeek: "deepseekKey",
+  Gemini: "geminiKey",
+  OpenAI: "openaiKey",
+  GLM: "glmKey",
+  Qwen: "qwenKey",
+};
+const SECRET_FIELDS = Object.values(PROVIDER_KEY_FIELDS);
 
 const aiSettings = {
   selectedModel: "Gemini:gemini-3.7-flash",
@@ -86,8 +93,8 @@ function syncKeyFieldWithModel() {
 
   if (!keyInput || !keyLabel) return;
 
-  const keyNames = { DeepSeek: "deepseekKey", OpenAI: "openaiKey", GLM: "glmKey", Qwen: "qwenKey", Gemini: "geminiKey" };
-  if (keyNames[currentActiveProvider]) providerDraft[keyNames[currentActiveProvider]] = keyInput.value.trim();
+  const previousKeyField = PROVIDER_KEY_FIELDS[currentActiveProvider];
+  if (previousKeyField) providerDraft[previousKeyField] = keyInput.value.trim();
   if (currentActiveProvider === "Ollama") {
     providerDraft.ollamaModel = $("#setting-ollama-model").value.trim();
     providerDraft.ollamaBaseUrl = $("#setting-ollama-base-url").value.trim();
@@ -245,19 +252,11 @@ async function saveSettings() {
 
   const next = { ...aiSettings, ...providerDraft };
   next.selectedModel = modelVal;
-  if (provider === "DeepSeek") {
-    next.deepseekKey = currentKey;
-  } else if (provider === "OpenAI") {
-    next.openaiKey = currentKey;
-  } else if (provider === "GLM") {
-    next.glmKey = currentKey;
-  } else if (provider === "Qwen") {
-    next.qwenKey = currentKey;
-  } else if (provider === "Ollama") {
+  const keyField = PROVIDER_KEY_FIELDS[provider];
+  if (keyField) next[keyField] = currentKey;
+  if (provider === "Ollama") {
     next.ollamaModel = $("#setting-ollama-model")?.value.trim() || "";
     next.ollamaBaseUrl = $("#setting-ollama-base-url")?.value.trim() || "";
-  } else if (provider === "Gemini") {
-    next.geminiKey = currentKey;
   }
   next.embeddingProvider = $("#setting-embedding-provider")?.value || "Ollama";
   next.embeddingModel = $("#setting-embedding-model")?.value.trim() || "";
@@ -300,21 +299,12 @@ function getEffectiveAiConfig() {
   }
   const [provider, modelNameFromValue] = splitModelValue(aiSettings.selectedModel);
   let modelName = modelNameFromValue;
-  let apiKey = null;
+  const keyField = PROVIDER_KEY_FIELDS[provider];
+  const apiKey = keyField ? aiSettings[keyField] || null : null;
   let apiBase = null;
-  if (provider === "DeepSeek") {
-    apiKey = aiSettings.deepseekKey || null;
-  } else if (provider === "OpenAI") {
-    apiKey = aiSettings.openaiKey || null;
-  } else if (provider === "GLM") {
-    apiKey = aiSettings.glmKey || null;
-  } else if (provider === "Qwen") {
-    apiKey = aiSettings.qwenKey || null;
-  } else if (provider === "Ollama") {
+  if (provider === "Ollama") {
     modelName = aiSettings.ollamaModel || "";
     apiBase = aiSettings.ollamaBaseUrl || null;
-  } else if (provider === "Gemini") {
-    apiKey = aiSettings.geminiKey || null;
   }
   const embeddingProvider = aiSettings.embeddingProvider || "Ollama";
   const embeddingKeys = {
@@ -400,22 +390,6 @@ function getAiConfigOrShowError() {
   }
 }
 
-function syncDialogScrollLock() {
-  const anyOpen = Boolean(document.querySelector("dialog:modal"));
-  if (anyOpen) {
-    document.body.classList.add("modal-open");
-    document.documentElement.classList.add("modal-open");
-  } else {
-    document.body.classList.remove("modal-open");
-    document.documentElement.classList.remove("modal-open");
-  }
-}
-
-document.querySelectorAll("dialog").forEach((dlg) => {
-  dlg.addEventListener("close", syncDialogScrollLock);
-  dlg.addEventListener("cancel", syncDialogScrollLock);
-});
-
 $("#tab-settings")?.addEventListener("settings:leave", () => {
   resumeWorkspace = null;
   setKeyVisibility(false);
@@ -449,13 +423,7 @@ $("#toggle-key-visibility")?.addEventListener("click", () => {
 });
 
 export {
-  aiSettings,
-  currentActiveProvider,
   getAiConfigOrShowError,
-  getEffectiveAiConfig,
-  syncEmbeddingConfig,
   validateAiConfig,
-  syncDialogScrollLock,
   loadSettings,
-  saveSettings,
 };

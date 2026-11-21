@@ -462,7 +462,6 @@ export {
   label,
   workModeLabel,
   skillLabel,
-  renderJobTags,
   renderJobCard,
   renderJobDetail,
   buildJobContextText,

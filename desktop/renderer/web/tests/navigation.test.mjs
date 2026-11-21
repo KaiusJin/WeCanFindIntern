@@ -49,12 +49,12 @@ test("the toolbar exposes every destination in wide and narrow windows", () => {
   assert.doesNotMatch(toolbarSource, /<span>Assistant<\/span>/);
 });
 
-test("each workspace exposes its own primary heading", () => {
+test("workspaces expose headings except the intentionally untitled WaterlooWorks page", () => {
   const panes = [...indexSource.matchAll(/<div id="(tab-[^"]+)" class="tab-pane[^"]*"/g)];
   assert.equal(panes.length, 11);
   for (const [index, pane] of panes.entries()) {
     const section = indexSource.slice(pane.index, panes[index + 1]?.index ?? indexSource.indexOf("</main>"));
-    assert.equal((section.match(/<h1[ >]/g) || []).length, 1, pane[1]);
+    assert.equal((section.match(/<h1[ >]/g) || []).length, pane[1] === "tab-waterlooworks" ? 0 : 1, pane[1]);
   }
 });
 

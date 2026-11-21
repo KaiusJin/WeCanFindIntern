@@ -118,17 +118,6 @@ export function WaterlooWorks() {
   return (
     <div id="tab-waterlooworks" className="tab-pane" hidden>
       <header className="campus-header">
-        <div className="campus-identity">
-          <span className="campus-symbol">
-            <Icon name="campus" />
-          </span>
-          <div>
-            <h1>WaterlooWorks</h1>
-            <p id="ww-connection-status" className="ww-connection-status">
-              Not connected
-            </p>
-          </div>
-        </div>
         <div id="ww-connection-control"><CampusConnection /></div>
       </header>
       <div className="campus-find">

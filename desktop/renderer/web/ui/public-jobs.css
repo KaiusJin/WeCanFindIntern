@@ -1,7 +1,5 @@
 /* A searchable index opens onto a continuous reading surface. */
-.app-stage > main:has(> :is(#tab-jobs, #tab-heatmap):not([hidden])) { padding: 0; }
 #tab-jobs, #tab-heatmap {
-  max-width: none;
   --index-surface: var(--canvas);
   --reader-surface: var(--canvas);
   --index-wash: radial-gradient(ellipse 95% 190px at 8% 15px, color-mix(in srgb, var(--accent) 7%, transparent), transparent 82%),
@@ -222,7 +220,7 @@
 }
 .posting-employer strong { display: block; font-size: 15px; line-height: 1.35; font-weight: 620; }
 .posting-employer span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
-.posting-masthead h2 { margin: 23px 0 9px; color: var(--ink); font: 500 clamp(34px, 3.7vw, 58px)/1.03 "Iowan Old Style", "Palatino Linotype", Georgia, serif; letter-spacing: -.045em; text-wrap: balance; }
+.posting-masthead h2 { margin: 23px 0 9px; color: var(--ink); font: 500 clamp(34px, 3.7vw, 58px)/1.03 var(--posting-serif); letter-spacing: -.045em; text-wrap: balance; }
 .posting-date { margin: 0; color: var(--muted); font-size: 12px; }
 .job-detail-content .posting-actions {
   position: sticky;
