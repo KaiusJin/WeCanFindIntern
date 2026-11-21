@@ -181,17 +181,6 @@ function skillLabel(value) {
   return map[String(value).toLowerCase()] || normalized.split(" ").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
-function renderJobTags({ primaryTag = "", secondaryTags = [], skillTags = [], category = "" } = {}) {
-  const available = [
-    ...secondaryTags.map((tag) => typeof tag === "string" ? tag : tag.label),
-    primaryTag,
-    ...(skillTags || []).map(skillLabel),
-    category && label(category),
-  ];
-  const tags = [...new Set(available.filter(Boolean))];
-  return tags.slice(0, 3).map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("");
-}
-
 function renderJobBookmark(id, waterlooWorks, saved) {
   const buttonClass = waterlooWorks ? "ww-bookmark-btn" : "job-bookmark-btn";
   const idAttribute = waterlooWorks ? "data-source-job-id" : "data-job-id";
@@ -203,57 +192,49 @@ function renderJobBookmark(id, waterlooWorks, saved) {
   </button>`;
 }
 
-function publicJobRow(job, company, location, salary, isSaved, selected) {
-  const term = job.recruiting_term?.display_name;
-  const date = job.date_posted || job.published_at;
-  return `<article class="job-card posting-row${selected ? " selected" : ""}" data-id="${escapeHtml(job.id)}">
-    <div class="posting-role">
-      <h3><button class="job-title-button" type="button" aria-expanded="${selected}" aria-controls="public-job-detail-pane">${escapeHtml(job.title)}</button></h3>
-      <p>${escapeHtml(company)}</p>
-    </div>
-    <div class="posting-place"><span>${escapeHtml(location)}</span>${term ? `<span>${escapeHtml(term)}</span>` : ""}</div>
-    <div class="posting-pay">${salary !== "Salary not disclosed" ? `<span>${escapeHtml(salary)}</span>` : ""}
-      ${date ? `<time>${escapeHtml(formatDate(date))}</time>` : ""}</div>
-    ${renderJobBookmark(job.id, false, isSaved)}
-  </article>`;
+function postingFields(job, waterlooWorks) {
+  if (waterlooWorks) {
+    // Submitted applications is a filter, not a posting board.
+    const boards = (job.boards || []).filter(board => board !== "applications");
+    return {
+      id: job.source_job_id,
+      company: job.organization,
+      location: job.location_text,
+      board: boards.map(board => job.board_labels?.[board] || label(board)).join(" · "),
+      deadline: job.submitted_application_deadline || job.application_deadline,
+    };
+  }
+  return {
+    id: job.id,
+    company: job.company_name,
+    location: job.location?.display_name,
+    term: job.recruiting_term?.display_name,
+  };
 }
 
-function renderJobCard(job, {
-  source = "job-board",
-  isSaved = false,
-  selected = false,
-  primaryTag = "",
-  secondaryTags = [],
-  boards = [],
-} = {}) {
-  const ww = source === "waterlooworks";
-  const id = ww ? job.source_job_id : job.id;
-  const company = job.company_name || job.organization || "Company not specified";
-  const location = job.location?.display_name || job.location_text || "Location not specified";
+function renderJobCard(job, { waterlooWorks = false, isSaved = false, selected = false } = {}) {
+  const { id, company, location, board, deadline, term } = postingFields(job, waterlooWorks);
+  const locationNote = waterlooWorks ? workModeLabel(job.work_mode) : term;
   const salary = formatSalary(job.salary);
-  if (!ww) return publicJobRow(job, company, location, salary, isSaved, selected);
-  const deadline = job.submitted_application_deadline || job.application_deadline;
-  const cardData = `data-source-job-id="${escapeHtml(id)}" data-boards="${escapeHtml(boards.join(","))}"`;
-  const tags = renderJobTags({ primaryTag, secondaryTags, skillTags: job.skill_tags, category: job.job_category });
-
-  return `<article class="job-card ww-job-card${selected ? " selected" : ""}" ${cardData}>
-    <div class="job-identity">
-      <div class="job-copy">
-        <h3><button class="job-title-button" type="button" aria-expanded="${selected}" aria-controls="ww-job-detail-pane">${escapeHtml(job.title)}</button></h3>
-        <p class="company-name">${escapeHtml(company)}</p>
-        ${tags ? `<div class="job-tags">${tags}</div>` : ""}
-      </div>
+  const date = job.date_posted || job.published_at;
+  const paneId = waterlooWorks ? "ww-job-detail-pane" : "public-job-detail-pane";
+  return `<article class="job-card posting-row${selected ? " selected" : ""}" data-id="${escapeHtml(id)}">
+    <div class="posting-role">
+      <h3><button class="job-title-button" type="button" aria-expanded="${selected}" aria-controls="${paneId}">${escapeHtml(job.title)}</button></h3>
+      <p>${escapeHtml(company || "Company not specified")}</p>
+      ${waterlooWorks ? `<span class="posting-board">${board ? "Board: " + escapeHtml(board) : "Board not specified"}</span>` : ""}
     </div>
-    <div class="job-place">
-      <p class="job-location">${escapeHtml(location)}</p>
-      <span class="job-subline">${escapeHtml(workModeLabel(job.work_mode))}</span>
+    <div class="posting-place">
+      <span>${escapeHtml(location || "Location not specified")}</span>
+      ${locationNote ? `<span>${escapeHtml(locationNote)}</span>` : ""}
+      ${waterlooWorks ? `<span>Job ID ${escapeHtml(id)}</span>` : ""}
     </div>
-    <div class="job-pay">
-      <span class="salary${salary === "Salary not disclosed" ? " undisclosed" : ""}">${escapeHtml(salary)}</span>
-      ${deadline ? `<span class="job-subline">Due ${escapeHtml(deadline)}</span>` : ""}
-      <span class="job-subline">Job ID ${escapeHtml(id)}</span>
+    <div class="posting-pay">
+      ${waterlooWorks || salary !== "Salary not disclosed" ? `<span>${escapeHtml(salary)}</span>` : ""}
+      ${waterlooWorks ? `<span class="posting-deadline">${deadline ? "Due " + escapeHtml(deadline) : "Deadline not specified"}</span>`
+        : date ? `<time>${escapeHtml(formatDate(date))}</time>` : ""}
     </div>
-    ${renderJobBookmark(id, ww, isSaved)}
+    ${renderJobBookmark(id, waterlooWorks, isSaved)}
   </article>`;
 }
 
@@ -294,73 +275,53 @@ function postingLinks(links) {
   return `<posting-menu class="posting-apply-menu"><details class="job-tools-menu posting-source-menu"><summary class="primary-button">Apply</summary><div class="glass">${options}</div></details></posting-menu>`;
 }
 
-function renderJobDetail(job, {
-  eyebrow = "",
-  company = "",
-  location = "",
-  meta = "",
-  description = job.description,
-  skills = job.source_skills?.length ? job.source_skills : job.skill_tags,
-  facts = [],
-  links = [],
-  showAiActions = true,
-  waterlooWorks = false,
-  isSaved = false,
-} = {}) {
+function renderJobDetail(job, { waterlooWorks = false, isSaved = false } = {}) {
+  const { id, company, location, board, deadline, term } = postingFields(job, waterlooWorks);
+  const eyebrow = [job.opportunity_type, job.job_category]
+    .filter(value => value && value !== "unknown").map(label).join(" · ");
+  const meta = waterlooWorks ? `Job ID ${id}` : job.date_posted && `Posted ${formatDate(job.date_posted)}`;
+  const facts = [
+    { label: "Location", value: location },
+    { label: "Work mode", value: workModeLabel(job.work_mode) },
+    { label: "Salary", value: formatSalary(job.salary) },
+  ];
+  if (waterlooWorks) {
+    facts.push({ label: "Application deadline", value: deadline }, { label: "Source board", value: board });
+    if (job.application_status) facts.push({ label: "Application status", value: job.application_status });
+  } else {
+    facts.push({ label: "Recruiting term", value: term });
+  }
+  const links = waterlooWorks ? [job.application_url || job.source_url]
+    : (job.sources || []).map(source => source.direct_url || source.url);
+  const skills = job.source_skills?.length ? job.source_skills : job.skill_tags;
   const skillsText = (skills || [])
     .slice(0, 15)
     .map(skillLabel)
     .filter(Boolean)
     .join(", ");
-  const aiActionButtons = showAiActions ? `
+  const aiActionButtons = `
     <details class="job-tools-menu"><summary>Career tools</summary>
-      <div${waterlooWorks ? "" : ' class="glass"'}>
+      <div class="glass">
         <button class="btn-ai-action" type="button" data-ai-target="tab-ats-match">Job Match</button>
         <button class="btn-ai-action" type="button" data-ai-target="tab-interview">Mock Interview</button>
         <button class="btn-ai-action" type="button" data-ai-target="tab-cover-letter">Cover Letter</button>
         <button class="btn-ai-action" type="button" data-ai-target="tab-agent">Ask AI Assistant</button>
       </div>
-    </details>` : "";
-  const linkMarkup = waterlooWorks
-    ? [...new Set(links.filter(Boolean))].map((url) => `<a class="primary-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Apply ↗</a>`).join("")
-    : postingLinks(links);
-  const id = waterlooWorks ? job.source_job_id : job.id;
-  const descriptionHtml = description ? renderMarkdown(description) : "<p>No detailed description is available for this job.</p>";
-
-  if (!waterlooWorks) {
-    const employer = company || "Company not specified";
-    return `<article class="posting-document">
+    </details>`;
+  const descriptionHtml = job.description ? renderMarkdown(job.description) : "<p>No detailed description is available for this job.</p>";
+  return `<article class="posting-document">
       <header class="posting-masthead">
         <div class="posting-employer">
-          <strong>${escapeHtml(employer)}</strong>${eyebrow ? `<span>${escapeHtml(eyebrow)}</span>` : ""}
+          <strong>${escapeHtml(company || "Company not specified")}</strong>${eyebrow ? `<span>${escapeHtml(eyebrow)}</span>` : ""}
         </div>
         <h2>${escapeHtml(job.title)}</h2>
-        ${meta ? `<p class="posting-date">Posted ${escapeHtml(meta)}</p>` : ""}
+        ${meta ? `<p class="posting-date">${escapeHtml(meta)}</p>` : ""}
       </header>
-      <div class="job-ai-actions posting-actions"><span class="posting-actions-material glass" aria-hidden="true"></span>${linkMarkup}${aiActionButtons ? `<posting-menu>${aiActionButtons}</posting-menu>` : ""}${renderJobBookmark(id, false, isSaved)}</div>
-      <dl class="posting-facts">${facts.map((fact) => `<div><dt>${escapeHtml(fact.label)}</dt><dd>${escapeHtml(fact.value)}</dd></div>`).join("")}</dl>
+      <div class="job-ai-actions posting-actions"><span class="posting-actions-material glass" aria-hidden="true"></span>${postingLinks(links)}<posting-menu>${aiActionButtons}</posting-menu>${renderJobBookmark(id, waterlooWorks, isSaved)}</div>
+      <dl class="posting-facts">${facts.map((fact) => `<div><dt>${escapeHtml(fact.label)}</dt><dd>${escapeHtml(fact.value || "Not specified")}</dd></div>`).join("")}</dl>
       <section class="posting-body"><h3>Job description</h3><div class="detail-description">${descriptionHtml}</div></section>
       ${skillsText ? `<section class="posting-skills"><h3>Skills</h3><p>${escapeHtml(skillsText)}</p></section>` : ""}
     </article>`;
-  }
-
-  const factMarkup = facts.map((fact) => `
-    <div${fact.full ? ' class="detail-grid-full"' : ""}>
-      <span>${escapeHtml(fact.label)}</span><strong>${escapeHtml(fact.value)}</strong>
-    </div>`).join("");
-  return `<header class="reading-heading">
-      <p class="eyebrow">${escapeHtml(eyebrow)}</p>
-      <h2>${escapeHtml(job.title)}</h2>
-      <p class="detail-company">${escapeHtml(company || "Company not specified")}</p>
-      <p class="detail-location">${escapeHtml(location || "Location not specified")}${meta ? ` · ${escapeHtml(meta)}` : ""}</p>
-    </header>
-    <div class="job-ai-actions posting-actions"><span class="posting-actions-material glass" aria-hidden="true"></span>${linkMarkup}${aiActionButtons ? `<posting-menu>${aiActionButtons}</posting-menu>` : ""}${renderJobBookmark(id, waterlooWorks, isSaved)}</div>
-    <div class="detail-grid">
-      ${factMarkup}
-      <div class="detail-grid-full"><span>Skills</span><strong>${escapeHtml(skillsText || "Skills not specified")}</strong></div>
-    </div>
-    <h3 class="reading-section-title">Job description</h3>
-    <div class="detail-description">${descriptionHtml}</div>`;
 }
 
 function formatDate(value) {
@@ -462,7 +423,6 @@ export {
   label,
   workModeLabel,
   skillLabel,
-  renderJobTags,
   renderJobCard,
   renderJobDetail,
   buildJobContextText,

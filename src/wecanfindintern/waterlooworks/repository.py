@@ -821,7 +821,7 @@ class WaterlooWorksRepository:
 def _storage_record(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_waterlooworks_job(raw)
     canonical = canonical_job_from_normalized(normalized)
-    salary = waterlooworks_salary(raw)
+    salary = waterlooworks_salary(raw, country_code=canonical.location.country_code or "CA")
     application = raw.get("application") or {}
     payload_json = json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     now = _now()

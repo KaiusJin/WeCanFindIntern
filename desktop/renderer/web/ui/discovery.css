@@ -393,7 +393,7 @@
 .facet-tabs .lg-track { width: 100%; --lg-item-h: 32px; --lg-track-selection: var(--accent-soft); }
 .facet-tabs .lg-track__item[aria-selected=true] { color: var(--accent); font-weight: 650; }
 .facet-tabs .lg-track__item { min-width: 0; padding-inline: 14px; font-size: 12px; }
-.facet-tabs .icon, .campus-search .icon { width: 15px; height: 15px; }
+.facet-tabs .icon { width: 15px; height: 15px; }
 .facet-panel-body {
   min-height: 0;
   padding: 0 var(--panel-gap) 16px;
@@ -506,34 +506,6 @@
   .discovery-search .section-view-button .icon { display: none; }
 }
 
-.campus-header, .campus-identity { display: flex; align-items: center; gap: 14px; }
-.campus-header { justify-content: space-between; padding: clamp(18px, 3vh, 32px) 0 16px; }
-.campus-header h1 { margin: 0; font: 500 clamp(26px, 2.4vw, 36px)/1.1 var(--reading-serif); letter-spacing: -.04em; }
-.campus-symbol { display: grid; place-items: center; width: 44px; height: 48px; color: var(--warning); background: var(--warning-soft); border-radius: 10px 10px 18px 18px; }
-.campus-symbol .icon { width: 25px; height: 25px; }
-.campus-header .ww-connection-status { margin: 3px 0 0; text-align: left; white-space: normal; }
-.campus-header .ww-connection-status::before { content: ""; display: inline-block; vertical-align: middle; margin-right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); }
-.campus-header .connected::before { background: var(--success); }
-.campus-find { margin-bottom: 15px; }
-.campus-find .ww-searchbar.discovery-search { max-width: 770px; margin: 0; }
-#tab-waterlooworks .results-panel { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: none; background: var(--surface); }
-#tab-waterlooworks .results-toolbar { padding: 16px var(--row-inset); border: 0; }
-#tab-waterlooworks .results-toolbar > div { width: 100%; align-items: center; gap: 8px 12px; }
-#tab-waterlooworks .discovery-reset, #tab-waterlooworks .results-meta .icon-button { margin-left: auto; }
-#tab-waterlooworks .results-meta {
-  flex: none;
-  gap: 8px;
-  padding: 7px var(--row-inset);
-  border-top: 1px solid var(--line);
-  font-size: 11px;
-}
-#tab-waterlooworks .discovery-column-head { background: var(--surface-2); }
-#tab-waterlooworks .job-card { background: transparent; }
-#tab-waterlooworks .job-card.selected { background: var(--accent-soft); }
-.campus-empty { grid-column: 1/-1; padding: clamp(32px, 10vh, 100px) 12px; text-align: center; }
-.campus-empty h3 { font: 500 24px/1.25 var(--reading-serif); margin: 0 0 8px; color: var(--ink); }
-.campus-empty p { font-size: 13px; color: var(--muted); max-width: 42ch; margin: 0 auto; }
-
 .workspace-form-popover[popover] {
   position: fixed;
   inset: 66px 18px auto auto;
@@ -546,18 +518,7 @@
   backdrop-filter: none;
 }
 
-.campus-search { max-width: 790px; }
-#ww-search-controls {
-  display: grid;
-  grid-template-columns: minmax(210px,1.5fr) minmax(140px,1fr) auto auto;
-  gap: 10px;
-  align-items: center;
-}
-#ww-search-controls .lg-input__field { height: 40px; }
-#ww-search-controls .lg-input__field input { color: var(--ink); font-size: 13px; }
-#ww-search-controls .lg-input__field:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
-#ww-search-controls .lg-button { --lg-h: 40px; }
-#ww-job-search, #ww-start-sync { background: var(--action); color: var(--on-action); }
+#ww-start-sync { background: var(--action); color: var(--on-action); }
 #ww-sync-dialog:popover-open {
   display: grid;
   grid-template-rows: auto minmax(0,1fr) auto;
@@ -576,16 +537,6 @@
   #ww-sync-dialog .ww-board-list > div { padding-block: 6px; }
   #ww-sync-dialog .ww-run-summary { padding-top: 14px; }
 }
-#tab-waterlooworks .job-detail-pane { border-radius: var(--radius); }
-#tab-waterlooworks :is(.job-detail-pane-toolbar, .job-detail-content) { width: 100%; max-width: 46rem; }
-
-@media (max-width: 680px) {
-  .campus-header { flex-wrap: wrap; }
-  #ww-search-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #tab-waterlooworks .discovery-workspace:has(> .job-detail-pane.open) { grid-template-columns: minmax(0, 1fr); }
-  #tab-waterlooworks .discovery-workspace:has(> .job-detail-pane.open) > :is(.results-panel, .discovery-divider) { display: none; }
-}
-
 .facet-grid #skill, .facet-grid #city { grid-column: 1 / -1; }
 .facet-grid .dual-range-slider::-webkit-slider-thumb {
   width: 20px; height: 20px;

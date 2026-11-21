@@ -417,7 +417,9 @@ def _posting_date(fields: dict[str, Any]) -> date | None:
     return None
 
 
-def waterlooworks_salary(raw: dict[str, Any]) -> ParsedSalary | None:
+def waterlooworks_salary(
+    raw: dict[str, Any], *, country_code: str = "CA"
+) -> ParsedSalary | None:
     """Extract salary the same way public postings do, from posting text."""
 
     overview = raw.get("overviewFields") or {}
@@ -436,7 +438,7 @@ def waterlooworks_salary(raw: dict[str, Any]) -> ParsedSalary | None:
     jd_text = str(raw.get("fullJdText") or raw.get("rowText") or "")
     if jd_text:
         inputs.append(jd_text)
-    return extract_salary_from_description("\n\n".join(inputs), country_code="CA")
+    return extract_salary_from_description("\n\n".join(inputs), country_code=country_code)
 
 
 def _is_boilerplate(value: str) -> bool:

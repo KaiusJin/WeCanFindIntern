@@ -1,7 +1,6 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { AppearanceControl, WindowToolbarControls } from "./layouts/AppChrome";
-import { PostingSearchControls } from "./features/discovery/PostingSearch";
 import "./features/discovery/PostingMenus";
 import { ProfileEntries } from "./features/profile/ProfileEntries";
 import { ProfileBasicsFields } from "./features/profile/ProfileFields";
@@ -18,11 +17,9 @@ import { FeedbackSheets } from "./components/FeedbackSheet";
 // The existing DOM controllers bind listeners to these controls during main.js
 // initialization. Mount the controls before that module runs.
 const toolbar = document.querySelector<HTMLElement>(".window-toolbar")!;
-const postingSearch = document.getElementById("posting-search-controls")!;
 flushSync(() => {
   createRoot(document.getElementById("feedback-sheets")!).render(<FeedbackSheets />);
   createRoot(toolbar).render(<WindowToolbarControls />);
-  createRoot(postingSearch).render(<PostingSearchControls />);
   createRoot(document.getElementById("profile-repeat-sections")!).render(<ProfileEntries />);
   createRoot(document.getElementById("profile-basics-fields")!).render(<ProfileBasicsFields />);
   createRoot(document.getElementById("profile-import-sheet-controls")!).render(<ProfileImportSheet />);

@@ -9,7 +9,6 @@ import {
   loadJobs,
   loadFacets,
   updateSliderFill,
-  setupBackToTop,
 } from "./jobs.js?v=20260902-shared-components-v1";
 
 // Settings must be applied before any AI feature runs.
@@ -148,4 +147,3 @@ setupInfiniteScroll({
   canLoadMore: () => state.hasMore && state.cursor,
   loadMore: () => loadJobs({ append: true }),
 });
-setupBackToTop();
