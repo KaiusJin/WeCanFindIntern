@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import math
-from datetime import datetime
-from typing import Tuple
+import json
+from datetime import datetime, timezone
+from math import ceil
 
+from jobspy.exception import IndeedException, InvalidPageCursor
 from jobspy.indeed.constant import job_search_query, api_headers
 from jobspy.indeed.util import is_job_remote, get_compensation, get_job_type
 from jobspy.model import (
@@ -41,53 +42,32 @@ class Indeed(Scraper):
         self.scraper_input = None
         self.jobs_per_page = 100
         self.num_workers = 10
-        self.seen_urls = set()
         self.headers = None
         self.api_country_code = None
         self.base_url = None
         self.api_url = "https://apis.indeed.com/graphql"
 
     def scrape(self, scraper_input: ScraperInput) -> JobResponse:
-        """
-        Scrapes Indeed for jobs with scraper_input criteria
-        :param scraper_input:
-        :return: job_response
-        """
-        self.scraper_input = scraper_input
-        domain, self.api_country_code = self.scraper_input.country.indeed_domain_value
-        self.base_url = f"https://{domain}.indeed.com"
-        self.headers = api_headers.copy()
-        self.headers["indeed-co"] = self.scraper_input.country.indeed_domain_value
-        job_list = []
-        page = 1
-
+        jobs = {}
         cursor = None
-
-        while len(self.seen_urls) < scraper_input.results_wanted + scraper_input.offset:
-            log.info(
-                f"search page: {page} / {math.ceil(scraper_input.results_wanted / self.jobs_per_page)}"
-            )
-            jobs, cursor = self._scrape_page(cursor)
-            if not jobs:
-                log.info(f"found no jobs on page: {page}")
+        visited = set()
+        while len(jobs) < scraper_input.results_wanted + scraper_input.offset:
+            visited.add(cursor)
+            page, cursor = self.scrape_page(scraper_input, cursor)
+            jobs.update((job.job_url, job) for job in page)
+            if cursor is None:
                 break
-            job_list += jobs
-            page += 1
-        return JobResponse(
-            jobs=job_list[
-                scraper_input.offset : scraper_input.offset
-                + scraper_input.results_wanted
-            ]
-        )
+            if cursor in visited:
+                raise InvalidPageCursor("Indeed repeated its page cursor")
+        return JobResponse(jobs=list(jobs.values())[
+            scraper_input.offset : scraper_input.offset + scraper_input.results_wanted
+        ])
 
-    def _scrape_page(self, cursor: str | None) -> Tuple[list[JobPost], str | None]:
-        """
-        Scrapes a page of Indeed for jobs with scraper_input criteria
-        :param cursor:
-        :return: jobs found on page, next page cursor
-        """
-        jobs = []
-        new_cursor = None
+    def scrape_page(self, scraper_input, cursor=None):
+        """Read one GraphQL result page, including its authoritative continuation."""
+        self.scraper_input = scraper_input
+        domain, self.api_country_code = scraper_input.country.indeed_domain_value
+        self.base_url = f"https://{domain}.indeed.com"
         filters = self._build_filters()
         search_term = (
             self.scraper_input.search_term.replace('"', '\\"')
@@ -102,7 +82,7 @@ class Indeed(Scraper):
                 else ""
             ),
             dateOnIndeed=self.scraper_input.hours_old,
-            cursor=f'cursor: "{cursor}"' if cursor else "",
+            cursor=f"cursor: {json.dumps(cursor)}" if cursor else "",
             filters=filters,
         )
         payload = {
@@ -118,21 +98,31 @@ class Indeed(Scraper):
             verify=False,
         )
         if not response.ok:
-            log.info(
-                f"responded with status code: {response.status_code} (submit GitHub issue if this appears to be a bug)"
-            )
-            return jobs, new_cursor
+            if cursor and response.status_code == 400 and self._cursor_error(response.text):
+                raise InvalidPageCursor("Indeed rejected the page cursor")
+            response.raise_for_status()
         data = response.json()
-        jobs = data["data"]["jobSearch"]["results"]
-        new_cursor = data["data"]["jobSearch"]["pageInfo"]["nextCursor"]
-
+        if data.get("errors"):
+            if cursor and self._cursor_error(str(data["errors"])):
+                raise InvalidPageCursor("Indeed rejected the page cursor")
+            raise IndeedException("Indeed returned GraphQL errors; page is incomplete")
+        page = data["data"]["jobSearch"]
+        jobs = page["results"]
+        new_cursor = page["pageInfo"]["nextCursor"]
+        if new_cursor is not None and not isinstance(new_cursor, str):
+            raise IndeedException("Invalid Indeed nextCursor in pageInfo")
         job_list = []
         for job in jobs:
             processed_job = self._process_job(job["job"])
             if processed_job:
                 job_list.append(processed_job)
 
-        return job_list, new_cursor
+        return job_list, new_cursor or None
+
+    @staticmethod
+    def _cursor_error(message):
+        text = message.casefold()
+        return "cursor" in text and any(word in text for word in ("invalid", "expired", "stale"))
 
     def _build_filters(self):
         """
@@ -140,7 +130,11 @@ class Indeed(Scraper):
         IndeedApply: filters: { keyword: { field: "indeedApplyScope", keys: ["DESKTOP"] } }
         """
         filters_str = ""
-        if self.scraper_input.hours_old:
+        hours = self.scraper_input.hours_old
+        if self.scraper_input.posted_since is not None:
+            age = datetime.now(timezone.utc) - self.scraper_input.posted_since
+            hours = max(1, ceil(age.total_seconds() / 3600))
+        if hours:
             filters_str = """
             filters: {{
                 date: {{
@@ -149,7 +143,7 @@ class Indeed(Scraper):
                 }}
             }}
             """.format(
-                start=self.scraper_input.hours_old
+                start=hours
             )
         elif self.scraper_input.easy_apply:
             filters_str = """
@@ -199,9 +193,6 @@ class Indeed(Scraper):
         :return: JobPost if it's a new job
         """
         job_url = f'{self.base_url}/viewjob?jk={job["key"]}'
-        if job_url in self.seen_urls:
-            return
-        self.seen_urls.add(job_url)
         description = job["description"]["html"]
         if self.scraper_input.description_format == DescriptionFormat.MARKDOWN:
             description = markdown_converter(description)

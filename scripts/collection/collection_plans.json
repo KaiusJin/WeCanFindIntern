@@ -44,8 +44,6 @@
     "interval_seconds": 43200,
     "recent_hours": 48,
     "full_sweep_every": 10,
-    "page_size": 25,
-    "max_results_per_source": 40,
     "max_attempts": 3,
     "distance": 100,
     "linkedin_fetch_description": true,

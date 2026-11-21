@@ -1,8 +1,6 @@
 """Run the public JobSpy campaign and publish its versioned R2 feed."""
 
 import asyncio
-import gzip
-import hashlib
 import json
 import os
 import time
@@ -11,46 +9,11 @@ from pathlib import Path
 import psycopg
 
 from scripts.cloud.publish import R2, publish
+from scripts.collection.checkpoint import QueryCheckpoint
 from scripts.collection.run_collection_campaign import run
-from wecanfindintern.domain.normalized_job import NormalizedJob
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "scripts/collection/collection_plans.json"
-
-
-class QueryCheckpoint:
-    def __init__(self, db, config):
-        self.config_hash = hashlib.sha256(config.read_bytes()).hexdigest()
-        self.db = db
-        self.completed = {}
-
-    def restore(self, sweep):
-        self.campaign = f"{self.config_hash}/{sweep}"
-        self.db.execute(
-            """
-            DELETE FROM feed_checkpoint WHERE campaign <> %s OR saved_at < now()-interval '6 hours'
-        """,
-            (self.campaign,),
-        )
-        self.completed.clear()
-        for plan, source, records in self.db.execute(
-            "SELECT plan, source, records FROM feed_checkpoint"
-        ):
-            self.completed[plan, source] = [
-                NormalizedJob.model_validate(row) for row in json.loads(gzip.decompress(records))
-            ]
-        print(f"Restored {len(self.completed)} completed queries", flush=True)
-
-    def save(self, key, jobs):
-        body = json.dumps([job.model_dump(mode="json") for job in jobs]).encode()
-        self.db.execute(
-            """
-            INSERT INTO feed_checkpoint(plan,source,campaign,records) VALUES (%s,%s,%s,%s)
-            ON CONFLICT(plan,source) DO UPDATE SET records=excluded.records,
-                saved_at=now(), campaign=excluded.campaign
-        """,
-            (*key, self.campaign, gzip.compress(body, compresslevel=1)),
-        )
 
 
 def maintain(db, *, expire):
@@ -122,11 +85,10 @@ def main():
         )
         if result.status == "failed":
             raise RuntimeError("Public job collection failed")
-        db.execute("DELETE FROM feed_checkpoint")
         maintain(db, expire=result.status == "success")
         publish(db, store)
         if result.status == "partial":
-            raise RuntimeError("Published available jobs; some provider queries failed")
+            raise RuntimeError("Published available jobs; pages or job details remain unfinished")
 
 
 if __name__ == "__main__":

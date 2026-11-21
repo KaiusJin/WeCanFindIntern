@@ -13,6 +13,7 @@ from psycopg_pool import AsyncConnectionPool
 from wecanfindintern.db.repositories.jobs import DedupeTimings, JobIngestionRepository
 from wecanfindintern.db.repositories.recruiting_term import RecruitingTermRepository
 from wecanfindintern.db.repositories.salary import SalaryRepository
+from wecanfindintern.deduplication import group_round_jobs
 from wecanfindintern.domain.jobs import canonical_job_from_normalized
 from wecanfindintern.domain.normalized_job import NormalizedJob
 from wecanfindintern.ingestion.recruiting_term_enrichment import (
@@ -30,6 +31,20 @@ class IngestionPipelineReport:
     outcomes: Counter[str]
     salary: SalaryEnrichmentStats
     recruiting_term: RecruitingTermEnrichmentStats
+    unique_jobs: int
+
+
+def _group_batches(groups, limit):
+    batch = []
+    size = 0
+    for group in groups:
+        if batch and size + len(group) > limit:
+            yield batch
+            batch, size = [], 0
+        batch.append(group)
+        size += len(group)
+    if batch:
+        yield batch
 
 
 async def run_ingestion_pipeline(
@@ -42,36 +57,51 @@ async def run_ingestion_pipeline(
     outcomes: Counter[str] | None = None,
     timings: DedupeTimings | None = None,
     after_persist: Callable[[Counter[str]], None] | None = None,
+    observed_at: dict[str, datetime] | None = None,
+    defer_salary: bool = False,
 ) -> IngestionPipelineReport:
     """Canonicalize, persist and enrich one already-collected job set."""
 
     if timings is None:
         timings = DedupeTimings()
     repository = JobIngestionRepository(pool, timings=timings)
-    with timings.measure("normalize"):
-        canonical_jobs = [
-            await asyncio.to_thread(
-                canonical_job_from_normalized,
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+
+    def prepare_round():
+        cards = (
+            canonical_job_from_normalized(
                 job,
-                scraped_at=scraped_at,
+                scraped_at=observed_at.get(job.source_fingerprint, scraped_at)
+                if observed_at
+                else scraped_at,
             )
             for job in jobs
-        ]
-    pipeline_outcomes = outcomes if outcomes is not None else Counter()
-    for offset in range(0, len(canonical_jobs), batch_size):
-        pipeline_outcomes.update(
-            await repository.ingest_batch(
-                run_id=run_id,
-                jobs=canonical_jobs[offset : offset + batch_size],
-                scraped_at=scraped_at,
-            )
         )
+        return group_round_jobs(cards)
+
+    pipeline_outcomes = outcomes if outcomes is not None else Counter()
+    with timings.measure("normalize"):
+        groups = await asyncio.to_thread(prepare_round)
+    structured = sum(any(job.salary is not None for job in group) for group in groups)
+    if groups:
+        history_limit = await repository.history_limit()
+        for batch in _group_batches(groups, batch_size):
+            pipeline_outcomes.update(
+                await repository.ingest_groups(
+                    run_id=run_id, groups=batch, history_limit=history_limit
+                )
+            )
     if after_persist is not None:
         after_persist(pipeline_outcomes)
 
-    enriched_salary = await enrich_missing_salaries(SalaryRepository(pool), jobs)
+    enriched_salary = (
+        SalaryEnrichmentStats()
+        if defer_salary
+        else await enrich_missing_salaries(SalaryRepository(pool), jobs)
+    )
     salary = SalaryEnrichmentStats(
-        structured=sum(job.salary is not None for job in canonical_jobs),
+        structured=structured + enriched_salary.structured,
         regex=enriched_salary.regex,
         not_found=enriched_salary.not_found,
         failed=enriched_salary.failed,
@@ -84,4 +114,5 @@ async def run_ingestion_pipeline(
         outcomes=pipeline_outcomes,
         salary=salary,
         recruiting_term=recruiting_term,
+        unique_jobs=len(groups),
     )

@@ -20,17 +20,17 @@ class CollectionCacheRepository:
         self.pool = pool
 
     async def completed_campaign_count(self, campaign_name: str) -> int:
-        """Count durable successful/partial runs for restart-safe sweep scheduling."""
+        """Advance native-page sweeps only on success, preserving historical sweep numbers."""
 
         async with self.pool.connection() as connection:
             row = await (
                 await connection.execute(
                     """
-                    SELECT count(*) AS completed_count
+                    SELECT COALESCE(max((query->>'sweep_number')::bigint), 0) AS completed_count
                     FROM ingestion_runs
                     WHERE query->>'campaign' = %s
                       AND query ? 'sweep_number'
-                      AND status IN (1, 2)
+                      AND (status = 1 OR (status = 2 AND NOT query ? 'native_pages'))
                     """,
                     (campaign_name,),
                 )
@@ -56,6 +56,7 @@ class CollectionCacheRepository:
                         SELECT raw.payload
                         FROM raw_job_snapshots raw
                         WHERE raw.job_source_id = js.id
+                          AND raw.payload_hash = js.last_payload_hash
                         ORDER BY raw.scraped_at DESC, raw.id DESC
                         LIMIT 1
                     ) snapshot ON true

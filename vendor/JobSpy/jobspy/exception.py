@@ -16,6 +16,18 @@ class IndeedException(Exception):
         super().__init__(message or "An error occurred with Indeed")
 
 
+class InvalidPageCursor(IndeedException):
+    """Indeed explicitly rejected the continuation for this search."""
+
+
+class PaginationLimit(Exception):
+    """The source's paging boundary was reached before a confirmed end."""
+
+
+class LinkedInJobGone(LinkedInException):
+    """The detail endpoint confirmed that the listing no longer exists."""
+
+
 class LinkedInRateLimitException(LinkedInException):
     """The shared LinkedIn request budget exhausted its rate-limit retries."""
 

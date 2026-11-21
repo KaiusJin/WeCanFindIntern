@@ -21,11 +21,15 @@ from psycopg_pool import AsyncConnectionPool
 from wecanfindintern.deduplication import (
     CandidateJob,
     DedupeAction,
+    DedupeDecision,
     choose_duplicate,
+    group_round_jobs,
+    record_completeness,
 )
 from wecanfindintern.domain.classification import classify_job
 from wecanfindintern.domain.jobs import (
     CanonicalJobInput,
+    SalaryRange,
     normalize_canonical_job_description,
 )
 
@@ -95,43 +99,101 @@ class JobIngestionRepository:
             ).fetchone()
         return IngestionRun(internal_id=row["id"], public_id=row["public_id"])
 
+    async def history_limit(self) -> int:
+        """Freeze the historical candidate boundary before writing the first round group."""
+        async with self.pool.connection() as connection:
+            row = await (
+                await connection.execute("SELECT coalesce(max(id), 0) AS id FROM jobs")
+            ).fetchone()
+        return row["id"]
+
     async def ingest_batch(
+        self, *, run_id: int, jobs: Iterable[CanonicalJobInput], scraped_at: datetime
+    ) -> Counter[str]:
+        groups = group_round_jobs(jobs)
+        return await self.ingest_groups(
+            run_id=run_id,
+            groups=groups,
+            history_limit=await self.history_limit(),
+            observed_at=scraped_at,
+        )
+
+    async def ingest_groups(
         self,
         *,
         run_id: int,
-        jobs: Iterable[CanonicalJobInput],
-        scraped_at: datetime,
+        groups: list[list[CanonicalJobInput]],
+        history_limit: int,
+        observed_at: datetime | None = None,
     ) -> Counter[str]:
-        """Ingest a bounded batch in one transaction.
-
-        Callers should use batches of roughly 100-500 jobs. Exact identities use
-        unique bytea indexes; fuzzy scoring only sees at most 25 blocked candidates.
-        """
-
-        batch_jobs = list(jobs)
+        """Store complete round groups and all their source links in one transaction."""
         counts: Counter[str] = Counter()
+        records = [job for group in groups for job in group]
+        if not records:
+            return counts
+        by_time: dict[datetime, list[CanonicalJobInput]] = {}
+        lock_keys = set()
+        for job in records:
+            by_time.setdefault(observed_at or job.first_seen_at, []).append(job)
+            for key in (
+                job.source.source_fingerprint,
+                job.dedupe.block_key,
+                job.dedupe.direct_url_hash,
+            ):
+                if key:
+                    lock_keys.add(advisory_key(bytes.fromhex(key)))
+
         async with self.pool.connection() as connection, connection.transaction():
-            await connection.execute(
-                "SELECT ensure_raw_job_snapshot_partition(%s)",
-                (scraped_at,),
-            )
+            with self.timings.measure("locks"):
+                await connection.execute(
+                    "SELECT pg_advisory_xact_lock(k) FROM "
+                    "(SELECT k FROM unnest(%s::bigint[]) k ORDER BY k) keys",
+                    (sorted(lock_keys),),
+                )
+            unchanged = set()
             with self.timings.measure("bulk_refresh"):
-                unchanged_fingerprints = await self._refresh_unchanged_sources(
-                    connection,
-                    jobs=batch_jobs,
-                    scraped_at=scraped_at,
+                for when, sightings in sorted(by_time.items()):
+                    await connection.execute(
+                        "SELECT ensure_raw_job_snapshot_partition(%s)", (when,)
+                    )
+                    unchanged.update(
+                        await self._refresh_unchanged_sources(
+                            connection, jobs=sightings, scraped_at=when
+                        )
+                    )
+            with self.timings.measure("source_lookup"):
+                rows = await (
+                    await connection.execute(
+                        """SELECT id, job_id, encode(source_fingerprint, 'hex') AS fingerprint,
+                              last_payload_hash FROM job_sources
+                       WHERE source_fingerprint = ANY(%s::bytea[]) ORDER BY id FOR UPDATE""",
+                        ([bytes.fromhex(job.source.source_fingerprint) for job in records],),
+                    )
+                ).fetchall()
+                existing = {row["fingerprint"]: row for row in rows}
+                current_quality = {}
+                if existing:
+                    historic = await (
+                        await connection.execute(
+                            "SELECT " + CANONICAL_FIELDS + " FROM jobs j WHERE j.id=ANY(%s) "
+                            "ORDER BY j.id FOR UPDATE",
+                            (sorted({row["job_id"] for row in rows}),),
+                        )
+                    ).fetchall()
+                    current_quality = {row["id"]: record_completeness(row) for row in historic}
+            for group in groups:
+                counts.update(
+                    await self._store_group(
+                        connection,
+                        run_id,
+                        group,
+                        existing,
+                        unchanged,
+                        current_quality,
+                        history_limit,
+                        observed_at,
+                    )
                 )
-            counts[IngestionOutcome.UNCHANGED.value] += len(unchanged_fingerprints)
-            for job in batch_jobs:
-                if job.source.source_fingerprint in unchanged_fingerprints:
-                    continue
-                outcome = await self._ingest_one(
-                    connection,
-                    run_id=run_id,
-                    incoming=job,
-                    scraped_at=scraped_at,
-                )
-                counts[outcome.value] += 1
             await connection.execute(
                 """
                 UPDATE ingestion_runs
@@ -144,10 +206,10 @@ class JobIngestionRepository:
                 """,
                 (
                     sum(counts.values()),
-                    counts[IngestionOutcome.CREATED.value],
-                    counts[IngestionOutcome.MERGED.value],
-                    counts[IngestionOutcome.UPDATED.value],
-                    counts[IngestionOutcome.UNCHANGED.value],
+                    counts["created"],
+                    counts["merged"],
+                    counts["updated"],
+                    counts["unchanged"],
                     run_id,
                 ),
             )
@@ -176,7 +238,7 @@ class JobIngestionRepository:
                 touched_sources AS (
                     UPDATE job_sources js
                     SET last_seen_at = GREATEST(js.last_seen_at, %s),
-                        last_scraped_at = %s,
+                        last_scraped_at = GREATEST(js.last_scraped_at, %s),
                         details_fetched_at = CASE
                             WHEN incoming.details_fetched_at IS NULL
                                 THEN js.details_fetched_at
@@ -249,124 +311,196 @@ class JobIngestionRepository:
                 ),
             )
 
-    async def _ingest_one(
+    async def _store_group(
         self,
-        connection: AsyncConnection,
-        *,
-        run_id: int,
-        incoming: CanonicalJobInput,
-        scraped_at: datetime,
-    ) -> IngestionOutcome:
-        fingerprint = bytes.fromhex(incoming.source.source_fingerprint)
-        block_hash = bytes.fromhex(incoming.dedupe.block_key)
-        direct_hash = hex_bytes(incoming.dedupe.direct_url_hash)
-        payload_hash = stable_json_hash(incoming.source.payload)
-
-        # Locks are sorted to avoid deadlocks. They serialize only matching source
-        # or dedupe blocks, not the whole ingestion run.
-        lock_values = [fingerprint, block_hash]
-        if direct_hash:
-            lock_values.append(direct_hash)
-        lock_keys = sorted({advisory_key(value) for value in lock_values})
-        with self.timings.measure("locks"):
-            for lock_key in lock_keys:
-                await connection.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
-        with self.timings.measure("source_lookup"):
-            existing = await (
-                await connection.execute(
-                    """
-                    SELECT id, job_id, last_payload_hash
-                    FROM job_sources
-                    WHERE source_fingerprint = %s
-                    FOR UPDATE
-                    """,
-                    (fingerprint,),
-                )
-            ).fetchone()
-        if existing:
-            persisted_incoming = normalize_canonical_job_description(incoming)
-            with self.timings.measure("writes"):
-                changed = await self._refresh_existing_source(
-                    connection,
-                    incoming=persisted_incoming,
-                    source_id=existing["id"],
-                    job_id=existing["job_id"],
-                    payload_hash=payload_hash,
-                    previous_payload_hash=existing["last_payload_hash"],
-                    run_id=run_id,
-                    scraped_at=scraped_at,
-                )
-            return IngestionOutcome.UPDATED if changed else IngestionOutcome.UNCHANGED
-
+        connection,
+        run_id,
+        group,
+        existing,
+        unchanged,
+        current_quality,
+        history_limit,
+        observed_at,
+    ) -> Counter[str]:
+        counts: Counter[str] = Counter()
+        keys = [job.source.source_fingerprint for job in group]
+        anchors = {existing[key]["job_id"] for key in keys if key in existing}
+        primary = group[0]
+        if primary.salary is None:
+            salary = next((job.salary for job in group if job.salary is not None), None)
+            if salary is not None:
+                primary = primary.model_copy(update={"salary": salary})
+        if len(anchors) == 1 and all(key in unchanged for key in keys):
+            old_quality = current_quality.get(next(iter(anchors)))
+            if old_quality is not None and _canonical_completeness(primary) <= old_quality:
+                return Counter(unchanged=len(group))
+        first_seen = observed_at or min(job.first_seen_at for job in group)
+        last_seen = observed_at or max(job.first_seen_at for job in group)
         with self.timings.measure("candidates"):
-            candidates = await self._find_candidates(connection, incoming)
-        decision = choose_duplicate(incoming, candidates)
-        persisted_incoming = normalize_canonical_job_description(incoming)
-        with self.timings.measure("writes"):
-            if decision.action is DedupeAction.MERGE and decision.candidate_job_id:
-                job_id = decision.candidate_job_id
-                outcome = IngestionOutcome.MERGED
-                await self._refresh_canonical_job(
-                    connection, job_id, persisted_incoming, scraped_at
+            decisions = []
+            for job in group:
+                if job.source.source_fingerprint in existing and (
+                    job.source.source != "linkedin" or job.source.source_job_id
+                ):
+                    continue
+                candidates = await self._find_candidates(connection, job, history_limit)
+                match = choose_duplicate(job, candidates)
+                decisions.append(match)
+                if match.action is DedupeAction.MERGE:
+                    anchors.add(match.candidate_job_id)
+            if anchors:
+                target = min(anchors)
+                if len(anchors) > 1:
+                    rows = await (
+                        await connection.execute(
+                            CANONICAL_RECORD_SELECT
+                            + " WHERE j.id = ANY(%s) ORDER BY j.id FOR UPDATE",
+                            (sorted(anchors),),
+                        )
+                    ).fetchall()
+                    target = max(rows, key=record_completeness)["id"]
+                    first_seen = min(first_seen, *(row["first_seen_at"] for row in rows))
+                    last_seen = max(last_seen, *(row["last_seen_at"] for row in rows))
+                decision = next(
+                    (
+                        match
+                        for match in decisions
+                        if match.action is DedupeAction.MERGE and match.candidate_job_id == target
+                    ),
+                    DedupeDecision(DedupeAction.MERGE, target, 1.0, {"source_identity": True}),
                 )
             else:
-                job_id = await self._insert_job(connection, persisted_incoming, scraped_at)
-                outcome = IngestionOutcome.CREATED
+                decision = max(decisions, key=lambda item: item.score)
+                target = None
 
-            source_id = await self._insert_source(
-                connection,
-                job_id=job_id,
-                incoming=persisted_incoming,
-                fingerprint=fingerprint,
-                payload_hash=payload_hash,
-                scraped_at=scraped_at,
-            )
-            await self._insert_snapshot(
-                connection,
-                run_id=run_id,
-                source_id=source_id,
-                fingerprint=fingerprint,
-                payload_hash=payload_hash,
-                payload=persisted_incoming.source.payload,
-                scraped_at=scraped_at,
-            )
-            await connection.execute(
-                """
-                UPDATE jobs
-                SET source_count = source_count + 1,
-                    last_seen_at = GREATEST(last_seen_at, %s),
-                    last_verified_at = GREATEST(last_verified_at, %s),
-                    updated_at = now()
-                WHERE id = %s
-                """,
-                (scraped_at, scraped_at, job_id),
-            )
+        created = target is None
+        with self.timings.measure("writes"):
+            primary = normalize_canonical_job_description(primary)
+            if created:
+                primary = primary.model_copy(update={"first_seen_at": first_seen})
+                target = await self._insert_job(connection, primary, last_seen)
+            else:
+                await self._refresh_canonical_job(
+                    connection,
+                    target,
+                    primary,
+                    last_seen,
+                    refresh_equal=(
+                        primary.source.source_fingerprint in existing
+                        and primary.source.source_fingerprint not in unchanged
+                    ),
+                )
+            current_quality.pop(target, None)
 
-            await connection.execute(
-                """
-                INSERT INTO dedupe_decisions (
-                    source_fingerprint, resulting_job_id, compared_job_id,
-                    action, score, algorithm_version, evidence
-                ) VALUES (%s, %s, %s, %s, %s, 2, %s)
-                """,
-                (
-                    fingerprint,
-                    job_id,
-                    decision.candidate_job_id,
-                    decision.action.value,
-                    decision.score,
-                    Jsonb(decision.evidence),
-                ),
-            )
-        return outcome
+            moved_from = anchors - {target}
+            for index, job in enumerate(group):
+                key = job.source.source_fingerprint
+                fingerprint = bytes.fromhex(key)
+                when = observed_at or job.first_seen_at
+                old = existing.get(key)
+                if old and old["job_id"] == target and key in unchanged:
+                    counts["unchanged"] += 1
+                    continue
+                payload_hash = stable_json_hash(job.source.payload)
+                if old:
+                    moved = old["job_id"] != target
+                    changed = await self._refresh_existing_source(
+                        connection,
+                        incoming=job,
+                        source_id=old["id"],
+                        payload_hash=payload_hash,
+                        previous_payload_hash=old["last_payload_hash"],
+                        run_id=run_id,
+                        scraped_at=when,
+                    )
+                    if not moved:
+                        counts["updated" if changed else "unchanged"] += 1
+                        continue
+                else:
+                    source_id = await self._insert_source(
+                        connection,
+                        job_id=target,
+                        incoming=job,
+                        fingerprint=fingerprint,
+                        payload_hash=payload_hash,
+                        scraped_at=when,
+                    )
+                    await self._insert_snapshot(
+                        connection,
+                        run_id=run_id,
+                        source_id=source_id,
+                        fingerprint=fingerprint,
+                        payload_hash=payload_hash,
+                        payload=job.source.payload,
+                        scraped_at=when,
+                    )
+                is_new = created and index == 0
+                counts["created" if is_new else "merged"] += 1
+                await connection.execute(
+                    """INSERT INTO dedupe_decisions (
+                           source_fingerprint, resulting_job_id, compared_job_id,
+                           action, score, algorithm_version, evidence
+                       ) VALUES (%s, %s, %s, %s, %s, 3, %s)""",
+                    (
+                        fingerprint,
+                        target,
+                        decision.candidate_job_id if index == 0 else target,
+                        "create" if is_new else "merge",
+                        decision.score if index == 0 else 1.0,
+                        Jsonb({**decision.evidence, "round_sources": len(group)}),
+                    ),
+                )
+            if moved_from:
+                # Move the job's other known source links too, including sources absent this round.
+                moved_rows = await (
+                    await connection.execute(
+                        """UPDATE job_sources SET job_id=%s, updated_at=now()
+                       WHERE job_id=ANY(%s) RETURNING encode(source_fingerprint, 'hex') AS fp""",
+                        (target, sorted(moved_from)),
+                    )
+                ).fetchall()
+                for row in moved_rows:
+                    if row["fp"] in existing:
+                        existing[row["fp"]]["job_id"] = target
+                await connection.execute(
+                    "UPDATE jobs SET first_seen_at=LEAST(first_seen_at,%s) WHERE id=%s",
+                    (first_seen, target),
+                )
+            if counts["created"] or counts["merged"]:
+                await connection.execute(
+                    """WITH totals AS (
+                           SELECT j.id, count(s.id) AS n FROM jobs j
+                           LEFT JOIN job_sources s ON s.job_id=j.id
+                           WHERE j.id=ANY(%s) GROUP BY j.id
+                       )
+                       UPDATE jobs j SET source_count=totals.n,
+                           status=CASE WHEN totals.n=0 THEN 4 ELSE j.status END,
+                           closed_at=CASE WHEN totals.n=0 THEN now() ELSE j.closed_at END,
+                           updated_at=now()
+                       FROM totals WHERE totals.id=j.id""",
+                    (sorted(moved_from | {target}),),
+                )
+        return counts
 
     async def _find_candidates(
         self,
         connection: AsyncConnection,
         incoming: CanonicalJobInput,
+        history_limit: int,
     ) -> list[CandidateJob]:
         rows_by_id: dict[int, dict[str, Any]] = {}
         direct_hash = hex_bytes(incoming.dedupe.direct_url_hash)
+        history = " AND j.id <= %s"
+        params = [history_limit]
+        if incoming.source.source == "linkedin" and incoming.source.source_job_id:
+            # Filter before LIMIT so unrelated LinkedIn IDs cannot crowd out an Indeed match.
+            history += """
+                AND (NOT EXISTS (SELECT 1 FROM job_sources s WHERE s.job_id=j.id)
+                     OR EXISTS (SELECT 1 FROM job_sources s WHERE s.job_id=j.id AND
+                                (s.source <> 'linkedin' OR s.source_job_id IS NULL
+                                 OR s.source_job_id = %s)))
+            """
+            params.append(incoming.source.source_job_id)
         if direct_hash:
             rows = await (
                 await connection.execute(
@@ -374,10 +508,13 @@ class JobIngestionRepository:
                     + """
                     JOIN job_sources match_source ON match_source.job_id = j.id
                     WHERE j.status = 1 AND match_source.direct_url_hash = %s
+                    """
+                    + history
+                    + """
                     GROUP BY j.id
                     LIMIT 10
                     """,
-                    (direct_hash,),
+                    (direct_hash, *params),
                 )
             ).fetchall()
             rows_by_id.update((row["id"], row) for row in rows)
@@ -392,6 +529,9 @@ class JobIngestionRepository:
                     %s::date IS NULL OR j.date_posted IS NULL OR
                     j.date_posted BETWEEN %s::date - 60 AND %s::date + 60
                   )
+                """
+                + history
+                + """
                 GROUP BY j.id
                 ORDER BY abs(coalesce(j.date_posted, %s::date) - %s::date), j.id DESC
                 LIMIT 25
@@ -401,6 +541,7 @@ class JobIngestionRepository:
                     incoming.date_posted,
                     incoming.date_posted,
                     incoming.date_posted,
+                    *params,
                     incoming.date_posted,
                     incoming.date_posted,
                 ),
@@ -558,13 +699,45 @@ class JobIngestionRepository:
         *,
         incoming: CanonicalJobInput,
         source_id: int,
-        job_id: int,
         payload_hash: bytes,
         previous_payload_hash: bytes,
         run_id: int,
         scraped_at: datetime,
     ) -> bool:
         changed = payload_hash != previous_payload_hash
+        if changed:
+            previous = await (
+                await connection.execute(
+                    """SELECT payload, scraped_at,
+                          (SELECT payload_hash FROM raw_job_snapshots WHERE job_source_id=%s
+                           ORDER BY scraped_at DESC, id DESC LIMIT 1) AS latest_hash
+                   FROM raw_job_snapshots
+                   WHERE job_source_id=%s AND payload_hash=%s
+                   ORDER BY scraped_at DESC, id DESC LIMIT 1""",
+                    (source_id, source_id, previous_payload_hash),
+                )
+            ).fetchone()
+            if previous and (record_completeness(previous["payload"]), previous["scraped_at"]) > (
+                record_completeness(incoming.source.payload),
+                scraped_at,
+            ):
+                if previous["latest_hash"] != payload_hash:
+                    await self._insert_snapshot(
+                        connection,
+                        run_id=run_id,
+                        source_id=source_id,
+                        fingerprint=bytes.fromhex(incoming.source.source_fingerprint),
+                        payload_hash=payload_hash,
+                        payload=incoming.source.payload,
+                        scraped_at=scraped_at,
+                    )
+                await connection.execute(
+                    """UPDATE job_sources SET last_seen_at=GREATEST(last_seen_at,%s),
+                           last_scraped_at=GREATEST(last_scraped_at,%s),updated_at=now()
+                       WHERE id=%s""",
+                    (scraped_at, scraped_at, source_id),
+                )
+                return False
         await connection.execute(
             """
             UPDATE job_sources
@@ -582,7 +755,7 @@ class JobIngestionRepository:
                     )
                 END,
                 last_seen_at = GREATEST(last_seen_at, %s),
-                last_scraped_at = %s,
+                last_scraped_at = GREATEST(last_scraped_at, %s),
                 updated_at = now()
             WHERE id = %s
             """,
@@ -602,9 +775,6 @@ class JobIngestionRepository:
             ),
         )
         if changed:
-            await self._replace_source_owned_fields(connection, job_id, incoming)
-        await self._refresh_canonical_job(connection, job_id, incoming, scraped_at)
-        if changed:
             await self._insert_snapshot(
                 connection,
                 run_id=run_id,
@@ -622,9 +792,8 @@ class JobIngestionRepository:
         job_id: int,
         incoming: CanonicalJobInput,
     ) -> None:
-        """Apply corrections from the same provider identity before reclassification."""
+        """Replace primary posting fields when the incoming record wins the comparison."""
 
-        salary = incoming.salary
         await connection.execute(
             """UPDATE jobs SET
                 title=%s,title_normalized=%s,
@@ -634,13 +803,8 @@ class JobIngestionRepository:
                 region_type=%s,country_code=%s,country_name=%s,
                 location_normalized=%s,date_posted=%s,published_sort_at=%s,
                 job_function=%s,contact_emails=%s::text[],vacancy_count=%s,
-                description=%s,description_hash=%s,
-                work_mode=%s,employment_types=%s::text[],
-                primary_employment_type=%s,source_skills=%s::text[],
-                salary_interval=%s,salary_min=%s,salary_max=%s,
-                salary_currency=%s,salary_source=%s,
-                salary_annual_min=%s,salary_annual_max=%s
-            WHERE id=%s;""",
+                primary_employment_type=coalesce(%s, primary_employment_type),dedupe_block_key=%s
+            WHERE id=%s""",
             (
                 incoming.title,
                 incoming.title_normalized,
@@ -662,19 +826,8 @@ class JobIngestionRepository:
                 incoming.job_function,
                 incoming.contact_emails,
                 incoming.vacancy_count,
-                incoming.description,
-                hex_bytes(incoming.dedupe.description_hash),
-                incoming.work_mode.value,
-                incoming.employment_types,
                 incoming.primary_employment_type,
-                incoming.source_skills,
-                salary.interval if salary else None,
-                salary.minimum if salary else None,
-                salary.maximum if salary else None,
-                salary.currency if salary else None,
-                salary.source if salary else None,
-                salary.annualized_minimum if salary else None,
-                salary.annualized_maximum if salary else None,
+                bytes.fromhex(incoming.dedupe.block_key),
                 job_id,
             ),
         )
@@ -685,42 +838,58 @@ class JobIngestionRepository:
         job_id: int,
         incoming: CanonicalJobInput,
         scraped_at: datetime,
+        *,
+        refresh_equal: bool = False,
     ) -> None:
         current = await (
             await connection.execute(
-                """
-                SELECT title, description, employment_types,
-                       primary_employment_type, source_skills, work_mode,
-                       length(coalesce(description, '')) AS description_length
-                FROM jobs
-                WHERE id = %s
-                FOR UPDATE
-                """,
+                CANONICAL_RECORD_SELECT + " WHERE j.id=%s FOR UPDATE",
                 (job_id,),
             )
         ).fetchone()
-        incoming_description_length = len(incoming.description or "")
-        current_description_length = int(current["description_length"] or 0)
-        # A stable tie-break keeps the canonical JD independent of source arrival order.
-        replace_description = (
-            incoming_description_length,
-            incoming.description or "",
-        ) > (
-            current_description_length,
-            current["description"] or "",
+        old_quality = record_completeness(current)
+        new_quality = _canonical_completeness(incoming)
+        prefer = new_quality > old_quality or (
+            refresh_equal and new_quality == old_quality and scraped_at >= current["last_seen_at"]
         )
-        canonical_description = (
-            incoming.description if replace_description else current["description"]
+        salary = incoming.salary
+        derived_salary = current["salary_source"] in {
+            "description",
+            "job_description",
+            "linkedin_salary_label",
+        }
+        if current["interval"] and (salary is None or (not prefer and not derived_salary)):
+            salary = SalaryRange(
+                interval=current["interval"],
+                minimum=current["min_amount"],
+                maximum=current["max_amount"],
+                currency=current["salary_currency"],
+                source=current["salary_source"],
+                annualized_minimum=current["salary_annual_min"],
+                annualized_maximum=current["salary_annual_max"],
+            )
+        if prefer:
+            await self._replace_source_owned_fields(connection, job_id, incoming)
+        use_description = bool(incoming.description) and (prefer or not current["description"])
+        canonical_description = incoming.description if use_description else current["description"]
+        description_hash = (
+            hex_bytes(incoming.dedupe.description_hash)
+            if use_description
+            else current["description_hash"]
         )
         employment_types = sorted(
             set(current["employment_types"] or []) | set(incoming.employment_types)
         )
         source_skills = sorted(set(current["source_skills"] or []) | set(incoming.source_skills))
         work_mode = current["work_mode"]
-        if not work_mode or work_mode == "unknown":
+        if (
+            (prefer and incoming.work_mode.value != "unknown")
+            or not work_mode
+            or work_mode == "unknown"
+        ):
             work_mode = incoming.work_mode.value
         classification = classify_job(
-            title=current["title"],
+            title=incoming.title if prefer else current["title"],
             description=canonical_description,
             employment_types=employment_types,
             source_skills=source_skills,
@@ -729,14 +898,7 @@ class JobIngestionRepository:
         await connection.execute(
             """
             UPDATE jobs
-            SET description = CASE
-                    WHEN %s THEN %s
-                    ELSE description
-                END,
-                description_hash = CASE
-                    WHEN %s THEN %s
-                    ELSE description_hash
-                END,
+            SET description = %s, description_hash = %s,
                 city = coalesce(city, %s),
                 region_code = coalesce(region_code, %s),
                 region_name = coalesce(region_name, %s),
@@ -746,7 +908,7 @@ class JobIngestionRepository:
                 location_normalized = CASE
                     WHEN location_normalized = '' THEN %s ELSE location_normalized
                 END,
-                work_mode = CASE WHEN work_mode = 'unknown' THEN %s ELSE work_mode END,
+                work_mode = %s,
                 employment_types = %s::text[],
                 primary_employment_type = coalesce(primary_employment_type, %s),
                 opportunity_type = %s,
@@ -758,13 +920,9 @@ class JobIngestionRepository:
                 requirement_tags = %s::text[],
                 display_tags = %s::text[],
                 classification_version = %s,
-                salary_interval = coalesce(salary_interval, %s),
-                salary_min = coalesce(salary_min, %s),
-                salary_max = coalesce(salary_max, %s),
-                salary_currency = coalesce(salary_currency, %s),
-                salary_source = coalesce(salary_source, %s),
-                salary_annual_min = coalesce(salary_annual_min, %s),
-                salary_annual_max = coalesce(salary_annual_max, %s),
+                salary_interval = %s, salary_min = %s, salary_max = %s,
+                salary_currency = %s, salary_source = %s,
+                salary_annual_min = %s, salary_annual_max = %s,
                 source_skills = %s::text[],
                 last_seen_at = GREATEST(last_seen_at, %s),
                 last_verified_at = GREATEST(last_verified_at, %s),
@@ -774,10 +932,8 @@ class JobIngestionRepository:
             WHERE id = %s
             """,
             (
-                replace_description,
-                incoming.description,
-                replace_description,
-                hex_bytes(incoming.dedupe.description_hash),
+                canonical_description,
+                description_hash,
                 incoming.location.city,
                 incoming.location.region_code,
                 incoming.location.region_name,
@@ -785,7 +941,7 @@ class JobIngestionRepository:
                 incoming.location.country_code,
                 incoming.location.country_name,
                 incoming.location.normalized,
-                incoming.work_mode.value,
+                work_mode,
                 employment_types,
                 incoming.primary_employment_type,
                 classification.opportunity_type.value,
@@ -797,13 +953,13 @@ class JobIngestionRepository:
                 classification.requirement_tags,
                 classification.display_tags,
                 classification.classification_version,
-                incoming.salary.interval if incoming.salary else None,
-                incoming.salary.minimum if incoming.salary else None,
-                incoming.salary.maximum if incoming.salary else None,
-                incoming.salary.currency if incoming.salary else None,
-                incoming.salary.source if incoming.salary else None,
-                incoming.salary.annualized_minimum if incoming.salary else None,
-                incoming.salary.annualized_maximum if incoming.salary else None,
+                salary.interval if salary else None,
+                salary.minimum if salary else None,
+                salary.maximum if salary else None,
+                salary.currency if salary else None,
+                salary.source if salary else None,
+                salary.annualized_minimum if salary else None,
+                salary.annualized_maximum if salary else None,
                 source_skills,
                 scraped_at,
                 scraped_at,
@@ -833,6 +989,33 @@ class JobIngestionRepository:
         )
 
 
+def _canonical_completeness(job: CanonicalJobInput) -> tuple[int, int, int]:
+    fields = dict(job.source.payload, description=job.description)
+    if job.salary:
+        fields.update(
+            min_amount=job.salary.minimum,
+            max_amount=job.salary.maximum,
+            interval=job.salary.interval,
+        )
+    return record_completeness(fields)
+
+
+CANONICAL_FIELDS = """
+           j.id, j.title, length(btrim(j.description)) AS description_length,
+           j.description_hash, j.first_seen_at, j.last_seen_at,
+           j.company_name AS company, j.location_text AS location, j.date_posted,
+           j.employment_types, j.employment_types AS job_type, j.job_function, j.work_mode,
+           j.company_industry, j.company_website_url AS company_url_direct,
+           j.company_logo_url AS company_logo,
+           j.source_skills, j.source_skills AS skills, j.contact_emails AS emails, j.vacancy_count,
+           j.salary_interval AS interval, j.salary_min AS min_amount, j.salary_max AS max_amount,
+           j.salary_currency, j.salary_source, j.salary_annual_min, j.salary_annual_max,
+           EXISTS(SELECT 1 FROM job_sources s WHERE s.job_id=j.id AND s.direct_url IS NOT NULL)
+               AS job_url_direct
+"""
+CANONICAL_RECORD_SELECT = "SELECT j.description, " + CANONICAL_FIELDS + " FROM jobs j"
+
+
 CANDIDATE_SELECT = """
     SELECT j.id,
            j.title_normalized,
@@ -843,7 +1026,9 @@ CANDIDATE_SELECT = """
            left(j.description, 12000) AS description,
            encode(j.description_hash, 'hex') AS description_hash,
            array_remove(array_agg(encode(all_sources.direct_url_hash, 'hex')), NULL)
-               AS direct_url_hashes
+               AS direct_url_hashes,
+           jsonb_agg(DISTINCT jsonb_build_array(all_sources.source, all_sources.source_job_id))
+               FILTER (WHERE all_sources.id IS NOT NULL) AS source_identities
     FROM jobs j
     LEFT JOIN job_sources all_sources ON all_sources.job_id = j.id
 """
@@ -860,6 +1045,7 @@ def candidate_from_row(row: dict[str, Any]) -> CandidateJob:
         description=row["description"],
         description_hash=row["description_hash"],
         direct_url_hashes=frozenset(row["direct_url_hashes"] or []),
+        source_identities=frozenset(tuple(pair) for pair in row["source_identities"] or []),
     )
 
 

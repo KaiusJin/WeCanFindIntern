@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import math
-from datetime import datetime
+from datetime import datetime, timezone
+from math import ceil
 from typing import Optional
 from urllib.parse import urlparse, urlunparse, unquote
 
@@ -9,7 +9,7 @@ import regex as re
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from jobspy.exception import LinkedInException, LinkedInRateLimitException
+from jobspy.exception import LinkedInException, LinkedInJobGone, LinkedInRateLimitException, PaginationLimit
 from jobspy.linkedin.constant import headers
 from jobspy.linkedin.request import request_gate
 from jobspy.linkedin.util import (
@@ -67,122 +67,123 @@ class LinkedIn(Scraper):
         self.job_url_direct_regex = re.compile(r'(?<=\?url=)[^"]+')
 
     def scrape(self, scraper_input: ScraperInput) -> JobResponse:
-        """
-        Scrapes LinkedIn for jobs with scraper_input criteria
-        :param scraper_input:
-        :return: job_response
-        """
-        self.scraper_input = scraper_input
-        job_list: list[JobPost] = []
-        seen_ids = set()
-        start = scraper_input.offset // 10 * 10 if scraper_input.offset else 0
-        request_count = 0
-        seconds_old = (
-            scraper_input.hours_old * 3600 if scraper_input.hours_old else None
-        )
-        continue_search = (
-            lambda: len(job_list) < scraper_input.results_wanted and start < 1000
-        )
-        while continue_search():
-            request_count += 1
-            log.info(
-                f"search page: {request_count} / {math.ceil(scraper_input.results_wanted / 10)}"
+        start = scraper_input.offset or 0
+        jobs = {}
+        while len(jobs) < scraper_input.results_wanted and start < 1000:
+            page, following = self.scrape_page(
+                scraper_input, str(start), seen_ids=jobs.keys(),
+                limit=scraper_input.results_wanted - len(jobs),
             )
-            params = {
-                "keywords": scraper_input.search_term,
-                "location": scraper_input.location,
-                "distance": scraper_input.distance,
-                "f_WT": 2 if scraper_input.is_remote else None,
-                "f_JT": (
-                    job_type_code(scraper_input.job_type)
-                    if scraper_input.job_type
-                    else None
-                ),
-                "pageNum": 0,
-                "start": start,
-                "f_AL": "true" if scraper_input.easy_apply else None,
-                "f_C": (
-                    ",".join(map(str, scraper_input.linkedin_company_ids))
-                    if scraper_input.linkedin_company_ids
-                    else None
-                ),
-            }
-            if seconds_old is not None:
-                params["f_TPR"] = f"r{seconds_old}"
+            for job in page:
+                # The standalone JobSpy API exposes numeric salary columns.
+                job.compensation = self._bulk_compensation(job.salary_label)
+                identity = job.id.removeprefix("li-") if job.id else job.job_url
+                jobs[identity] = job
+            if following is None:
+                break
+            start = int(following)
+        return JobResponse(jobs=list(jobs.values()))
 
-            params = {k: v for k, v in params.items() if v is not None}
-            try:
-                response = request_gate.get(
-                    self.session,
-                    f"{self.base_url}/jobs-guest/jobs/api/seeMoreJobPostings/search?",
-                    params=params,
-                    timeout=10,
-                )
-                if response.status_code not in range(200, 400):
-                    err = f"LinkedIn response status code {response.status_code}"
-                    err += f" - {response.text}"
-                    log.error(err)
-                    return JobResponse(jobs=job_list)
-            except LinkedInRateLimitException:
-                raise
-            except Exception as e:
-                if "Proxy responded with" in str(e):
-                    log.error(f"LinkedIn: Bad proxy")
-                else:
-                    log.error(f"LinkedIn: {str(e)}")
-                return JobResponse(jobs=job_list)
+    def scrape_page(self, scraper_input, cursor=None, *, seen_ids=(), limit=None):
+        """Read one native list response. Advance by raw cards, before ID or country filtering."""
+        self.scraper_input = scraper_input
+        start = int(cursor or 0)
+        if start >= 1000:
+            raise PaginationLimit("LinkedIn reached offset 1000 without a confirmed last page")
+        seconds_old = scraper_input.hours_old * 3600 if scraper_input.hours_old else None
+        if scraper_input.posted_since is not None:
+            seconds_old = max(1, ceil((datetime.now(timezone.utc) - scraper_input.posted_since).total_seconds()))
+        params = {
+            "keywords": scraper_input.search_term,
+            "location": scraper_input.location,
+            "distance": scraper_input.distance,
+            "f_WT": 2 if scraper_input.is_remote else None,
+            "f_JT": (
+                job_type_code(scraper_input.job_type)
+                if scraper_input.job_type
+                else None
+            ),
+            "pageNum": 0,
+            "start": start,
+            "f_AL": "true" if scraper_input.easy_apply else None,
+            "f_C": (
+                ",".join(map(str, scraper_input.linkedin_company_ids))
+                if scraper_input.linkedin_company_ids
+                else None
+            ),
+        }
+        if seconds_old is not None:
+            params["f_TPR"] = f"r{seconds_old}"
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            job_cards = soup.find_all("div", class_="base-search-card")
-            if len(job_cards) == 0:
-                return JobResponse(jobs=job_list)
+        params = {k: v for k, v in params.items() if v is not None}
+        response = request_gate.get(
+            self.session, f"{self.base_url}/jobs-guest/jobs/api/seeMoreJobPostings/search",
+            params=params, timeout=10,
+        )
+        response.raise_for_status()
+        if self._sign_in_page(response):
+            raise LinkedInException("LinkedIn returned a sign-in page during search")
+        if not response.text.strip():
+            return [], None
+        soup = BeautifulSoup(response.text, "html.parser")
+        cards = soup.select("div.base-search-card")
+        if not cards:
+            elements = soup.find_all(True, limit=2)
+            empty_list = (len(elements) == 1 and elements[0].name == "ul"
+                          and not soup.get_text(strip=True))
+            if empty_list or soup.select_one(".no-results, .jobs-search-no-results-banner"):
+                return [], None
+            raise LinkedInException("Unrecognized LinkedIn search response; end of results unconfirmed")
+        jobs = []
+        seen = set(seen_ids)
+        for card in cards:
+            link = card.select_one("a.base-card__full-link[href]")
+            path = urlparse(link["href"]).path.rstrip("/") if link else ""
+            urn = re.fullmatch(r"urn:li:jobPosting:(\d+)", card.get("data-entity-urn", ""))
+            if not urn and (not path.startswith("/jobs/view/") or not path.rsplit("/", 1)[-1]):
+                raise LinkedInException("Unrecognized LinkedIn posting link")
+            suffix = re.search(r"(?:^|-)(\d+)$", path.rsplit("/", 1)[-1])
+            match = urn or suffix
+            job_id = match[1] if match else None
+            posting_path = f"/jobs/view/{job_id}" if job_id else path
+            identity = job_id or f"{self.base_url}{posting_path}"
+            # The campaign compares all card variants and keeps the more complete record.
+            if limit is not None and identity in seen:
+                continue
+            seen.add(identity)
+            jobs.append(self._process_job(
+                card, job_id, scraper_input.linkedin_fetch_description, posting_path=posting_path
+            ))
+            if limit is not None and len(jobs) >= limit:
+                break
+        return jobs, str(start + len(cards))
 
-            for job_card in job_cards:
-                href_tag = job_card.find("a", class_="base-card__full-link")
-                if href_tag and "href" in href_tag.attrs:
-                    href = href_tag.attrs["href"].split("?")[0]
-                    job_id = href.split("-")[-1]
+    @staticmethod
+    def _sign_in_page(response):
+        path = urlparse(response.url).path
+        return any(part in path for part in ("/login", "/signup", "/authwall", "/checkpoint"))
 
-                    if job_id in seen_ids:
-                        continue
-                    seen_ids.add(job_id)
-
-                    try:
-                        fetch_desc = scraper_input.linkedin_fetch_description
-                        job_post = self._process_job(job_card, job_id, fetch_desc)
-                        if job_post:
-                            job_list.append(job_post)
-                        if not continue_search():
-                            break
-                    except LinkedInRateLimitException:
-                        raise
-                    except Exception as e:
-                        raise LinkedInException(str(e))
-
-            if continue_search():
-                start += len(job_cards)
-
-        job_list = job_list[: scraper_input.results_wanted]
-        return JobResponse(jobs=job_list)
+    @staticmethod
+    def _bulk_compensation(label: str | None) -> Compensation | None:
+        if not label:
+            return None
+        parts = re.split(r"[-–—]", label, maxsplit=1)
+        try:
+            minimum = currency_parser(parts[0])
+            maximum = currency_parser(parts[1]) if len(parts) == 2 else None
+        except ValueError:
+            return None
+        return Compensation(
+            min_amount=minimum, max_amount=maximum, currency="USD" if label[0] == "$" else label[0]
+        )
 
     def _process_job(
-        self, job_card: Tag, job_id: str, full_descr: bool
+        self, job_card: Tag, job_id: str | None, full_descr: bool, *, posting_path: str
     ) -> Optional[JobPost]:
         salary_tag = job_card.find("span", class_="job-search-card__salary-info")
 
-        compensation = description = None
-        if salary_tag:
-            salary_text = salary_tag.get_text(separator=" ").strip()
-            salary_values = [currency_parser(value) for value in salary_text.split("-")]
-            salary_min = salary_values[0]
-            salary_max = salary_values[1]
-            currency = salary_text[0] if salary_text[0] != "$" else "USD"
-
-            compensation = Compensation(
-                min_amount=int(salary_min),
-                max_amount=int(salary_max),
-                currency=currency,
-            )
+        salary_label = salary_tag.get_text(" ", strip=True) if salary_tag else None
+        description = None
 
         title_tag = job_card.find("span", class_="sr-only")
         title = title_tag.get_text(strip=True) if title_tag else "N/A"
@@ -217,22 +218,28 @@ class LinkedIn(Scraper):
                 date_posted = None
         job_details = {}
         if full_descr:
-            job_details = self._get_job_details(job_id)
+            try:
+                job_details = self._get_job_details(job_id or posting_path)
+            except LinkedInRateLimitException:
+                raise
+            except Exception:
+                # The standalone bulk API has always kept the card if its details fail.
+                job_details = {}
             description = job_details.get("description")
         is_remote = is_job_remote(title, description, location)
 
         return JobPost(
-            id=f"li-{job_id}",
+            id=f"li-{job_id}" if job_id else None,
             title=title,
             company_name=company,
             company_url=company_url,
             location=location,
             is_remote=is_remote,
             date_posted=date_posted,
-            job_url=f"{self.base_url}/jobs/view/{job_id}",
-            compensation=compensation,
+            job_url=f"{self.base_url}{posting_path}",
+            salary_label=salary_label or None,
             job_type=job_details.get("job_type"),
-            job_level=job_details.get("job_level", "").lower(),
+            job_level=(job_details.get("job_level") or "").lower(),
             company_industry=job_details.get("company_industry"),
             description=job_details.get("description"),
             job_url_direct=job_details.get("job_url_direct"),
@@ -261,17 +268,13 @@ class LinkedIn(Scraper):
         :param job_page_url:
         :return: dict
         """
-        try:
-            response = request_gate.get(
-                self.session, f"{self.base_url}/jobs/view/{job_id}", timeout=5
-            )
-            response.raise_for_status()
-        except LinkedInRateLimitException:
-            raise
-        except Exception:
-            return {}
-        if "linkedin.com/signup" in response.url:
-            return {}
+        path = job_id if job_id.startswith("/jobs/view/") else f"/jobs/view/{job_id}"
+        response = request_gate.get(self.session, f"{self.base_url}{path}", timeout=5)
+        if self._sign_in_page(response):
+            raise LinkedInException("LinkedIn returned a sign-in page for the job")
+        if response.status_code in (404, 410):
+            raise LinkedInJobGone(f"LinkedIn job {job_id} returned HTTP {response.status_code}")
+        response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
         div_content = soup.find(
@@ -287,7 +290,7 @@ class LinkedIn(Scraper):
             elif output_format == DescriptionFormat.PLAIN:
                 description = plain_converter(description)
         h3_tag = soup.find(
-            "h3", text=lambda text: text and "Job function" in text.strip()
+            "h3", string=lambda text: text and "Job function" in text.strip()
         )
 
         job_function = None
@@ -319,25 +322,17 @@ class LinkedIn(Scraper):
         :param metadata_card
         :return: location
         """
-        location = Location(country=Country.from_string(self.country))
-        if metadata_card is not None:
-            location_tag = metadata_card.find(
-                "span", class_="job-search-card__location"
-            )
-            location_string = location_tag.text.strip() if location_tag else "N/A"
-            parts = location_string.split(", ")
-            if len(parts) == 2:
-                city, state = parts
-                location = Location(
-                    city=city,
-                    state=state,
-                    country=Country.from_string(self.country),
-                )
-            elif len(parts) == 3:
-                city, state, country = parts
-                country = Country.from_string(country)
-                location = Location(city=city, state=state, country=country)
-        return location
+        tag = metadata_card.select_one(".job-search-card__location") if metadata_card else None
+        parts = [part.strip() for part in tag.get_text(strip=True).split(",")] if tag else []
+        if not parts:
+            return Location()
+        try:
+            country = Country.from_string(parts[-1])
+        except ValueError:
+            # Keep the provider's wording for city/region-only or unknown locations.
+            return Location(city=parts[0], state=", ".join(parts[1:]) or None)
+        return Location(country=country, city=parts[0] if len(parts) > 1 else None,
+                        state=", ".join(parts[1:-1]) or None)
 
     def _parse_job_url_direct(self, soup: BeautifulSoup) -> str | None:
         """

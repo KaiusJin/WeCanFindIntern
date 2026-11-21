@@ -123,9 +123,11 @@ def test_search_and_detail_instances_share_aimd_rate(gate):
     first_interval = limiter.interval_seconds
     detail.get_job_details("123")
 
-    assert first_interval == pytest.approx(1 / 0.22)
+    assert first_interval == pytest.approx(1 / 0.2)
     assert clock.waits == pytest.approx([first_interval])
-    assert limiter.interval_seconds == pytest.approx(1 / 0.24)
+    assert limiter.interval_seconds == pytest.approx(1 / 0.2)
+    detail.get_job_details("124")
+    assert limiter.interval_seconds == pytest.approx(1 / 0.22)
     assert search.session.get_adapter("https://").max_retries.total == 0
     assert detail.session.get_adapter("https://").max_retries.total == 0
 
@@ -138,7 +140,7 @@ def test_429_halves_rate_and_uses_exponential_backoff(gate):
     limiter.get(session, "https://www.linkedin.com/search")
 
     assert clock.waits == [60.0, 120.0]
-    assert limiter.interval_seconds == pytest.approx(1 / (0.2 / 4 + 0.02))
+    assert limiter.interval_seconds == pytest.approx(1 / (0.2 / 4))
     assert limiter.state == "closed"
 
 
@@ -217,7 +219,7 @@ def test_unsuccessful_half_open_probe_reopens_circuit(gate, probe_result):
     session.get.return_value = response(429)
     with pytest.raises(LinkedInRateLimitException):
         limiter.get(session, "https://www.linkedin.com/search")
-    clock.sleep(300)
+    clock.sleep(60)
     session.get.side_effect = (
         probe_result if isinstance(probe_result, Exception) else [response(probe_result)]
     )
@@ -233,7 +235,7 @@ def test_successes_cannot_exceed_maximum_rate(gate):
     limiter, _ = gate
     session = Mock()
     session.get.return_value = response()
-    for _ in range(60):
+    for _ in range(125):
         limiter.get(session, "https://www.linkedin.com/search")
     assert limiter.interval_seconds == 1.0
 
@@ -244,7 +246,7 @@ def test_failed_probe_blocks_other_queued_threads(gate):
     session.get.return_value = response(429)
     with pytest.raises(LinkedInRateLimitException):
         limiter.get(session, "https://www.linkedin.com/search")
-    clock.sleep(300)
+    clock.sleep(60)
     session.get.reset_mock()
 
     def request_from_worker(_):
@@ -279,7 +281,7 @@ def test_successful_requests_from_threads_share_one_schedule(gate):
 
     assert len(sent_at) == 4
     assert [end - start for start, end in zip(sent_at, sent_at[1:], strict=False)] == (
-        pytest.approx([1 / 0.22, 1 / 0.24, 1 / 0.26])
+        pytest.approx([5.0, 5.0, 1 / 0.22])
     )
 
 
@@ -325,4 +327,4 @@ def test_slow_response_overlaps_second_request_and_cannot_undo_429(gate):
 
     assert stale_completed.is_set()
     assert starts == [0.0, 5.0, 95.0]
-    assert limiter.interval_seconds == pytest.approx(1 / 0.12)
+    assert limiter.interval_seconds == pytest.approx(1 / 0.1)

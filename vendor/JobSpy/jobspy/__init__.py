@@ -20,6 +20,76 @@ from jobspy.util import (
 )
 
 
+def job_record(
+    job, site, country_enum, enforce_annual_salary=False, *, include_description_salary=True
+):
+    """Flatten a provider job using the same field contract for page and bulk callers."""
+    job_data = job.model_dump()
+    job_data["site"] = site
+    job_data["company"] = job_data["company_name"]
+    job_data["job_type"] = (
+        ", ".join(job_type.value[0] for job_type in job_data["job_type"])
+        if job_data["job_type"]
+        else None
+    )
+    job_data["emails"] = (
+        ", ".join(job_data["emails"]) if job_data["emails"] else None
+    )
+    if job_data["location"]:
+        job_data["location"] = Location(
+            **job_data["location"]
+        ).display_location()
+
+    # Handle compensation
+    compensation_obj = job_data.get("compensation")
+    if compensation_obj and isinstance(compensation_obj, dict):
+        job_data["interval"] = (
+            compensation_obj.get("interval").value
+            if compensation_obj.get("interval")
+            else None
+        )
+        job_data["min_amount"] = compensation_obj.get("min_amount")
+        job_data["max_amount"] = compensation_obj.get("max_amount")
+        job_data["currency"] = compensation_obj.get("currency", "USD")
+        job_data["salary_source"] = SalarySource.DIRECT_DATA.value
+        if enforce_annual_salary and (
+            job_data["interval"]
+            and job_data["interval"] != "yearly"
+            and job_data["min_amount"]
+            and job_data["max_amount"]
+        ):
+            convert_to_annual(job_data)
+    else:
+        if include_description_salary and country_enum == Country.USA:
+            (
+                job_data["interval"],
+                job_data["min_amount"],
+                job_data["max_amount"],
+                job_data["currency"],
+            ) = extract_salary(
+                job_data["description"],
+                enforce_annual_salary=enforce_annual_salary,
+            )
+            job_data["salary_source"] = SalarySource.DESCRIPTION.value
+
+    job_data["salary_source"] = (
+        job_data["salary_source"]
+        if "min_amount" in job_data and job_data["min_amount"]
+        else None
+    )
+
+    # Optional source metadata
+    job_data["skills"] = (
+        ", ".join(job_data["skills"]) if job_data["skills"] else None
+    )
+    job_data["experience_range"] = job_data.get("experience_range")
+    job_data["company_rating"] = job_data.get("company_rating")
+    job_data["company_reviews_count"] = job_data.get("company_reviews_count")
+    job_data["vacancy_count"] = job_data.get("vacancy_count")
+    job_data["work_from_home_type"] = job_data.get("work_from_home_type")
+    return job_data
+
+
 def scrape_jobs(
     site_name: str | list[str] | Site | list[Site] | None = None,
     search_term: str | None = None,
@@ -114,71 +184,7 @@ def scrape_jobs(
 
     for site, job_response in site_to_jobs_dict.items():
         for job in job_response.jobs:
-            job_data = job.dict()
-            job_url = job_data["job_url"]
-            job_data["site"] = site
-            job_data["company"] = job_data["company_name"]
-            job_data["job_type"] = (
-                ", ".join(job_type.value[0] for job_type in job_data["job_type"])
-                if job_data["job_type"]
-                else None
-            )
-            job_data["emails"] = (
-                ", ".join(job_data["emails"]) if job_data["emails"] else None
-            )
-            if job_data["location"]:
-                job_data["location"] = Location(
-                    **job_data["location"]
-                ).display_location()
-
-            # Handle compensation
-            compensation_obj = job_data.get("compensation")
-            if compensation_obj and isinstance(compensation_obj, dict):
-                job_data["interval"] = (
-                    compensation_obj.get("interval").value
-                    if compensation_obj.get("interval")
-                    else None
-                )
-                job_data["min_amount"] = compensation_obj.get("min_amount")
-                job_data["max_amount"] = compensation_obj.get("max_amount")
-                job_data["currency"] = compensation_obj.get("currency", "USD")
-                job_data["salary_source"] = SalarySource.DIRECT_DATA.value
-                if enforce_annual_salary and (
-                    job_data["interval"]
-                    and job_data["interval"] != "yearly"
-                    and job_data["min_amount"]
-                    and job_data["max_amount"]
-                ):
-                    convert_to_annual(job_data)
-            else:
-                if country_enum == Country.USA:
-                    (
-                        job_data["interval"],
-                        job_data["min_amount"],
-                        job_data["max_amount"],
-                        job_data["currency"],
-                    ) = extract_salary(
-                        job_data["description"],
-                        enforce_annual_salary=enforce_annual_salary,
-                    )
-                    job_data["salary_source"] = SalarySource.DESCRIPTION.value
-
-            job_data["salary_source"] = (
-                job_data["salary_source"]
-                if "min_amount" in job_data and job_data["min_amount"]
-                else None
-            )
-
-            # Optional source metadata
-            job_data["skills"] = (
-                ", ".join(job_data["skills"]) if job_data["skills"] else None
-            )
-            job_data["experience_range"] = job_data.get("experience_range")
-            job_data["company_rating"] = job_data.get("company_rating")
-            job_data["company_reviews_count"] = job_data.get("company_reviews_count")
-            job_data["vacancy_count"] = job_data.get("vacancy_count")
-            job_data["work_from_home_type"] = job_data.get("work_from_home_type")
-
+            job_data = job_record(job, site, country_enum, enforce_annual_salary)
             job_df = pd.DataFrame([job_data])
             jobs_dfs.append(job_df)
 

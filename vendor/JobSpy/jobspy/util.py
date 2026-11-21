@@ -314,6 +314,7 @@ desired_order = [
     "date_posted",
     "job_type",
     "salary_source",
+    "salary_label",
     "interval",
     "min_amount",
     "max_amount",

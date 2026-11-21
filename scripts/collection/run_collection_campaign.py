@@ -10,14 +10,24 @@ import os
 import random
 import re
 import time
-from collections import Counter
+from collections import Counter, deque
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
-from jobspy.exception import LinkedInRateLimitException
+import psycopg
+from jobspy.exception import (
+    InvalidPageCursor,
+    LinkedInJobGone,
+    LinkedInRateLimitException,
+    PaginationLimit,
+)
+from jobspy.linkedin.request import CIRCUIT_COOLDOWN_SECONDS, request_gate
 
+from scripts.collection.checkpoint import QueryCheckpoint, QueryProgress, keep_best
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.db.repositories.collection_cache import CollectionCacheRepository
@@ -29,7 +39,7 @@ from wecanfindintern.ingestion.jobspy_adapter import (
     NormalizedJob,
     fetch_linkedin_details,
     merge_linkedin_details,
-    scrape_checked,
+    open_job_search,
 )
 from wecanfindintern.ingestion.location_query import resolve_query_location
 from wecanfindintern.ingestion.pipeline import run_ingestion_pipeline
@@ -70,10 +80,15 @@ class CampaignResult:
 
 
 def is_retryable_collection_error(error: Exception) -> bool:
-    """Stop deterministic errors and exhausted rate limits for this campaign."""
+    """Classify ordinary query failures; LinkedIn cooldowns remain queued."""
 
     if isinstance(error, LinkedInRateLimitException):
         return False
+    if isinstance(error, PaginationLimit):
+        return False
+    response = getattr(error, "response", None)
+    if response is not None:
+        return response.status_code in _RETRYABLE_HTTP_STATUSES or response.status_code >= 500
     message = str(error).casefold()
     if any(marker in message for marker in _PERMANENT_ERROR_MARKERS):
         return False
@@ -96,6 +111,12 @@ def log(message: str, level: str = "INFO") -> None:
     print(f"[{now_str}] [{level}] {message}", flush=True)
 
 
+async def _wait_for_linkedin(error: LinkedInRateLimitException, item: str) -> None:
+    delay = error.retry_after if error.retry_after > 0 else CIRCUIT_COOLDOWN_SECONDS
+    log(f"LinkedIn cooldown {delay:.1f}s; keeping {item} queued", level="WARN")
+    await asyncio.sleep(delay)
+
+
 async def collect_all(
     definitions: list[dict[str, Any]],
     *,
@@ -108,156 +129,127 @@ async def collect_all(
     collected: dict[str, NormalizedJob] = {}
     failures: list[str] = []
     stats = {"retried": 0, "succeeded": 0, "failed": 0, "skipped": 0}
-    disabled_sources: set[str] = set()
-    lock = asyncio.Lock()
-    semaphore = asyncio.Semaphore(max(1, concurrency))
+    tasks = [
+        (definition, source)
+        for definition in definitions
+        if definition.get("enabled", True)
+        for source in definition["sites"]
+    ]
+    # A worker sleeping inside LinkedIn's HTTP gate must never occupy Indeed's only slot.
+    has_linkedin = any(source == "linkedin" for _, source in tasks)
+    indeed_slots = asyncio.Semaphore(max(1, concurrency - int(has_linkedin)))
     linkedin_lock = asyncio.Lock()
+    newly_seen = set()
+    restored_ids = set()
+    if checkpoint is not None:
+        for progress in checkpoint.queries.values():
+            restored_ids.update(progress.jobs)
+    started = time.monotonic()
+    log(f"Starting collection campaign: {len(tasks)} site queries")
 
-    tasks: list[tuple[dict[str, Any], str]] = []
-    for definition in definitions:
-        if not definition.get("enabled", True):
-            continue
-        for source in definition["sites"]:
-            tasks.append((definition, source))
+    async def fetch(read_page, source, cursor):
+        retries = 0
+        while True:
+            try:
+                if source == "linkedin":
+                    async with linkedin_lock:
+                        try:
+                            return await asyncio.to_thread(read_page, cursor)
+                        except LinkedInRateLimitException as error:
+                            await _wait_for_linkedin(error, f"page {cursor or 'first'}")
+                            stats["retried"] += 1
+                    continue  # Let the next waiting LinkedIn page take its turn.
+                async with indeed_slots:
+                    return await asyncio.to_thread(read_page, cursor)
+            except InvalidPageCursor:
+                raise
+            except Exception as error:
+                if retries >= max_retries or not is_retryable_collection_error(error):
+                    raise
+                retries += 1
+                stats["retried"] += 1
+                delay = min(15.0, 1.5 * 2 ** (retries - 1) + random.uniform(0.5, 2))
+                log(f"Retrying {source} page after {delay:.1f}s: {error}", level="WARN")
+                await asyncio.sleep(delay)
 
-    total_tasks = len(tasks)
-    log(f"Starting collection campaign: {total_tasks} site queries with concurrency={concurrency}")
+    async def collect_query(definition, source):
+        key = (definition["name"], source)
+        state = (
+            checkpoint.queries.setdefault(key, QueryProgress())
+            if checkpoint is not None
+            else QueryProgress()
+        )
+        values = dict(definition["query"])
+        overrides = values.pop("source_overrides", {})
+        values.update(overrides.get(source, {}))
+        values = resolve_query_location(values, source)
+        if hours_old_override is not None:
+            values["hours_old"] = hours_old_override
+        if source == "linkedin" and defer_linkedin_descriptions:
+            values["linkedin_fetch_description"] = False
+        query = JobSpyQuery.model_validate({**values, "sites": [source]})
 
-    async def _collect_query(definition: dict[str, Any], source: str, task_idx: int) -> None:
-        async with semaphore:
-            key = (definition["name"], source)
-            cached = checkpoint.completed.get(key) if checkpoint is not None else None
-            async with lock:
-                source_disabled = cached is None and source in disabled_sources
-                if source_disabled:
-                    stats["skipped"] += 1
-            if source_disabled:
-                log(
-                    f"[{task_idx}/{total_tasks}] Skipped {definition['name']} / {source}: "
-                    "provider circuit is open",
-                    level="WARN",
+        async def save(jobs, cursor, restart=False):
+            # Commit this page and its continuation together before issuing another request.
+            if checkpoint is not None:
+                await asyncio.to_thread(
+                    checkpoint.save_page, key, state.sequence, jobs, cursor, restart
                 )
-                return
+            state.advance(jobs, cursor, restart)
 
-            offset = 0
-            seen_for_query: set[str] = set()
-            maximum = definition.get("max_results_per_source", 50)
-            page_size = definition.get("page_size", 25)
-            query_jobs: list[NormalizedJob] = [] if cached is None else cached
-            query_has_failed = False
-
-            while cached is None and offset < maximum:
-                requested = min(page_size, maximum - offset)
-                values = dict(definition["query"])
-                overrides = values.pop("source_overrides", {})
-                values.update(overrides.get(source, {}))
-                values = resolve_query_location(values, source)
-                if hours_old_override is not None and source in {"indeed", "linkedin"}:
-                    values["hours_old"] = hours_old_override
-                if source == "linkedin" and defer_linkedin_descriptions:
-                    values["linkedin_fetch_description"] = False
-                query = JobSpyQuery.model_validate(
-                    {**values, "sites": [source], "offset": offset, "results_wanted": requested}
-                )
-
-                # Automatic retry with exponential backoff and jitter
-                retry_count = 0
-                result = None
-                while True:
+        if not state.complete:
+            since = (
+                checkpoint.started_at - timedelta(hours=query.hours_old)
+                if checkpoint is not None and query.hours_old is not None
+                else None
+            )
+            with open_job_search(query, posted_since=since) as read_page:
+                restarted = False
+                while not state.complete:
                     try:
-                        _, result = await asyncio.to_thread(scrape_checked, query)
+                        page = await fetch(read_page, source, state.cursor)
+                    except InvalidPageCursor as error:
+                        await save([], None, restart=True)
+                        if not restarted:
+                            restarted = True
+                            continue
+                        failures.append(f"{key[0]}:{source}: {error}")
+                        break
+                    except PaginationLimit as error:
+                        # Recheck the last accessible page on resume, never certify a hard cutoff.
+                        await save([], state.last_cursor, restart=True)
+                        failures.append(f"{key[0]}:{source}: {error}")
                         break
                     except Exception as error:
-                        retryable = is_retryable_collection_error(error)
-                        if not retryable:
-                            query_has_failed = True
-                            async with lock:
-                                disabled_sources.add(source)
-                            log(
-                                f"[{task_idx}/{total_tasks}] FAILED; "
-                                f"opened circuit for {source}: "
-                                f"{definition['name']} / {source} "
-                                f"({type(error).__name__}: {error})",
-                                level="ERROR",
-                            )
-                            async with lock:
-                                failures.append(
-                                    f"{definition['name']}:{source}:{type(error).__name__}: {error}"
-                                )
-                            break
-                        if retry_count >= max_retries:
-                            query_has_failed = True
-                            log(
-                                f"[{task_idx}/{total_tasks}] FAILED after {max_retries} retries: "
-                                f"{definition['name']} / {source} "
-                                f"({type(error).__name__}: {error})",
-                                level="ERROR",
-                            )
-                            async with lock:
-                                failures.append(
-                                    f"{definition['name']}:{source}:{type(error).__name__}: {error}"
-                                )
-                            break
-                        retry_count += 1
-                        async with lock:
-                            stats["retried"] += 1
-                        backoff = min(
-                            15.0,
-                            (2 ** (retry_count - 1)) * 1.5 + random.uniform(0.5, 2.0),
-                        )
-                        log(
-                            f"[{task_idx}/{total_tasks}] Retry {retry_count}/{max_retries} "
-                            f"in {backoff:.1f}s for {definition['name']} / {source} "
-                            f"({type(error).__name__}: {error})",
-                            level="WARN",
-                        )
-                        await asyncio.sleep(backoff)
+                        failures.append(f"{key[0]}:{source}: {type(error).__name__}: {error}")
+                        break
 
-                if query_has_failed or result is None or not result.jobs:
-                    break
+                    jobs = [
+                        job for job in page.jobs if _is_in_country_scope(job, query.country_indeed)
+                    ]
+                    newly_seen.update(job.source_fingerprint for job in jobs)
+                    following = page.next_cursor
+                    if following is not None and (
+                        following == state.cursor or following in state.visited
+                    ):
+                        await save(jobs, None, restart=True)
+                        failures.append(f"{key[0]}:{source}: repeated page cursor, end unconfirmed")
+                        break
+                    await save(jobs, following)
 
-                new_jobs = [
-                    job
-                    for job in result.jobs
-                    if job.source_fingerprint not in seen_for_query
-                    and _is_in_country_scope(job, values.get("country_indeed"))
-                ]
-                if not new_jobs:
-                    break
-                seen_for_query.update(job.source_fingerprint for job in new_jobs)
-                query_jobs.extend(new_jobs)
-                offset += len(result.jobs)
+        stats["succeeded" if state.complete else "failed"] += 1
+        for job in state.jobs.values():
+            keep_best(collected, job)
+        log(
+            f"{key[0]} / {source}: {len(state.jobs)} unique jobs, "
+            f"{'complete' if state.complete else 'pending'}"
+        )
 
-            if checkpoint is not None and cached is None and not query_has_failed:
-                await asyncio.to_thread(checkpoint.save, key, query_jobs)
-
-            async with lock:
-                if query_has_failed:
-                    stats["failed"] += 1
-                else:
-                    stats["succeeded"] += 1
-                for job in query_jobs:
-                    existing = collected.get(job.source_fingerprint)
-                    if existing is None or _record_score(job) > _record_score(existing):
-                        collected[job.source_fingerprint] = job
-
-            if not query_has_failed:
-                log(
-                    f"[{task_idx}/{total_tasks}] Collected {definition['name']} / {source}: "
-                    f"{len(seen_for_query)} source jobs (unique total: {len(collected)})"
-                )
-
-    async def _collect_single_query(definition: dict[str, Any], source: str, task_idx: int) -> None:
-        if source == "linkedin":
-            # Wait outside the global semaphore so Indeed can keep collecting
-            # while LinkedIn is throttled. Recheck the source circuit inside.
-            async with linkedin_lock:
-                await _collect_query(definition, source, task_idx)
-        else:
-            await _collect_query(definition, source, task_idx)
-
-    await asyncio.gather(
-        *[_collect_single_query(defn, src, idx) for idx, (defn, src) in enumerate(tasks, start=1)]
+    await asyncio.gather(*(collect_query(definition, source) for definition, source in tasks))
+    elapsed = max(time.monotonic() - started, 0.001)
+    log(
+        f"List throughput: {len(newly_seen - restored_ids) * 60 / elapsed:.2f} "
+        "new unique source jobs/minute (excluding restored jobs)"
     )
     return list(collected.values()), failures, stats
 
@@ -297,87 +289,116 @@ async def hydrate_linkedin_descriptions(
     *,
     ttl_seconds: int,
     concurrency: int,
+    checkpoint=None,
+    max_retries: int = 3,
 ) -> tuple[list[NormalizedJob], dict[str, int]]:
-    """Reuse fresh LinkedIn JDs and fetch each remaining source ID only once."""
-
-    linkedin_jobs = [job for job in jobs if job.source == "linkedin"]
-    cached = await cache.linkedin_details([job.source_fingerprint for job in linkedin_jobs])
-    fresh_since = datetime.now(UTC) - timedelta(seconds=max(0, ttl_seconds))
+    """Resolve each ID once per sweep; pending IDs are derived from the durable list cards."""
+    linkedin = {job.source_fingerprint: job for job in jobs if job.source == "linkedin"}
+    saved = checkpoint.details if checkpoint is not None else {}
     hydrated: dict[str, NormalizedJob] = {}
-    cache_hits = 0
-    for job in linkedin_jobs:
-        entry = cached.get(job.source_fingerprint)
-        if (
-            entry is None
-            or entry.details_fetched_at < fresh_since
-            or not _linkedin_card_matches_cache(job, entry.payload)
-        ):
-            continue
-        hydrated[job.source_fingerprint] = merge_linkedin_details(
-            job,
-            entry.payload,
-            fetched_at=entry.details_fetched_at,
-        )
-        cache_hits += 1
+    removed = set()
+    pending = []
+    stats = dict.fromkeys(
+        (
+            "linkedin_detail_cache_hits",
+            "linkedin_detail_fetched",
+            "linkedin_detail_failed",
+            "linkedin_detail_stale_fallbacks",
+            "linkedin_detail_removed",
+            "linkedin_detail_restored",
+        ),
+        0,
+    )
 
-    semaphore = asyncio.Semaphore(max(1, concurrency))
-    fetched = 0
-    failed = 0
-    stale_fallbacks = 0
-    counter_lock = asyncio.Lock()
-    rate_limited = False
+    for fingerprint, job in linkedin.items():
+        if fingerprint in saved:
+            previous = saved[fingerprint]
+            if previous is None:
+                removed.add(fingerprint)
+                continue
+            if _linkedin_card_matches_cache(job, previous.raw):
+                hydrated[fingerprint] = merge_linkedin_details(
+                    job, previous.raw, fetched_at=previous.details_fetched_at
+                )
+                stats["linkedin_detail_restored"] += 1
+                continue
+        pending.append(fingerprint)
 
-    async def _fetch(job: NormalizedJob) -> None:
-        nonlocal fetched, failed, stale_fallbacks, rate_limited
-        if job.source_fingerprint in hydrated:
-            return
-        if not job.source_job_id:
-            async with counter_lock:
-                failed += 1
-            return
-        async with semaphore:
-            try:
-                details = (
-                    {}
-                    if rate_limited
-                    else await asyncio.to_thread(fetch_linkedin_details, job.source_job_id)
-                )
-            except LinkedInRateLimitException as error:
-                rate_limited = True
-                log(f"Paused LinkedIn detail fetches: {error}", level="WARN")
-                details = {}
-            except Exception as error:
-                log(
-                    f"LinkedIn detail fetch failed for {job.source_job_id}: "
-                    f"{type(error).__name__}: {error}",
-                    level="WARN",
-                )
-                details = {}
-        if details.get("description"):
-            hydrated[job.source_fingerprint] = merge_linkedin_details(job, details)
-            async with counter_lock:
-                fetched += 1
+    cache_entries = await cache.linkedin_details(pending) if pending else {}
+    fresh_since = datetime.now(UTC) - timedelta(seconds=max(0, ttl_seconds))
+    work = deque(pending)
+
+    async def resolved(fingerprint, job):
+        if checkpoint is not None:
+            await asyncio.to_thread(checkpoint.save_detail, fingerprint, job)
+            saved[fingerprint] = job
+        if job is None:
+            removed.add(fingerprint)
         else:
-            stale = cached.get(job.source_fingerprint)
-            if stale is not None:
-                hydrated[job.source_fingerprint] = merge_linkedin_details(
-                    job,
-                    stale.payload,
-                    fetched_at=stale.details_fetched_at,
-                )
-                async with counter_lock:
-                    stale_fallbacks += 1
-            async with counter_lock:
-                failed += 1
+            hydrated[fingerprint] = job
 
-    await asyncio.gather(*[_fetch(job) for job in linkedin_jobs])
-    merged_jobs = [hydrated.get(job.source_fingerprint, job) for job in jobs]
-    return merged_jobs, {
-        "linkedin_detail_cache_hits": cache_hits,
-        "linkedin_detail_fetched": fetched,
-        "linkedin_detail_failed": failed,
-        "linkedin_detail_stale_fallbacks": stale_fallbacks,
-    }
+    async def fetch(fingerprint):
+        job = linkedin[fingerprint]
+        entry = cache_entries.get(fingerprint)
+        if (
+            entry
+            and entry.details_fetched_at >= fresh_since
+            and _linkedin_card_matches_cache(job, entry.payload)
+        ):
+            await resolved(
+                fingerprint,
+                merge_linkedin_details(job, entry.payload, fetched_at=entry.details_fetched_at),
+            )
+            stats["linkedin_detail_cache_hits"] += 1
+            return
+        retries = 0
+        detail_key = job.source_job_id or urlsplit(job.source_url).path
+        reason = "missing posting link"
+        while detail_key:
+            try:
+                details = await asyncio.to_thread(fetch_linkedin_details, detail_key)
+            except LinkedInJobGone as error:
+                await resolved(fingerprint, None)
+                log(str(error))
+                return
+            except LinkedInRateLimitException as error:
+                await _wait_for_linkedin(error, f"details for {job.source_job_id}")
+                work.append(fingerprint)
+                return
+            except Exception as error:
+                reason = str(error)
+                if retries < max_retries and is_retryable_collection_error(error):
+                    retries += 1
+                    await asyncio.sleep(min(15, 2 ** (retries - 1) * 1.5))
+                    continue
+                break
+            if str(details.get("description") or "").strip():
+                await resolved(fingerprint, merge_linkedin_details(job, details))
+                stats["linkedin_detail_fetched"] += 1
+                return
+            reason = "empty description"
+            break
+        if entry is not None and _linkedin_card_matches_cache(job, entry.payload):
+            hydrated[fingerprint] = merge_linkedin_details(
+                job, entry.payload, fetched_at=entry.details_fetched_at
+            )
+            stats["linkedin_detail_stale_fallbacks"] += 1
+        stats["linkedin_detail_failed"] += 1
+        log(f"Pending LinkedIn detail {job.source_job_id}: {reason}", level="WARN")
+
+    # Bound active coroutines as well as network requests when a full search finds many IDs.
+
+    async def worker():
+        while work:
+            await fetch(work.popleft())
+
+    await asyncio.gather(*(worker() for _ in range(min(len(pending), max(1, concurrency)))))
+    stats["linkedin_detail_removed"] = len(removed)
+    return [
+        hydrated.get(job.source_fingerprint, job)
+        for job in jobs
+        if job.source_fingerprint not in removed
+    ], stats
 
 
 def _linkedin_card_matches_cache(job: NormalizedJob, payload: dict[str, Any]) -> bool:
@@ -387,13 +408,6 @@ def _linkedin_card_matches_cache(job: NormalizedJob, payload: dict[str, Any]) ->
         if current not in (None, "") and previous not in (None, "") and current != previous:
             return False
     return True
-
-
-def _record_score(job: NormalizedJob) -> tuple[int, int]:
-    has_salary = int(
-        bool(job.salary and (job.salary.minimum is not None or job.salary.maximum is not None))
-    )
-    return has_salary, len(job.description or "")
 
 
 def _is_in_country_scope(job: NormalizedJob, requested_country: str | None) -> bool:
@@ -426,7 +440,8 @@ async def run(
         )
     )
 
-    database = Database(Settings.from_env())
+    settings = Settings.from_env()
+    database = Database(settings)
     await database.open()
     repository: JobIngestionRepository | None = None
     run_record = None
@@ -434,7 +449,17 @@ async def run(
     failures: list[str] = []
     query_stats: dict[str, int] = {}
     result: CampaignResult | None = None
+    resources = ExitStack()
     try:
+        if checkpoint is None:
+            # Coordinate local collectors, including two processes using the same local store.
+            guard = resources.enter_context(psycopg.connect(settings.database_url, autocommit=True))
+            if not guard.execute("SELECT pg_try_advisory_lock(790341567)").fetchone()[0]:
+                raise RuntimeError("Another collection campaign is running")
+            checkpoint = QueryCheckpoint.local(
+                Path(os.getenv("WCFI_LOG_DIR", "logs")), config_path, settings.database_url
+            )
+            resources.callback(checkpoint.db.close)
         collection_cache = CollectionCacheRepository(database.pool)
         completed_campaigns = await collection_cache.completed_campaign_count(config_path.name)
         hours_old = collection_hours_window(
@@ -449,113 +474,110 @@ async def run(
             f"full sweep every {full_sweep_every} completed campaigns"
         )
 
-        # Stage 1a: collect provider list pages first. LinkedIn details are deferred
-        # until IDs have been deduplicated across every keyword query.
-        collection_started = time.monotonic()
-        defer_linkedin = linkedin_details_enabled(definitions)
-        if checkpoint is not None:
-            checkpoint.restore(sweep_number)
-        normalized_jobs, failures, query_stats = await collect_all(
-            definitions,
-            concurrency=concurrency,
-            max_retries=max_retries,
-            defer_linkedin_descriptions=defer_linkedin,
-            hours_old_override=hours_old,
-            checkpoint=checkpoint,
+        checkpoint.restore(sweep_number)
+        resources.enter_context(
+            request_gate.campaign(checkpoint.retry_at, checkpoint.save_cooldown)
         )
-        query_stats.update(
-            {
-                "full_sweep": int(hours_old is None),
-                "recent_hours": hours_old or 0,
-                "sweep_number": sweep_number,
-            }
-        )
-
-        if defer_linkedin:
-            normalized_jobs, detail_stats = await hydrate_linkedin_descriptions(
-                normalized_jobs,
-                collection_cache,
-                ttl_seconds=int(
-                    os.getenv(
-                        "WCFI_LINKEDIN_DETAIL_TTL_SECONDS",
-                        defaults.get("linkedin_detail_ttl_seconds", 86_400),
-                    )
-                ),
-                concurrency=int(
-                    os.getenv(
-                        "WCFI_LINKEDIN_DETAIL_CONCURRENCY",
-                        defaults.get("linkedin_detail_concurrency", 4),
-                    )
-                ),
-            )
-            query_stats.update(detail_stats)
-            log(
-                "LinkedIn detail stage complete: "
-                f"cached={detail_stats['linkedin_detail_cache_hits']}, "
-                f"fetched={detail_stats['linkedin_detail_fetched']}, "
-                f"failed={detail_stats['linkedin_detail_failed']}, "
-                f"stale_fallbacks={detail_stats['linkedin_detail_stale_fallbacks']}"
-            )
-        collection_seconds = time.monotonic() - collection_started
-        log(
-            f"Collection stage complete in {collection_seconds:.1f}s: "
-            f"{len(normalized_jobs)} unique source records "
-            f"(queries succeeded={query_stats['succeeded']}, "
-            f"failed={query_stats['failed']}, retried={query_stats['retried']})"
-        )
+        by_source = {}
+        for definition in definitions:
+            if definition.get("enabled", True):
+                for source in definition["sites"]:
+                    by_source.setdefault(source, []).append({**definition, "sites": [source]})
 
         repository = JobIngestionRepository(database.pool)
-        sources = sorted({job.source for job in normalized_jobs})
         run_record = await repository.start_run(
-            sources=sources,
+            sources=sorted(by_source),
             query={
                 "campaign": config_path.name,
                 "plan_count": len(definitions),
                 "sweep_number": sweep_number,
                 "sweep_mode": sweep_mode,
                 "recent_hours": hours_old,
+                "native_pages": True,
             },
         )
-        scraped_at = datetime.now(UTC)
-        timings = DedupeTimings()
-        dedupe_seconds: dict[str, float] = {}
+        query_counts = Counter(retried=0, succeeded=0, failed=0, skipped=0)
 
-        def log_persistence(persisted: Counter[str]) -> None:
-            elapsed = time.monotonic() - persistence_started
-            dedupe_seconds.update(timings.summary(elapsed))
-            log(
-                f"Dedupe stage complete in {elapsed:.1f}s: created={persisted['created']}, "
-                f"merged={persisted['merged']}, updated={persisted['updated']}, "
-                f"unchanged={persisted['unchanged']}"
+        async def collect_source(source, plans):
+            want_details = source == "linkedin" and linkedin_details_enabled(plans)
+            slots = concurrency - int(source == "indeed" and "linkedin" in by_source)
+            jobs, issues, statistics = await collect_all(
+                plans,
+                concurrency=max(1, slots),
+                max_retries=max_retries,
+                defer_linkedin_descriptions=want_details,
+                hours_old_override=hours_old,
+                checkpoint=checkpoint,
             )
-            log(f"Dedupe timing (seconds): {json.dumps(dedupe_seconds)}")
+            query_counts.update(statistics)
+            failures.extend(issues)
+            if want_details:
+                jobs, details = await hydrate_linkedin_descriptions(
+                    jobs,
+                    collection_cache,
+                    ttl_seconds=int(
+                        os.getenv(
+                            "WCFI_LINKEDIN_DETAIL_TTL_SECONDS",
+                            defaults.get("linkedin_detail_ttl_seconds", 86_400),
+                        )
+                    ),
+                    concurrency=int(
+                        os.getenv(
+                            "WCFI_LINKEDIN_DETAIL_CONCURRENCY",
+                            defaults.get("linkedin_detail_concurrency", 4),
+                        )
+                    ),
+                    checkpoint=checkpoint,
+                    max_retries=max_retries,
+                )
+                query_counts.update(details)
+                if details["linkedin_detail_failed"]:
+                    failures.append(
+                        f"linkedin: {details['linkedin_detail_failed']} pending job descriptions"
+                    )
+                log(f"LinkedIn details: {details}")
 
-        persistence_started = time.monotonic()
+            return jobs
+
+        tasks = [
+            asyncio.create_task(collect_source(source, plans))
+            for source, plans in by_source.items()
+        ]
+        try:
+            source_results = await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        round_jobs = [job for jobs in source_results for job in jobs]
+        timings = DedupeTimings()
+        started = time.monotonic()
+        dedupe_seconds = {}
+
+        def record_timings(_outcomes):
+            dedupe_seconds.update(timings.summary(time.monotonic() - started))
+
         pipeline = await run_ingestion_pipeline(
             pool=database.pool,
             run_id=run_record.internal_id,
-            jobs=normalized_jobs,
-            scraped_at=scraped_at,
+            jobs=round_jobs,
+            scraped_at=checkpoint.attempt_at,
+            observed_at=checkpoint.observed,
             batch_size=batch_size,
             outcomes=counts,
             timings=timings,
-            after_persist=log_persistence,
+            after_persist=record_timings,
         )
-
-        # Stages 3 and 4: deterministic post-deduplication enrichment
-        salary = pipeline.salary
-        log(
-            f"Salary stages complete: source={salary.structured}, "
-            f"regex={salary.regex}, not_found={salary.not_found}, failed={salary.failed}"
+        total_jobs = pipeline.unique_jobs
+        query_stats = dict(query_counts)
+        query_stats.update(
+            {
+                "sweep_number": sweep_number,
+                "recent_hours": hours_old or 0,
+                "full_sweep": int(hours_old is None),
+            }
         )
-
-        term = pipeline.recruiting_term
-        log(
-            f"Recruiting term stages complete: regex={term.regex}, "
-            f"not_found={term.not_found}, "
-            f"cached={term.skipped_cached}, failed={term.failed}"
-        )
-
+        log(f"Dedupe timing (seconds): {dict(dedupe_seconds)}")
         await repository.finish_run(
             run_record.internal_id,
             failed_count=len(failures),
@@ -564,13 +586,13 @@ async def run(
         )
         duration = time.monotonic() - start_time
         result_status = (
-            "failed" if failures and not normalized_jobs else "partial" if failures else "success"
+            "failed" if failures and not total_jobs else "partial" if failures else "success"
         )
         result = CampaignResult(
             completed_at=datetime.now(UTC),
             duration_seconds=duration,
             status=result_status,
-            unique_jobs_collected=len(normalized_jobs),
+            unique_jobs_collected=total_jobs,
             dedupe_seconds=dedupe_seconds,
             database_stats={
                 "created": counts["created"],
@@ -578,17 +600,12 @@ async def run(
                 "updated": counts["updated"],
                 "unchanged": counts["unchanged"],
             },
-            salary_stats={
-                "structured": salary.structured,
-                "regex": salary.regex,
-                "not_found": salary.not_found,
-                "failed": salary.failed,
-            },
+            salary_stats=dataclasses.asdict(pipeline.salary),
             recruiting_term_stats={
-                "regex": term.regex,
-                "not_found": term.not_found,
-                "cached": term.skipped_cached,
-                "failed": term.failed,
+                "regex": pipeline.recruiting_term.regex,
+                "not_found": pipeline.recruiting_term.not_found,
+                "cached": pipeline.recruiting_term.skipped_cached,
+                "failed": pipeline.recruiting_term.failed,
             },
             query_stats=query_stats,
             failures=tuple(failures),
@@ -596,6 +613,8 @@ async def run(
         summary_path = Path(os.getenv("WCFI_LOG_DIR", "logs")) / "campaign_summary_latest.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(result.payload(), indent=2), encoding="utf-8")
+        if result.status == "success":
+            checkpoint.clear()
         log(f"Collection campaign finished in {duration:.1f}s. Summary written to {summary_path}")
 
     except Exception as error:
@@ -609,6 +628,7 @@ async def run(
         log(f"Campaign encountered fatal error: {error}", level="ERROR")
         raise
     finally:
+        resources.close()
         await database.close()
 
     if failures:

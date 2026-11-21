@@ -50,10 +50,6 @@ def expand_collection_catalog(raw: Any) -> list[dict[str, Any]]:
                             "source_overrides": source_overrides,
                         },
                         "interval_seconds": defaults.get("interval_seconds", 43_200),
-                        "page_size": defaults.get("page_size", 25),
-                        "max_results_per_source": defaults.get(
-                            "max_results_per_source", 40
-                        ),
                         "max_attempts": defaults.get("max_attempts", 3),
                     }
                 )

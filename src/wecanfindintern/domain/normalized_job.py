@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -58,9 +59,12 @@ class NormalizedJob(BaseModel):
 
 
 def build_source_fingerprint(
-    source: str, source_id: str | None, source_url: str
+    source: str, source_id: str | None, source_url: str, *, card_fields: tuple[str, ...] = ()
 ) -> str:
     identity = source_id or canonicalize_url(source_url)
+    if not source_id and card_fields:
+        # An ID-less card's URL can be reused. Keep distinct cards for the content matcher.
+        identity = json.dumps([identity, *card_fields], ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(f"{source}:{identity}".encode()).hexdigest()
 
 

@@ -5,12 +5,16 @@ import math
 import random
 import threading
 import time
+from contextlib import contextmanager
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 
 from jobspy.exception import LinkedInRateLimitException
 
 log = logging.getLogger("JobSpy:LinkedIn")
+
+
+CIRCUIT_COOLDOWN_SECONDS = 60.0
 
 
 def retry_after_seconds(value):
@@ -46,6 +50,31 @@ class LinkedInRequestGate:
         self._state = "closed"
         self._rate = 0.2
         self._consecutive_rate_limits = 0
+        self._successes = 0
+        self._save_cooldown = None
+
+    @contextmanager
+    def campaign(self, retry_at, save_cooldown):
+        """Carry a server cooldown across interrupted processes without delaying other sources."""
+        with self._changed:
+            self._save_cooldown = save_cooldown
+            remaining = retry_at - time.time()
+            if remaining > 0:
+                self._not_before = max(self._not_before, time.monotonic() + remaining)
+                self._consecutive_rate_limits = max(1, self._consecutive_rate_limits)
+                self._state = "open"
+        try:
+            yield
+        finally:
+            with self._changed:
+                self._save_cooldown = None
+
+    def _pause(self, delay):
+        now = time.monotonic()
+        self._not_before = max(self._not_before, now + delay)
+        if self._save_cooldown is not None:
+            self._save_cooldown(time.time() + self._not_before - now)
+        return self._not_before - now
 
     @property
     def interval_seconds(self):
@@ -59,7 +88,8 @@ class LinkedInRequestGate:
         with self._changed:
             while True:
                 now = time.monotonic()
-                if self._state == "open" and now < self._not_before:
+                deferred = self._save_cooldown is not None and self._consecutive_rate_limits
+                if (self._state == "open" or deferred) and now < self._not_before:
                     raise LinkedInRateLimitException(
                         "LinkedIn HTTP 429 circuit is open", retry_after=self._not_before - now
                     )
@@ -77,11 +107,9 @@ class LinkedInRequestGate:
                 self._in_flight += 1
                 return self._generation
 
-    def _open_circuit(self):
+    def _open_circuit(self, retry_after=0.0):
         self._state = "open"
-        now = time.monotonic()
-        self._not_before = max(self._not_before, now + 300.0)
-        delay = self._not_before - now
+        delay = self._pause(retry_after or CIRCUIT_COOLDOWN_SECONDS)
         log.warning("LinkedIn circuit opened; pausing requests for %.1fs", delay)
         raise LinkedInRateLimitException(
             f"LinkedIn HTTP 429 circuit is open; cooling down for {delay:.1f}s",
@@ -91,17 +119,16 @@ class LinkedInRequestGate:
     def _record_response(self, response, generation):
         if response.status_code == 429:
             self._generation += 1
+            self._successes = 0
             self._rate = max(1.0 / 60.0, self._rate * 0.5)
             self._consecutive_rate_limits += 1
-            backoff = min(300.0, 60.0 * 2 ** min(self._consecutive_rate_limits - 1, 3))
-            delay = max(
-                backoff + random.uniform(0, 10),
-                retry_after_seconds(response.headers.get("Retry-After")),
-            )
+            retry_after = retry_after_seconds(response.headers.get("Retry-After"))
             response.close()
-            self._not_before = max(self._not_before, time.monotonic() + delay)
             if self._state == "half_open" or self._consecutive_rate_limits >= 3:
-                self._open_circuit()
+                self._open_circuit(retry_after)
+            backoff = 60.0 * 2 ** (self._consecutive_rate_limits - 1)
+            delay = retry_after or backoff + random.uniform(0, 10)
+            self._pause(delay)
             log.warning("LinkedIn HTTP 429; waiting at least %.1fs before retry", delay)
             return
 
@@ -110,11 +137,22 @@ class LinkedInRequestGate:
         if generation != self._generation:
             return
         if 200 <= response.status_code < 400:
-            self._rate = min(1.0, self._rate + 0.02)
+            self._successes += 1
+            if self._successes >= 3:
+                self._rate = min(1.0, self._rate + 0.02)
+                self._successes = 0
             self._state = "closed"
-        elif self._state == "half_open":
+        else:
+            self._successes = 0
+        if self._state == "half_open" and (
+            response.status_code >= 500 or response.status_code == 408
+        ):
+            retry_after = retry_after_seconds(response.headers.get("Retry-After"))
             response.close()
-            self._open_circuit()
+            self._open_circuit(retry_after)
+        elif self._state == "half_open":
+            # Return the actual page error (e.g. 403/404) to its caller.
+            self._state = "closed"
         self._consecutive_rate_limits = 0
 
     def get(self, session, url, **kwargs):

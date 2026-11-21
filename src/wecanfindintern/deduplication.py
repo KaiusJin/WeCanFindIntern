@@ -1,20 +1,18 @@
-"""Candidate scoring after indexed PostgreSQL blocking.
-
-This module deliberately never searches the whole corpus. The repository first
-uses compact exact hashes and company/location/date indexes to produce at most a
-small candidate set, then these functions make the merge decision.
-"""
+"""Match source records within a collection round and against indexed database candidates."""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from difflib import SequenceMatcher
 from enum import StrEnum
+from typing import Any
 
 from wecanfindintern.domain.jobs import CanonicalJobInput
+from wecanfindintern.domain.salary import has_salary_period
 
 
 class DedupeAction(StrEnum):
@@ -33,6 +31,7 @@ class CandidateJob:
     description: str | None
     description_hash: str | None
     direct_url_hashes: frozenset[str]
+    source_identities: frozenset[tuple[str, str | None]] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +42,125 @@ class DedupeDecision:
     evidence: dict[str, float | bool | int | None]
 
 
+def record_completeness(record: Mapping[str, Any]) -> tuple[int, int, int]:
+    """Compare populated posting fields, salary detail, then the amount of JD text."""
+    fields = (
+        "title",
+        "company",
+        "location",
+        "date_posted",
+        "job_type",
+        "job_function",
+        "job_url_direct",
+        "company_industry",
+        "company_url_direct",
+        "company_logo",
+        "skills",
+        "emails",
+        "vacancy_count",
+    )
+
+    def filled(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().casefold() not in {"", "n/a", "unknown"}
+        if isinstance(value, bool):
+            return value
+        return value is not None and value != [] and value != ()
+
+    label = record.get("salary_label") or ""
+    amount = record.get("min_amount") is not None or record.get("max_amount") is not None
+    pay = int(amount or bool(re.search(r"\d", label)))
+    if pay and (record.get("interval") or has_salary_period(label)):
+        pay += 1
+    length = record.get("description_length")
+    if length is None:
+        length = len((record.get("description") or "").strip())
+    coverage = sum(filled(record.get(key)) for key in fields) + bool(length) + bool(pay)
+    return coverage, pay, length
+
+
+def group_round_jobs(jobs: Iterable[CanonicalJobInput]) -> list[list[CanonicalJobInput]]:
+    """Match within sites, then across sites. Keep each group's distinct source records."""
+    unique: dict[tuple[str, str], CanonicalJobInput] = {}
+    for job in jobs:
+        key = (job.source.source, job.source.source_job_id or job.source.source_fingerprint)
+        previous = unique.get(key)
+        if previous is None or record_completeness(job.source.payload) > record_completeness(
+            previous.source.payload
+        ):
+            unique[key] = job
+    records = [unique[key] for key in sorted(unique)]
+    parents = list(range(len(records)))
+
+    def root(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    candidates: list[CandidateJob] = []
+    by_key: dict[tuple[str, str, bool], list[int]] = defaultdict(list)
+    sites = sorted({job.source.source for job in records})
+    for i, job in enumerate(records):
+        direct = job.dedupe.direct_url_hash
+        site, source_id = job.source.source, job.source.source_job_id
+        candidates.append(
+            CandidateJob(
+                i,
+                job.title_normalized,
+                job.company.normalized_name,
+                job.location.normalized,
+                job.work_mode.value,
+                job.date_posted,
+                job.description,
+                job.dedupe.description_hash,
+                frozenset([direct]) if direct else frozenset(),
+                frozenset([(site, source_id)]),
+            )
+        )
+        for key in (job.dedupe.block_key, direct):
+            if key:
+                by_key[site, key, False].append(i)
+                if site == "linkedin" and not source_id:
+                    by_key[site, key, True].append(i)
+
+    for cross_site in (False, True):
+        for i, job in enumerate(records):
+            for site in sites:
+                if (site != job.source.source) != cross_site:
+                    continue
+                # Two known LinkedIn IDs have already had their only comparison, by ID.
+                only_idless = (
+                    not cross_site and site == "linkedin" and bool(job.source.source_job_id)
+                )
+                possible = set(by_key.get((site, job.dedupe.block_key, only_idless), ()))
+                if job.dedupe.direct_url_hash:
+                    possible.update(by_key.get((site, job.dedupe.direct_url_hash, only_idless), ()))
+                for j in possible:
+                    if j >= i or root(i) == root(j):
+                        continue
+                    other = records[j]
+                    if (
+                        job.date_posted
+                        and other.date_posted
+                        and abs((job.date_posted - other.date_posted).days) > 60
+                        and not (
+                            job.dedupe.direct_url_hash
+                            and job.dedupe.direct_url_hash == other.dedupe.direct_url_hash
+                        )
+                    ):
+                        continue
+                    if score_candidate(job, candidates[j], rank=False).action is DedupeAction.MERGE:
+                        parents[root(i)] = root(j)
+
+    groups: dict[int, list[CanonicalJobInput]] = defaultdict(list)
+    for i, job in enumerate(records):
+        groups[root(i)].append(job)
+    for members in groups.values():
+        members.sort(key=lambda job: record_completeness(job.source.payload), reverse=True)
+    return list(groups.values())
+
+
 def choose_duplicate(
     incoming: CanonicalJobInput,
     candidates: Iterable[CandidateJob],
@@ -51,7 +169,7 @@ def choose_duplicate(
     if not decisions:
         return DedupeDecision(DedupeAction.CREATE, None, 0.0, {})
 
-    best = max(decisions, key=lambda item: item.score)
+    best = max(decisions, key=lambda item: (item.action is DedupeAction.MERGE, item.score))
     if best.action is DedupeAction.MERGE:
         return best
     return DedupeDecision(
@@ -62,7 +180,20 @@ def choose_duplicate(
     )
 
 
-def score_candidate(incoming: CanonicalJobInput, candidate: CandidateJob) -> DedupeDecision:
+def score_candidate(
+    incoming: CanonicalJobInput, candidate: CandidateJob, *, rank: bool = True
+) -> DedupeDecision:
+    identity = incoming.source
+    if identity.source == "linkedin" and identity.source_job_id and candidate.source_identities:
+        if ("linkedin", identity.source_job_id) in candidate.source_identities:
+            return DedupeDecision(
+                DedupeAction.MERGE, candidate.job_id, 1.0, {"same_linkedin_id": True}
+            )
+        # An Indeed posting or an ID-less LinkedIn posting still gets a content comparison.
+        if all(site == "linkedin" and key for site, key in candidate.source_identities):
+            return DedupeDecision(
+                DedupeAction.CREATE, candidate.job_id, 0.0, {"same_linkedin_id": False}
+            )
     direct_exact = bool(
         incoming.dedupe.direct_url_hash
         and incoming.dedupe.direct_url_hash in candidate.direct_url_hashes
@@ -77,9 +208,15 @@ def score_candidate(incoming: CanonicalJobInput, candidate: CandidateJob) -> Ded
         incoming.dedupe.description_hash
         and incoming.dedupe.description_hash == candidate.description_hash
     )
-    description_similarity = (
-        1.0 if description_exact else shingle_jaccard(incoming.description, candidate.description)
+    content_candidate = (
+        company_exact
+        and title_similarity >= 0.94
+        and location_similarity >= 0.80
+        and (days_apart is None or days_apart <= 60)
     )
+    description_similarity = float(description_exact)
+    if not description_exact and (rank or content_candidate):
+        description_similarity = shingle_jaccard(incoming.description, candidate.description)
 
     direct_identity = direct_exact and company_exact and title_similarity >= 0.65
     if direct_identity:
@@ -94,13 +231,7 @@ def score_candidate(incoming: CanonicalJobInput, candidate: CandidateJob) -> Ded
         )
 
     exact_description_identity = description_exact and company_exact and title_similarity >= 0.75
-    strong_content_identity = (
-        company_exact
-        and title_similarity >= 0.94
-        and location_similarity >= 0.80
-        and description_similarity >= 0.78
-        and (days_apart is None or days_apart <= 60)
-    )
+    strong_content_identity = content_candidate and description_similarity >= 0.78
     exact_listing_identity = (
         company_exact
         and title_similarity >= 0.985
@@ -132,7 +263,7 @@ def score_candidate(incoming: CanonicalJobInput, candidate: CandidateJob) -> Ded
             "days_apart": days_apart,
             "description_exact": description_exact,
             "description_similarity": round(description_similarity, 4),
-            "algorithm_version": 2,
+            "algorithm_version": 3,
         },
     )
 

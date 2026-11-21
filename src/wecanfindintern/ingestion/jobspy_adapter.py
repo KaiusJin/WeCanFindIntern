@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Iterable, Mapping
-from contextlib import suppress
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import closing, contextmanager, suppress
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import Enum
 from typing import Any, Literal
 
 import pandas as pd
-from jobspy import scrape_jobs
+from jobspy import job_record, scrape_jobs
+from jobspy.indeed import Indeed
 from jobspy.linkedin import LinkedIn
-from jobspy.model import DescriptionFormat
-from jobspy.util import extract_emails_from_text
+from jobspy.model import Country, DescriptionFormat, ScraperInput, Site
+from jobspy.util import extract_emails_from_text, get_enum_from_value, set_logger_level
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from wecanfindintern.domain.normalized_job import (
@@ -49,6 +51,7 @@ JOBSPY_COLUMNS: tuple[str, ...] = (
     "date_posted",
     "job_type",
     "salary_source",
+    "salary_label",
     "interval",
     "min_amount",
     "max_amount",
@@ -134,6 +137,57 @@ class ScrapeResult(BaseModel):
     raw_columns: list[str]
     raw_row_count: int
     jobs: list[NormalizedJob]
+
+
+@dataclass
+class SearchPage:
+    jobs: list[NormalizedJob]
+    next_cursor: str | None
+
+
+@contextmanager
+def open_job_search(
+    query: JobSpyQuery, *, posted_since: datetime | None = None
+) -> Iterator[Callable[[str | None], SearchPage]]:
+    """Keep one source session per search. A None continuation means confirmed exhaustion."""
+    (source,) = query.sites
+    site = Site(source)
+    country = Country.from_string(query.country_indeed)
+    params = ScraperInput(
+        site_type=[site],
+        country=country,
+        posted_since=posted_since,
+        job_type=get_enum_from_value(query.job_type) if query.job_type else None,
+        **query.model_dump(
+            include={
+                "search_term",
+                "location",
+                "distance",
+                "is_remote",
+                "easy_apply",
+                "hours_old",
+                "description_format",
+                "linkedin_fetch_description",
+            }
+        ),
+    )
+    set_logger_level(query.verbose)
+    provider = LinkedIn if site == Site.LINKEDIN else Indeed
+    scraper = provider(proxies=query.proxies, ca_cert=query.ca_cert, user_agent=query.user_agent)
+
+    def read_page(cursor: str | None) -> SearchPage:
+        posts, next_cursor = scraper.scrape_page(params, cursor)
+        jobs = []
+        for post in posts:
+            row = job_record(
+                post, source, country, query.enforce_annual_salary,
+                include_description_salary=False,
+            )
+            jobs.append(normalize_record({key: row.get(key) for key in JOBSPY_COLUMNS}))
+        return SearchPage(jobs, next_cursor)
+
+    with closing(scraper.session):
+        yield read_page
 
 
 def scrape_and_normalize(query: JobSpyQuery) -> tuple[pd.DataFrame, ScrapeResult]:
@@ -263,10 +317,19 @@ def clean_scalar(value: Any) -> Any:
 
 def normalize_record(record: dict[str, Any]) -> NormalizedJob:
     record = {key: clean_scalar(value) for key, value in record.items()}
+    # Keep the existing snapshot hash for postings that have never included a salary label.
+    if not record.get("salary_label"):
+        record.pop("salary_label", None)
     source = _required_text(record.get("site"), "site")
     source_url = _required_text(record.get("job_url"), "job_url")
     title = _required_text(record.get("title"), "title")
     source_id = optional_text(record.get("id"))
+    card_fields = ()
+    if source == "linkedin" and not source_id:
+        card_fields = tuple(
+            str(record.get(field) or "").strip().casefold()
+            for field in ("title", "company", "location", "date_posted")
+        )
 
     salary = Salary(
         interval=optional_text(record.get("interval")),
@@ -279,7 +342,9 @@ def normalize_record(record: dict[str, Any]) -> NormalizedJob:
         salary = None
 
     return NormalizedJob(
-        source_fingerprint=build_source_fingerprint(source, source_id, source_url),
+        source_fingerprint=build_source_fingerprint(
+            source, source_id, source_url, card_fields=card_fields
+        ),
         source=source,
         source_job_id=source_id,
         source_url=source_url,
@@ -337,7 +402,8 @@ def fetch_linkedin_details(
 
     job_id = source_job_id.removeprefix("li-")
     scraper = LinkedIn(proxies=proxies, ca_cert=ca_cert, user_agent=user_agent)
-    return scraper.get_job_details(job_id, DescriptionFormat(description_format))
+    with closing(scraper.session):
+        return scraper.get_job_details(job_id, DescriptionFormat(description_format))
 
 
 def merge_linkedin_details(
@@ -356,7 +422,10 @@ def merge_linkedin_details(
     if raw.get("description") and not raw.get("emails"):
         raw["emails"] = extract_emails_from_text(raw["description"])
     merged = normalize_record(raw)
-    return merged.model_copy(update={"details_fetched_at": fetched_at or datetime.now(UTC)})
+    return merged.model_copy(update={
+        "source_fingerprint": job.source_fingerprint,
+        "details_fetched_at": fetched_at or datetime.now(UTC),
+    })
 
 
 def split_multi_value(value: Any) -> list[str]:

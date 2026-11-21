@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from pydantic import BaseModel
 
@@ -235,6 +235,7 @@ class JobPost(BaseModel):
 
     # LinkedIn specific
     job_level: str | None = None
+    salary_label: str | None = None
 
     # LinkedIn and Indeed specific
     company_industry: str | None = None
@@ -291,6 +292,7 @@ class ScraperInput(BaseModel):
 
     results_wanted: int = 15
     hours_old: int | None = None
+    posted_since: datetime | None = None
 
 
 class Scraper(ABC):

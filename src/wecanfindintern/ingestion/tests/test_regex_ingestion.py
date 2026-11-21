@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from wecanfindintern.domain.recruiting_term import recruiting_term_input_hash
 from wecanfindintern.ingestion import pipeline, recruiting_term_enrichment, salary_enrichment
+from wecanfindintern.ingestion.jobspy_adapter import normalize_record
 from wecanfindintern.llm import gateway
 
 
@@ -73,6 +74,9 @@ def test_changed_jd_write_is_not_counted_as_success_or_cached_miss(monkeypatch):
                     description="Pay $25–35/hour",
                     country_code="US",
                     description_hash="aa" * 32,
+                    salary_labels=(),
+                    input_hash="aa" * 32,
+                    row_version="1",
                 )
             ]
 
@@ -114,7 +118,12 @@ def test_ingestion_finishes_deduplication_before_regex_and_never_calls_llm(monke
         def __init__(self, pool, timings=None):
             pass
 
-        async def ingest_batch(self, **kwargs):
+        async def history_limit(self):
+            return 7
+
+        async def ingest_groups(self, *, run_id, groups, history_limit):
+            assert run_id == 1 and history_limit == 7
+            assert len(groups) == len(groups[0]) == 1
             events.append("dedupe")
             return Counter(created=1)
 
@@ -131,7 +140,19 @@ def test_ingestion_finishes_deduplication_before_regex_and_never_calls_llm(monke
                     description="Pay $2,000–3,000 biweekly",
                     country_code="CA",
                     description_hash="bb" * 32,
-                )
+                    salary_labels=("$25",),
+                    input_hash="aa" * 32,
+                    row_version="1",
+                ),
+                SimpleNamespace(
+                    job_id=8,
+                    description=None,
+                    country_code="CA",
+                    description_hash=None,
+                    salary_labels=("CA$27.50/hr",),
+                    input_hash="cc" * 32,
+                    row_version="2",
+                ),
             ]
 
         async def persist_enriched_salary(self, **kwargs):
@@ -159,7 +180,6 @@ def test_ingestion_finishes_deduplication_before_regex_and_never_calls_llm(monke
     monkeypatch.setattr(pipeline, "JobIngestionRepository", Jobs)
     monkeypatch.setattr(pipeline, "SalaryRepository", Salaries)
     monkeypatch.setattr(pipeline, "RecruitingTermRepository", Terms)
-    monkeypatch.setattr(pipeline, "canonical_job_from_normalized", lambda job, **kwargs: job)
     monkeypatch.setattr(salary_enrichment, "extract_salary_from_description", salary_regex)
     monkeypatch.setattr(recruiting_term_enrichment, "extract_recruiting_term_regex", term_regex)
     report = asyncio.run(
@@ -169,12 +189,23 @@ def test_ingestion_finishes_deduplication_before_regex_and_never_calls_llm(monke
             scraped_at=datetime.now(UTC),
             batch_size=1,
             jobs=[
-                SimpleNamespace(source_fingerprint="aa" * 32, salary=None),
-                SimpleNamespace(source_fingerprint="bb" * 32, salary=None),
+                normalize_record(
+                    {
+                        "id": f"li-{number}",
+                        "site": "linkedin",
+                        "job_url": f"https://linkedin.test/jobs/view/{number}",
+                        "company": "Example",
+                        "title": "Engineering Intern",
+                        "location": "Toronto, ON, Canada",
+                        "description": "Build services.",
+                    }
+                )
+                for number in (1, 2)
             ],
         )
     )
     assert events == ["dedupe", "dedupe", "salary-regex", "term-regex"]
+    assert report.unique_jobs == 2
     assert (report.salary.regex, report.recruiting_term.regex) == (1, 1)
     salary = saved_salaries[0]["salary"]
     assert (salary.currency, salary.interval, salary.minimum, salary.maximum) == (
@@ -184,6 +215,10 @@ def test_ingestion_finishes_deduplication_before_regex_and_never_calls_llm(monke
         Decimal("1500"),
     )
     assert salary.annualized_minimum == Decimal("52000")
+    label_salary = saved_salaries[1]["salary"]
+    assert report.salary.structured == 1 and label_salary.source == "linkedin_salary_label"
+    assert label_salary.minimum == label_salary.maximum == Decimal("27.50")
+    assert label_salary.currency == "CAD" and label_salary.interval == "hourly"
     assert saved_terms[0]["term"].display_name == "Winter 2027"
     assert "model" not in saved_salaries[0] and "model" not in saved_terms[0]
 
@@ -233,6 +268,7 @@ def test_regex_repository_writes_keep_guards_and_clear_model_metadata():
     assert len(writes) == 3
     assert all("model = NULL" in query for query, _ in writes)
     assert all("WHERE id = %s" in query for query, _ in writes)
-    assert "description_hash = %s" in writes[0][0]
+    assert "description_hash IS NOT DISTINCT FROM %s" in writes[0][0]
+    assert "xmin::text = %s" in writes[0][0]
     assert "salary_min IS NULL" in writes[0][0]
     assert "digest(title" in writes[2][0]

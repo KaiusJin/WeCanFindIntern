@@ -67,11 +67,11 @@ flowchart TD
     S -->|scheduled recent sweep| R[Override hours_old]
     B --> C[Concurrent source/page queries]
     R --> C
-    C --> D[Per-query fingerprint filtering]
-    D --> E[Cross-query best-record selection]
-    E --> L[Hydrate deduplicated LinkedIn IDs]
-    L --> F[CanonicalJobInput conversion]
-    F --> G[Set-based unchanged refresh and transactional dedupe]
+    C --> D[Checkpoint pages and keep the most complete copy of each source posting]
+    D --> L[Hydrate LinkedIn postings]
+    L --> E[Match within each site]
+    E --> F[Match across sites in the same round]
+    F --> G[Match groups to existing database jobs and persist their sources]
     G --> H[Salary enrichment]
     H --> I[Recruiting-term enrichment]
     I --> J[Run statistics and success/partial status]
@@ -84,9 +84,15 @@ scheduling is durable in `ingestion_runs`: the first campaign is full, campaigns
 again. `recent_hours` and `full_sweep_every` are configurable; process restarts
 do not reset the sequence.
 
-Each enabled catalog definition is executed once per source. A query is paged until the configured maximum result count is reached, JobSpy returns no jobs, no new fingerprints are found, or the query reaches terminal retry failure.
+Each enabled catalog definition runs once per source. Native pagination follows the provider's
+continuation until the provider confirms the end or the query records a failure. A repeated
+posting can contribute a more complete card on a later page or in a different keyword query.
 
-Within one query, `seen_for_query` prevents repeated pages from re-adding a source record. Across concurrent queries, records are keyed by fingerprint; if the same fingerprint appears more than once, the copy with salary data and then the longer description wins.
+Within LinkedIn, two postings with IDs match exactly when their IDs agree. If either posting
+lacks an ID, the matcher compares the company, title, location, posting date, JD and direct
+application link. Indeed and cross-site comparisons use the same content rules. All source
+postings in a matched group keep their links and snapshots. The primary record has the most
+populated posting fields. Salary detail and then JD length break ties in field coverage.
 
 LinkedIn keyword queries collect list cards without descriptions. After
 cross-query fingerprint deduplication, the campaign loads the latest stored
@@ -100,7 +106,7 @@ detail payload by source fingerprint. Reuse requires all of the following:
 Each missing or stale LinkedIn source ID is fetched once with a dedicated
 semaphore controlled by `WCFI_LINKEDIN_DETAIL_CONCURRENCY`. Current list-card
 metadata remains authoritative while detail-only fields are overlaid. A failed
-fresh fetch uses the stored stale detail payload when available. The campaign
+fresh fetch can reuse older details when the card still matches. The campaign
 records `linkedin_detail_cache_hits`, `linkedin_detail_fetched`,
 `linkedin_detail_failed`, and `linkedin_detail_stale_fallbacks`. A list-card
 observation never advances detail freshness.
@@ -111,9 +117,8 @@ The campaign uses an asyncio semaphore, default concurrency 4, and runs blocking
 JobSpy calls in worker threads. Transient failures are retried up to the
 configured maximum with exponential backoff and random jitter, capped at 15
 seconds. Deterministic provider failures such as unsupported locations or
-non-retryable HTTP 4xx responses open a per-run source circuit so remaining
-queries for that source are skipped. One source failure does not cancel unrelated
-sources.
+non-retryable HTTP 4xx responses fail the affected query. The remaining queries
+for that provider stay scheduled.
 
 LinkedIn search and detail HTTP requests share a process-wide controller in
 `vendor/JobSpy/jobspy/linkedin/request.py`, which spaces request starts and allows up to two in flight:
@@ -126,18 +131,19 @@ LinkedIn search and detail HTTP requests share a process-wide controller in
   headers are honored when they require a longer wait. The requests adapter and
   campaign do not multiply these 429 retries.
 - **Circuit breaker:** the third consecutive HTTP 429 opens the controller's
-  circuit for at least 300 seconds, or longer if `Retry-After` requires it.
+  circuit for at least 60 seconds, or longer if `Retry-After` requires it.
   Calls during this window fail without HTTP traffic. The next call after the
   cooldown is a single half-open probe: success closes the circuit; a failed
   probe reopens it.
 
-LinkedIn keyword queries are serialized outside the campaign's global semaphore,
-so queued LinkedIn work cannot occupy all slots while Indeed is collecting.
-When the controller opens its circuit, the campaign skips remaining LinkedIn
-queries for that run. Detail hydration pauses further fetches and uses stale
-cached descriptions where available. Other sources continue and the existing
-partial-result publication policy still applies. Controller state is local to
-the Python process; successful-query checkpoints remain durable separately.
+LinkedIn search requests take turns one page at a time. After a circuit opening,
+the campaign waits the reported cooldown and puts the interrupted page behind
+the other waiting pages. Its offset and previously collected pages stay in
+memory. Indeed can use the shared collection slots during the wait. LinkedIn
+detail requests also remain queued through repeated cooldowns. There is no
+campaign-wide probe or cumulative wait limit. A persistent upstream rate limit
+can delay completion until the workflow timeout. Non-rate-limit failures keep
+their ordinary per-query error or detail-cache fallback behavior.
 
 When the request has `country_indeed=Canada` or `USA`/`United States`, the returned location is parsed and records outside the requested country are discarded before persistence. If no country scope is supplied, the adapter does not apply this filter.
 
@@ -151,32 +157,27 @@ other queries. The database phase begins only after all network tasks finish;
 therefore a slow source cannot interleave half-collected source data with an
 already-running dedupe batch.
 
-Page offsets and `seen_for_query` are process-local. The campaign deliberately
-does not persist a per-page checkpoint. If the process stops, rerun the full
-campaign: already committed batches are safe because source fingerprints and
-database unique constraints make them unchanged/idempotent, while changed raw
-payloads are recorded by hash. This is a restart-from-source strategy, not a
-claim of resumable page-level crawling.
-
-The cloud runner checkpoints completed queries in PostgreSQL. A retry reuses
-eligible checkpoints; unfinished queries restart from their first page. Desktop
-shutdown interrupts only feed synchronization, which resumes from its committed
-local cursor.
+The collector saves each page and its next cursor together in PostgreSQL for cloud runs or
+SQLite for local runs. A retry restores those cards, their observation times and resolved
+LinkedIn details for the same sweep. It resumes unfinished queries at their saved cursor.
 
 ## Persistence handoff
 
-The campaign creates one ingestion run after provider collection, converts every
-`NormalizedJob` into `CanonicalJobInput`, and writes in batches. Valid structured
-source salary is part of that canonical input. All source records are therefore
-available to deduplication before description-based enrichment, and the same
-description hash gates later deterministic/model enrichment.
+The campaign opens one ingestion run before collection. It groups canonicalized records
+across the whole round before splitting them into database batches. A group stays together
+in one transaction. Valid structured
+source salary is part of that canonical input. LinkedIn search cards also carry
+the salary label text in their source snapshots. After deduplication, the campaign
+reads the latest label from each LinkedIn posting linked to the canonical job.
+A single amount with a pay period represents a fixed wage. A range preserves
+both endpoints. If every label is missing or unusable, the campaign parses the
+canonical job description. A usable label can supply salary even when the JD is empty.
 
-At the start of each ingest transaction, the repository hashes the incoming
-payloads and refreshes unchanged source rows in one SQL statement. Matching
-payload hashes update `last_seen_at`, `last_scraped_at`, job visibility, and any
-newer LinkedIn detail timestamp; they skip candidate lookup and raw snapshot
-insertion. New or changed rows continue through source-fingerprint and dedupe-
-block advisory locks, and a new raw snapshot is written only for a changed hash.
+The repository refreshes identical source sightings in bulk. A known source fingerprint
+identifies its stored job directly. Each new source can match historical jobs using the
+deduplicator. The more complete of the round and stored records supplies the primary fields.
+Source links retain their own observation times, and a less complete observation can be
+archived while the more complete source snapshot remains available to enrichment.
 
 The `Public job feed` workflow is the operational entry point for collection and publication. The desktop consumes the published feed; it does not run JobSpy.
 
@@ -194,11 +195,13 @@ The `Public job feed` workflow is the operational entry point for collection and
 The campaign is `partial` when one or more source queries exhaust retries but the
 database pipeline completes. A database or pipeline exception is fatal to the
 current command, but committed earlier batches remain valid and the next run can
-reconcile them. After deduplication, provider-structured salary wins; missing
-salary and recruiting terms are normalized directly by deterministic regex.
+reconcile them. The campaign keeps valid structured provider pay. It tries
+LinkedIn labels before extracting pay from the canonical JD and derives
+recruiting terms from the job text.
 There are no LLM requests, model retries, or deferred model batches.
 A successful salary extraction is `complete`, and a definitive miss is
-`not_found`. Both are skipped until the description hash changes.
+`not_found`. The cache accounts for the current labels, their currency context
+and the description hash.
 
 ## Operator scenarios
 
@@ -207,9 +210,9 @@ A successful salary extraction is `complete`, and a definitive miss is
 | Query returns zero rows without source errors | successful empty query | continue; the campaign can still finish `success` |
 | Query logs/raises a source error | bounded retries, then a recorded source failure | inspect the source failure and rerun the campaign after the source recovers |
 | One query exhausts retries | successful query results continue to persistence; run finishes `partial` | retain committed data and rerun the full catalog |
-| Process stops during network collection | no database phase for the in-memory records | restart the full campaign from the catalog |
+| Process stops during network collection | completed pages and their cursors are checkpointed | rerun the same sweep to resume |
 | Process stops during batch persistence | committed batches remain; active transaction rolls back | restart the full campaign; identity constraints reconcile records |
-| Fresh LinkedIn detail request fails | stale stored detail is used when present; card fields otherwise remain | rerun after LinkedIn recovers; detail freshness advances only after a successful fetch |
+| Fresh LinkedIn detail request fails | older details are used when the card still matches | rerun after LinkedIn recovers |
 | Enrichment provider fails | canonical jobs and completed enrichment remain | fix provider configuration and rerun/backfill the affected enrichment |
 | Process lock is already held | second invocation exits without collection | inspect the active Actions run and wait for it |
 

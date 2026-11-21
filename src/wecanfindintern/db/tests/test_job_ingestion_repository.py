@@ -23,7 +23,7 @@ def test_canonical_refresh_reclassifies_final_merged_evidence_atomically():
         async def execute(self, query, params):
             assert query.count("%s") == len(params)
             self.executed.append((query, params))
-            if "SELECT title, description" in query:
+            if "FOR UPDATE" in query:
                 return FakeResult(
                     {
                         "title": "Python Software Engineer Intern",
@@ -33,6 +33,9 @@ def test_canonical_refresh_reclassifies_final_merged_evidence_atomically():
                         "source_skills": ["postgresql"],
                         "work_mode": "unknown",
                         "description_length": 10,
+                        "description_hash": None,
+                        "interval": None,
+                        "salary_source": None,
                     }
                 )
             return FakeResult()
@@ -63,7 +66,7 @@ def test_canonical_refresh_reclassifies_final_merged_evidence_atomically():
         )
     )
 
-    update_sql, update_params = connection.executed[1]
+    update_sql, update_params = connection.executed[-1]
     assert "unnest(job_subcategories ||" not in update_sql
     assert "job_category = %s" in update_sql
     assert ["postgresql"] in update_params

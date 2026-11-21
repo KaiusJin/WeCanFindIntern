@@ -1,4 +1,4 @@
-"""Cross-provider salary extraction from job descriptions."""
+"""Salary extraction from provider labels and job descriptions."""
 
 from __future__ import annotations
 
@@ -148,6 +148,52 @@ class SalaryCandidate:
     score: int
     category: str
     salary: ParsedSalary | None
+
+
+def has_salary_period(label: str) -> bool:
+    return any(pattern.search(label) for _, pattern in _PERIOD_PATTERNS)
+
+
+def extract_salary_from_label(label: str, *, country_code: str | None) -> ParsedSalary | None:
+    """Read a complete pay label. An ambiguous amount or pay period falls back to the JD."""
+    amounts = label.strip()
+    interval = None
+    for period, pattern in _PERIOD_PATTERNS:
+        amounts, matches = pattern.subn(" ", amounts)
+        if matches:
+            if interval is not None:
+                return None
+            interval = period
+    if interval is None:
+        return None
+
+    # A range may repeat the unit on both ends, e.g. CA$25.50/hr – CA$32/hr.
+    amounts = amounts.strip()
+    currencies = {
+        _detect_currency(token, None)
+        for token in re.findall(_CURRENCY, amounts, re.I)
+        if token != "$"
+    }
+    if len(currencies) > 1 or (not currencies and country_code not in {"CA", "US"}):
+        return None
+    currency = _detect_currency(amounts, country_code)
+    pair = _RANGE_PATTERN.fullmatch(amounts)
+    if pair:
+        minimum = _amount(pair["minimum"], pair["min_k"] or pair["max_k"])
+        maximum = _amount(pair["maximum"], pair["max_k"] or pair["min_k"])
+    else:
+        qualifier = re.match(r"^(from|starting at|up to)\s+", amounts, re.I)
+        single = _SINGLE_PATTERN.fullmatch(amounts[qualifier.end() :] if qualifier else amounts)
+        if single is None:
+            return None
+        amount = _amount(single["amount"], single["amount_k"])
+        minimum = maximum = amount
+        if qualifier:
+            if qualifier[1].lower() == "up to":
+                minimum = None
+            else:
+                maximum = None
+    return _validated(interval, minimum, maximum, currency, source="linkedin_salary_label")
 
 
 def extract_salary_from_description(
