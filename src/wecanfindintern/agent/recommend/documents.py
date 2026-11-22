@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from wecanfindintern.profile.models import UserProfile
-from wecanfindintern.waterlooworks.dates import parse_waterlooworks_date
-from wecanfindintern.waterlooworks.taxonomy import resolve_waterloo_opportunity_type
+from wecanfindintern.waterlooworks.domain.boards import resolve_waterloo_opportunity_type
+from wecanfindintern.waterlooworks.domain.dates import parse_waterlooworks_date
 
 DOCUMENT_VERSION = "recommend-document.v6"
 CHUNK_WORDS = 360

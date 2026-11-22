@@ -8,7 +8,8 @@ Keep tests spanning multiple modules in the repository-level `tests/` directory.
 | `src/wecanfindintern/<module>/tests/` | Python module behavior, including route and repository tests using fakes |
 | `src/wecanfindintern/agent/memory/tests/` | Agent memory behavior |
 | `src/wecanfindintern/agent/recommend/tests/` | Recommendation behavior |
-| `scripts/collection/tests/` | Collection campaign scripts |
+| `cloud/tests/<stage>/` | Cloud collector, one directory per stage: `sources/`, `planning/`, `pipeline/`, `storage/`, `ops/` |
+| `src/wecanfindintern/waterlooworks/tests/` | Local browser collection, SQLite storage, and application synchronization |
 | `desktop/renderer/web/tests/` | Web UI and ES modules |
 | `desktop/tests/` | Electron runtime and packaging |
 | `tests/integration/` | Cross-module flows and live PostgreSQL integration |
@@ -18,8 +19,8 @@ under the owning test directory's `fixtures/` subdirectory. Place shared pytest
 fixtures in the nearest common ancestor's `conftest.py`; use a repository-root
 `conftest.py` if fixtures must span `src/`, `scripts/`, and `tests/`.
 
-Pytest recursively discovers tests under `src/wecanfindintern`, `scripts`, and
-`tests`. Importlib mode supports repeated test filenames across modules, and
+Pytest recursively discovers tests under `src/wecanfindintern`, `cloud`, `scripts`,
+and `tests`. Importlib mode supports repeated test filenames across modules, and
 the configured Python paths make application and script imports work without
 editing `sys.path`. Module test directories do not need `__init__.py` files.
 The root integration suite uses explicit packages for its shared helper imports.

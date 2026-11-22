@@ -57,13 +57,13 @@ from wecanfindintern.agent.recommend.scoring import is_expired, score_candidate
 from wecanfindintern.agent.recommend.tool import tool_recommend_jobs
 from wecanfindintern.application.job_models import JobListFilters
 from wecanfindintern.application.profile_context import profile_resume_text
-from wecanfindintern.application.waterlooworks_tracker import (
-    waterlooworks_tracker_fields,
-)
 from wecanfindintern.domain.classification import normalize_tag
 from wecanfindintern.profile.models import ProfileBasics, ProfilePayload, UserProfile
 from wecanfindintern.tracker.models import (
     TrackedApplication,
+)
+from wecanfindintern.waterlooworks.integrations.tracker import (
+    waterlooworks_tracker_fields,
 )
 
 

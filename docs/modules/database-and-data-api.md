@@ -17,7 +17,7 @@ flowchart TD
 
 `src/wecanfindintern/db/pool.py` creates the async psycopg pool. `Settings`
 controls minimum/maximum pool size and statement timeout. `read_repository.py`
-is the read-facing job query layer; `db/repositories/` contains ingestion,
+is the read-facing job query layer; `cloud/storage/` contains ingestion,
 collection-cache, salary, and recruiting-term repositories.
 
 ## Database initialization
@@ -32,7 +32,7 @@ location hierarchy, salary and recruiting-term enrichment, Tracker, Profile,
 interview sessions, recommendation retrieval, LLM cache, and Agent persistence.
 Cloud collection uses the already-provisioned private `job_feed` schema, which
 contains only collection tables. Campaign definitions remain
-in `scripts/collection/collection_plans.json`.
+in `cloud/config/collection_plans.json`.
 
 ## Core job tables
 

@@ -12,7 +12,6 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from wecanfindintern.api.dependencies import get_tracker_repository
-from wecanfindintern.application.waterlooworks_tracker import waterlooworks_tracker_fields
 from wecanfindintern.tracker.models import (
     APPLICATION_STAGE_LABELS,
     TRACKER_SOURCE_LABELS,
@@ -30,6 +29,7 @@ from wecanfindintern.tracker.models import (
     TrackerUpdateRequest,
 )
 from wecanfindintern.tracker.repository import TrackerRepository
+from wecanfindintern.waterlooworks.integrations.tracker import waterlooworks_tracker_fields
 
 tracker_router = APIRouter(prefix="/api/v1/tracker", tags=["Application Tracker"])
 

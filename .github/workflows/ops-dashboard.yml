@@ -7,8 +7,8 @@ on:
   push:
     branches: [main]
     paths:
-      - scripts/cloud/ops_dashboard.html
-      - scripts/cloud/ops_report.py
+      - cloud/ops/dashboard.html
+      - cloud/ops/report.py
       - .github/workflows/ops-dashboard.yml
   workflow_dispatch:
 
@@ -38,4 +38,4 @@ jobs:
           R2_BUCKET: ${{ vars.R2_BUCKET }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: python -m scripts.cloud.ops_report upload-dashboard
+        run: python -m cloud.ops.report upload-dashboard

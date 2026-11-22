@@ -10,11 +10,11 @@ from wecanfindintern.agent.models import JobReference
 from wecanfindintern.application.job_models import JobListItem
 from wecanfindintern.domain.location import clean_location_display
 from wecanfindintern.tracker.models import TrackedApplication
-from wecanfindintern.waterlooworks.records import (
+from wecanfindintern.waterlooworks.domain.boards import resolve_waterloo_opportunity_type
+from wecanfindintern.waterlooworks.domain.jobs import (
     waterlooworks_current_application_deadline,
     waterlooworks_salary_text,
 )
-from wecanfindintern.waterlooworks.taxonomy import resolve_waterloo_opportunity_type
 
 
 def public_job_summary(

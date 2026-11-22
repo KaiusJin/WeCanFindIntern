@@ -22,11 +22,12 @@ from wecanfindintern.api.routes.jobs import jobs_router
 from wecanfindintern.api.routes.profile import profile_router
 from wecanfindintern.api.routes.resumes import resumes_router
 from wecanfindintern.api.routes.tracker import tracker_router
-from wecanfindintern.api.routes.waterlooworks import waterlooworks_router
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
 from wecanfindintern.llm import cache as llm_cache
-from wecanfindintern.waterlooworks import WaterlooWorksService
+from wecanfindintern.waterlooworks.api import waterlooworks_router
+from wecanfindintern.waterlooworks.bootstrap import create_waterlooworks_service
+from wecanfindintern.waterlooworks.service import WaterlooWorksService
 
 DEFAULT_WEB_DIR = Path(__file__).resolve().parents[3] / "desktop" / "renderer" / "web"
 WEB_DIR = Path(os.getenv("WCFI_WEB_DIR", str(DEFAULT_WEB_DIR)))
@@ -95,7 +96,7 @@ def create_app() -> FastAPI:
         await database.open()
         app.state.database = database
         app.state.agent_memory = AgentMemoryManager(AgentMemoryStore(database.pool))
-        app.state.waterlooworks = WaterlooWorksService()
+        app.state.waterlooworks = create_waterlooworks_service()
         embedding_config = EmbeddingConfig.from_env()
         app.state.recommendation_indexer = RecommendationIndexer(
             database.pool,

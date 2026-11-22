@@ -8,7 +8,7 @@ RENDERER_WEB := desktop/renderer/web
 check: lint test contract frontend-check
 
 lint:
-	$(RUFF) check src tests scripts desktop/build
+	$(RUFF) check src cloud tests scripts desktop/build
 
 test:
 	PYTHONPATH=src $(PYTHON) -m pytest -m "not db"
@@ -26,4 +26,4 @@ frontend-check:
 	$(NODE) --test $(RENDERER_WEB)/tests/*.test.mjs desktop/tests/*.test.mjs
 
 format-check:
-	$(RUFF) format --check src tests scripts desktop/build
+	$(RUFF) format --check src cloud tests scripts desktop/build

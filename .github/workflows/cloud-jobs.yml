@@ -34,10 +34,10 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
-            vendor/JobSpy/pyproject.toml
+            cloud/requirements.txt
             .github/workflows/cloud-jobs.yml
       - name: Install collector dependencies
-        run: python -m pip install ./vendor/JobSpy 'psycopg[binary,pool]>=3.2,<4' 'boto3>=1.36,<2' 'duckdb>=1.1,<2'
+        run: python -m pip install -r cloud/requirements.txt
       - name: Validate Supabase database
         if: ${{ inputs.validate_database_only }}
         env:
@@ -94,7 +94,7 @@ jobs:
           DB_STATEMENT_TIMEOUT_MS: '60000'
         # bash (not the default sh) gives pipefail, so a failed run still fails the step.
         shell: bash
-        run: python -u -m scripts.cloud.run 2>&1 | tee run.log
+        run: python -u -m cloud.run 2>&1 | tee run.log
       - name: Upload run log for the ops page
         if: ${{ always() && !inputs.validate_database_only }}
         env:
@@ -105,4 +105,4 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         # DATABASE_URL is only listed so its value is redacted from the uploaded log.
-        run: test -f run.log && python -m scripts.cloud.ops_report upload-log run.log || true
+        run: test -f run.log && python -m cloud.ops.report upload-log run.log || true

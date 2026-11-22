@@ -34,7 +34,7 @@ from wecanfindintern.db.read_repository import JobReadRepository
 from wecanfindintern.domain.classification import normalize_for_matching
 from wecanfindintern.domain.location import clean_location_display
 from wecanfindintern.profile.models import UserProfile
-from wecanfindintern.waterlooworks.taxonomy import resolve_waterloo_opportunity_type
+from wecanfindintern.waterlooworks.domain.boards import resolve_waterloo_opportunity_type
 
 RECOMMENDATION_RANKING_VERSION = "recommend.v4"
 

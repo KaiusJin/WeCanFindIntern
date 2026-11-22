@@ -4,7 +4,7 @@ This document is the stable reference for the external JobSpy boundary. For the 
 
 ```mermaid
 flowchart LR
-    Q[Validated JobSpyQuery] --> V[Vendored jobspy.scrape_jobs]
+    Q[Validated JobSpyQuery] --> V[Shared source dispatch]
     V --> D[Pandas DataFrame]
     D --> S[Stable 34-column frame]
     S --> N[NormalizedJob list]
@@ -19,16 +19,16 @@ flowchart LR
 ## Version baseline
 
 - Upstream project: <https://github.com/speedyapply/JobSpy>
-- Package: `python-jobspy`
+- Upstream package: `python-jobspy` (source integrated locally)
 - Audited version: `1.1.82`
 - Vendored commit: `fda080a373e8226f3fd60635323f5da9af9892b1`
 - Python requirement: 3.10+
 
-The source lives in `vendor/JobSpy` and is installed as the project’s local editable dependency. This keeps scraper behavior reproducible and makes source upgrades reviewable.
+The source lives in separate `cloud/sources/jobspy/linkedin/` and `cloud/sources/jobspy/indeed/` directories. Shared models, HTTP helpers and dispatch live in the adjacent `shared/` directory. Cloud dependencies are installed from `cloud/requirements.txt`; no separate JobSpy package is required. The original MIT license is preserved in `cloud/sources/jobspy/LICENSE`.
 
 ## JobSpy DataFrame columns
 
-`jobspy.scrape_jobs()` returns a pandas DataFrame. The adapter stabilizes these 34 fields:
+`shared.dispatch.scrape_jobs()` returns a pandas DataFrame. The adapter stabilizes these 34 fields:
 
 | Field | Meaning |
 |---|---|
@@ -70,7 +70,7 @@ JobSpy may return zero rows and zero columns for an empty search. `stabilize_job
 
 ## Project boundary
 
-`NormalizedJob` in `ingestion/jobspy_adapter.py` is the project boundary. It converts provider rows into typed fields while keeping a cleaned raw dictionary for diagnostics. Downstream code uses `NormalizedJob` and `CanonicalJobInput`, never a provider DataFrame.
+`NormalizedJob` in `cloud/sources/jobspy/adapter.py` is the project boundary. It converts provider rows into typed fields while keeping a cleaned raw dictionary for diagnostics. Downstream code uses `NormalizedJob` and `CanonicalJobInput`, never a provider DataFrame.
 
 Source fields are asymmetric by design. Missing company metadata, salary, skills, descriptions, or IDs are valid provider outcomes. The adapter uses `None`/empty lists rather than inventing values. Flattened source strings are split only where the internal contract needs a list.
 
@@ -89,7 +89,7 @@ This distinction is used by the campaign retry policy.
 Callers must obey source-specific JobSpy constraints. Indeed's `hours_old`,
 `job_type + is_remote`, and `easy_apply` combinations are mutually constrained.
 LinkedIn's `hours_old` and `easy_apply` combination is constrained.
-`source_overrides` in `scripts/collection/collection_plans.json` is the supported place for source-
+`source_overrides` in `cloud/config/collection_plans.json` is the supported place for source-
 specific query changes.
 
 The delivered catalog enables LinkedIn descriptions, but the campaign forces
@@ -104,7 +104,7 @@ JobSpy DataFrame contract while avoiding duplicate detail calls.
 
 When upgrading JobSpy:
 
-1. Update `vendor/JobSpy` and record the commit/version.
+1. Update the source-specific directories and shared helpers under `cloud/sources/jobspy/`, and record the upstream commit/version.
 2. Compare upstream `JobPost` and desired column ordering.
 3. Update `JOBSPY_COLUMNS` and this table.
 4. Run adapter, normalization, and route tests.
@@ -117,6 +117,6 @@ public schema all describe the same provider shape.
 
 ## Vendored provider scope
 
-The local JobSpy package includes only Indeed and LinkedIn. Other upstream
+The integrated JobSpy-derived code includes only Indeed and LinkedIn. Other upstream
 collectors, their query options, release configuration, and development tooling
 are removed. The upstream MIT license is retained.
