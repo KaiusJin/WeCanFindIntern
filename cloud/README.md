@@ -66,6 +66,7 @@ discover ─┬─ boards (GH/Lever/Ashby) ────────────�
 
 - Every collector shard writes `jobs.jsonl.gz` + `result.json` (stats, failures, seconds) as an artifact.
 - `merge` keeps the best record per fingerprint, so a JD found by `linkedin-details` replaces the shard's copy without one. The ops report lists every shard, plus `merge` and `simplify-gap-fill`.
+- `publish` ingests 250 records per transaction with batch source/candidate lookups and multi-row writes. Records within a batch still deduplicate against earlier records in that batch. Each committed batch logs progress, outcome counts and elapsed time.
 - No failed collector blocks anything downstream. `merge` and `publish` run with `always()`. Only a failed `plan` (no `plan.json`) or a failed `merge` stops the run from publishing.
 - A shard that failed, timed out or was cancelled leaves no artifact. It is reported as a failure, the run is `partial`, and everything else is published.
 - Retention does not depend on what a run saw: jobs move to `jobs_archive` four months after they were first written (`cloud/storage/maintenance.py`).

@@ -7,9 +7,11 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from time import perf_counter
 
 from psycopg_pool import AsyncConnectionPool
 
+from cloud.console import log
 from cloud.pipeline.recruiting_term import (
     RecruitingTermEnrichmentStats,
     enrich_recruiting_terms,
@@ -48,23 +50,30 @@ async def run_ingestion_pipeline(
     if timings is None:
         timings = DedupeTimings()
     repository = JobIngestionRepository(pool, timings=timings)
-    with timings.measure("normalize"):
-        canonical_jobs = [
-            await asyncio.to_thread(
-                canonical_job_from_normalized,
-                job,
-                scraped_at=scraped_at,
-            )
-            for job in jobs
-        ]
+    started = perf_counter()
+    total = len(jobs)
+    batches = (total + batch_size - 1) // batch_size
+    log(f"Ingestion started: {total} records, {batches} batches of up to {batch_size}")
+    canonical_jobs = []
     pipeline_outcomes = outcomes if outcomes is not None else Counter()
-    for offset in range(0, len(canonical_jobs), batch_size):
-        pipeline_outcomes.update(
-            await repository.ingest_batch(
-                run_id=run_id,
-                jobs=canonical_jobs[offset : offset + batch_size],
-                scraped_at=scraped_at,
-            )
+    for offset in range(0, total, batch_size):
+        batch_started = perf_counter()
+        with timings.measure("normalize"):
+            batch = [
+                await asyncio.to_thread(canonical_job_from_normalized, job, scraped_at=scraped_at)
+                for job in jobs[offset : offset + batch_size]
+            ]
+        canonical_jobs.extend(batch)
+        persisted = await repository.ingest_batch(run_id=run_id, jobs=batch, scraped_at=scraped_at)
+        pipeline_outcomes.update(persisted)
+        processed = offset + len(batch)
+        elapsed = perf_counter() - started
+        log(
+            f"Ingestion batch {offset // batch_size + 1}/{batches}: "
+            f"processed={processed}/{total} ({100 * processed / total:.1f}%), "
+            f"created={persisted['created']}, merged={persisted['merged']}, "
+            f"updated={persisted['updated']}, unchanged={persisted['unchanged']}; "
+            f"batch={perf_counter() - batch_started:.1f}s, elapsed={elapsed:.1f}s"
         )
     if after_persist is not None:
         after_persist(pipeline_outcomes)
