@@ -46,7 +46,7 @@ Third-party code and data are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOT
 
 ```text
 plan ─┬─ indeed ──────────────────────────────────────┐
-      └─ linkedin × search term ── linkedin-details ──┤
+      └─ linkedin × term × country ── linkedin-details ┤
 discover ─┬─ boards (GH/Lever/Ashby) ─────────────────┼─ merge ─ simplify-gap-fill ─ publish
           └─ workday × pod slice ─────────────────────┘
 ```
@@ -56,7 +56,7 @@ discover ─┬─ boards (GH/Lever/Ashby) ────────────�
 | `plan` | `python -m cloud.parallel plan work/plan` | Read-only `DATABASE_URL` for the sweep window and the LinkedIn IDs seen in the last 24 h (`linkedin_seen_window_seconds`) |
 | `discover` | `python -m cloud.parallel discover work/discover` | None. Registry + SimplifyJobs + Stapply → `boards.json`, `stapply.jsonl.gz`, `simplify.json` and the Workday matrix |
 | `indeed` | `collect indeed --plan … --out out` | None |
-| `linkedin` × term | `collect linkedin <term-slug> --plan … --out out` | None. Both countries for one search term. Cards whose ID was seen in the last 24 h are **discarded** (by ID only; content changes are ignored). Then JDs for the remaining cards |
+| `linkedin` × term × country | `collect linkedin <country>-<term-slug> --plan … --out out` | None. One search term in one country (e.g. `us-software-engineer-intern`), up to `max_results_by_source.linkedin` (60) cards in pages of 10. Cards whose ID was seen in the last 24 h are **discarded** (by ID only; content changes are ignored). Then JDs for the remaining cards |
 | `linkedin-details` | `collect linkedin-details --plan … --inputs … --out out` | None. After all LinkedIn shards: retries the JD of every LinkedIn job a shard returned without one. Same waits; budget `linkedin_details_budget_seconds`. If this step is missing, the jobs are still published (soft failure) |
 | `boards` | `collect boards --plan … --discover … --out out` | None. Budget `ats.boards_budget_seconds` |
 | `workday` × shard | `collect workday <shard> --plan … --discover … --out out` | None. One shard per Workday pod; pods above 250 boards are split by a CRC32 of the board token, small pods share `misc`. Budget `ats.workday_shard_budget_seconds` |
