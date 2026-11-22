@@ -21,7 +21,9 @@ concurrency:
 jobs:
   collect-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    # Public repository: hosted runners allow up to 6 h per job. LinkedIn cooldowns,
+    # the 40-minute ATS budget and deduplicating ~10k+ records need the headroom.
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,7 +37,7 @@ jobs:
             vendor/JobSpy/pyproject.toml
             .github/workflows/cloud-jobs.yml
       - name: Install collector dependencies
-        run: python -m pip install ./vendor/JobSpy 'psycopg[binary,pool]>=3.2,<4' 'boto3>=1.36,<2'
+        run: python -m pip install ./vendor/JobSpy 'psycopg[binary,pool]>=3.2,<4' 'boto3>=1.36,<2' 'duckdb>=1.1,<2'
       - name: Validate Supabase database
         if: ${{ inputs.validate_database_only }}
         env:

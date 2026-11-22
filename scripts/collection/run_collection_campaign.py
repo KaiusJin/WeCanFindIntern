@@ -23,6 +23,16 @@ from wecanfindintern.db.pool import Database
 from wecanfindintern.db.repositories.collection_cache import CollectionCacheRepository
 from wecanfindintern.db.repositories.jobs import DedupeTimings, JobIngestionRepository
 from wecanfindintern.domain.location import parse_location
+from wecanfindintern.ingestion.ats import collect_ats_jobs, load_boards
+from wecanfindintern.ingestion.ats.boards import merge_boards
+from wecanfindintern.ingestion.ats.providers import Scope as AtsScope
+from wecanfindintern.ingestion.ats.simplify import (
+    SimplifyListing,
+    coverage_report,
+    fetch_simplify,
+    gap_fill_jobs,
+)
+from wecanfindintern.ingestion.ats.stapply import collect_stapply_jobs
 from wecanfindintern.ingestion.collection_catalog import expand_collection_catalog
 from wecanfindintern.ingestion.jobspy_adapter import (
     JobSpyQuery,
@@ -52,6 +62,8 @@ class CampaignResult:
     query_stats: dict[str, int]
     failures: tuple[str, ...]
     dedupe_seconds: dict[str, float] = dataclasses.field(default_factory=dict)
+    # Operator report: per-source counts, timings and SimplifyJobs coverage.
+    monitor: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -64,6 +76,7 @@ class CampaignResult:
             "salary_stats": dict(self.salary_stats),
             "recruiting_term_stats": dict(self.recruiting_term_stats),
             "query_stats": dict(self.query_stats),
+            "monitor": self.monitor,
             "failure_count": len(self.failures),
             "failures": list(self.failures),
         }
@@ -107,7 +120,7 @@ async def collect_all(
 ) -> tuple[list[NormalizedJob], list[str], dict[str, int]]:
     collected: dict[str, NormalizedJob] = {}
     failures: list[str] = []
-    stats = {"retried": 0, "succeeded": 0, "failed": 0, "skipped": 0}
+    stats: Counter[str] = Counter(retried=0, succeeded=0, failed=0, skipped=0)
     disabled_sources: set[str] = set()
     lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(max(1, concurrency))
@@ -131,6 +144,7 @@ async def collect_all(
                 source_disabled = cached is None and source in disabled_sources
                 if source_disabled:
                     stats["skipped"] += 1
+                    stats[f"{source}_skipped"] += 1
             if source_disabled:
                 log(
                     f"[{task_idx}/{total_tasks}] Skipped {definition['name']} / {source}: "
@@ -141,8 +155,12 @@ async def collect_all(
 
             offset = 0
             seen_for_query: set[str] = set()
-            maximum = definition.get("max_results_per_source", 50)
-            page_size = definition.get("page_size", 25)
+            maximum = definition.get("max_results_by_source", {}).get(
+                source, definition.get("max_results_per_source", 50)
+            )
+            page_size = definition.get("page_size_by_source", {}).get(
+                source, definition.get("page_size", 25)
+            )
             query_jobs: list[NormalizedJob] = [] if cached is None else cached
             query_has_failed = False
 
@@ -234,8 +252,10 @@ async def collect_all(
             async with lock:
                 if query_has_failed:
                     stats["failed"] += 1
+                    stats[f"{source}_failed"] += 1
                 else:
                     stats["succeeded"] += 1
+                    stats[f"{source}_succeeded"] += 1
                 for job in query_jobs:
                     existing = collected.get(job.source_fingerprint)
                     if existing is None or _record_score(job) > _record_score(existing):
@@ -260,6 +280,138 @@ async def collect_all(
         *[_collect_single_query(defn, src, idx) for idx, (defn, src) in enumerate(tasks, start=1)]
     )
     return list(collected.values()), failures, stats
+
+
+def source_group(job: NormalizedJob) -> str:
+    """Monitoring bucket: one per collector, not per underlying ATS."""
+    via = (job.raw or {}).get("via")
+    if via in {"stapply", "simplify"}:
+        return via
+    if job.source in {"greenhouse", "lever", "ashby", "workday"}:
+        return f"ats_{job.source}"
+    return job.source
+
+
+def build_source_monitor(
+    jobs: list[NormalizedJob], listings: list[SimplifyListing]
+) -> dict[str, Any]:
+    """Per-collector job counts and SimplifyJobs recall, before gap filling."""
+    groups: dict[str, list[NormalizedJob]] = {}
+    for job in jobs:
+        groups.setdefault(source_group(job), []).append(job)
+    monitor: dict[str, Any] = {
+        "sources": {name: {"jobs": len(items)} for name, items in sorted(groups.items())}
+    }
+    if listings:
+        monitor["coverage"] = coverage_report(listings, jobs)
+        for name, items in groups.items():
+            report = coverage_report(listings, items, sample=0)
+            monitor["sources"][name]["simplify_covered"] = report["covered"]
+            monitor["sources"][name]["simplify_recall"] = report["recall"]
+    return monitor
+
+
+def ats_settings(defaults: dict[str, Any]) -> dict[str, Any]:
+    settings = {
+        "enabled": True,
+        "boards_path": "ats_boards.json",
+        "concurrency": 8,
+        "include_new_grad": False,
+        "budget_seconds": 900,
+        "stapply_enabled": True,
+        "simplify_enabled": True,
+    }
+    settings.update(defaults.get("ats") or {})
+    env = os.getenv("WCFI_ATS_ENABLED")
+    if env is not None:
+        settings["enabled"] = env.strip().lower() not in {"0", "false", "no", "off"}
+    env = os.getenv("WCFI_SIMPLIFY_ENABLED")
+    if env is not None:
+        settings["simplify_enabled"] = env.strip().lower() not in {"0", "false", "no", "off"}
+    env = os.getenv("WCFI_STAPPLY_ENABLED")
+    if env is not None:
+        settings["stapply_enabled"] = env.strip().lower() not in {"0", "false", "no", "off"}
+    return settings
+
+
+async def collect_ats_stage(
+    config_path: Path, defaults: dict[str, Any]
+) -> tuple[list[NormalizedJob], dict[str, int], list[SimplifyListing]]:
+    """Backfill from the Stapply dataset, then poll Greenhouse/Lever/Ashby/Workday boards.
+
+    A failed board, or an unavailable Stapply snapshot, is logged and counted but
+    never fails the campaign: it is retried next run, and jobs already collected
+    stay live until the normal 14-day expiry.
+    """
+    settings = ats_settings(defaults)
+    if not settings["enabled"]:
+        log("ATS stage disabled")
+        return [], {}, []
+    boards_path = config_path.parent / settings["boards_path"]
+    boards = load_boards(boards_path)
+    scope = AtsScope(include_new_grad=bool(settings["include_new_grad"]))
+    stapply_jobs: list[NormalizedJob] = []
+    stats: dict[str, int] = {}
+    simplify_listings: list[SimplifyListing] = []
+    if settings["simplify_enabled"]:
+        simplify_started = time.monotonic()
+        try:
+            simplify = await asyncio.to_thread(fetch_simplify, scope)
+        except Exception as error:  # third-party list: never fail the campaign
+            log(f"SimplifyJobs lists skipped: {type(error).__name__}: {error}", "WARN")
+            stats["simplify_failed"] = 1
+        else:
+            simplify_listings = simplify.listings
+            stats.update({f"simplify_{k}": int(v) for k, v in simplify.stats.items()})
+            known = len(boards)
+            boards = merge_boards(boards, simplify.boards)
+            stats["ats_boards_from_simplify"] = len(boards) - known
+            stats["simplify_seconds"] = round(time.monotonic() - simplify_started)
+            log(
+                f"SimplifyJobs lists loaded: {len(simplify_listings)} in-scope listings, "
+                f"{len(boards) - known} new boards to poll"
+            )
+    if settings["stapply_enabled"]:
+        # Stapply backfills every ATS/career site this collector does not poll, and
+        # its Greenhouse/Lever/Ashby/Workday URLs reveal boards missing from the registry.
+        stapply_started = time.monotonic()
+        try:
+            stapply = await asyncio.to_thread(collect_stapply_jobs, scope)
+        except Exception as error:  # third-party dataset: never fail the campaign
+            log(f"Stapply backfill skipped: {type(error).__name__}: {error}", "WARN")
+            stats["stapply_failed"] = 1
+        else:
+            stapply_jobs = stapply.jobs
+            stats.update({f"stapply_{k}": int(v) for k, v in stapply.stats.items()})
+            known = len(boards)
+            boards = merge_boards(boards, stapply.boards)
+            stats["ats_boards_from_stapply"] = len(boards) - known
+            stats["stapply_seconds"] = round(time.monotonic() - stapply_started)
+            log(
+                f"Stapply backfill complete in {time.monotonic() - stapply_started:.1f}s: "
+                f"{len(stapply_jobs)} jobs, {len(boards) - known} new boards to poll"
+            )
+    started = time.monotonic()
+    collection = await asyncio.to_thread(
+        collect_ats_jobs,
+        boards,
+        scope=scope,
+        concurrency=int(settings["concurrency"]),
+        deadline=started + float(settings["budget_seconds"]),
+    )
+    stats.update({f"ats_{key}": int(value) for key, value in collection.stats.items()})
+    stats["ats_boards"] = len(boards)
+    stats["ats_seconds"] = round(time.monotonic() - started)
+    log(
+        f"ATS stage complete in {time.monotonic() - started:.1f}s: "
+        f"{len(collection.jobs)} jobs from {stats.get('ats_boards_ok', 0)}/{len(boards)} boards "
+        f"(missing={stats.get('ats_boards_missing', 0)}, "
+        f"failed={stats.get('ats_boards_failed', 0)}, "
+        f"skipped_deadline={stats.get('ats_boards_skipped_deadline', 0)})"
+    )
+    for failure in collection.failed_boards[:20]:
+        log(f"ATS board failed: {failure}", "WARN")
+    return [*collection.jobs, *stapply_jobs], stats, simplify_listings
 
 
 def linkedin_details_enabled(definitions: list[dict[str, Any]]) -> bool:
@@ -496,6 +648,21 @@ async def run(
                 f"failed={detail_stats['linkedin_detail_failed']}, "
                 f"stale_fallbacks={detail_stats['linkedin_detail_stale_fallbacks']}"
             )
+        ats_jobs, ats_stats, simplify_listings = await collect_ats_stage(config_path, defaults)
+        normalized_jobs = [*normalized_jobs, *ats_jobs]
+        query_stats.update(ats_stats)
+        monitor = build_source_monitor(normalized_jobs, simplify_listings)
+        if simplify_listings:
+            fill = gap_fill_jobs(simplify_listings, normalized_jobs)
+            normalized_jobs = [*normalized_jobs, *fill]
+            query_stats["simplify_gap_fill_jobs"] = len(fill)
+            monitor["simplify_gap_fill_jobs"] = len(fill)
+            log(
+                "SimplifyJobs coverage before gap fill: "
+                f"{monitor['coverage']['covered']}/{monitor['coverage']['reference']}; "
+                f"added {len(fill)} gap-fill jobs"
+            )
+
         collection_seconds = time.monotonic() - collection_started
         log(
             f"Collection stage complete in {collection_seconds:.1f}s: "
@@ -592,6 +759,18 @@ async def run(
             },
             query_stats=query_stats,
             failures=tuple(failures),
+            monitor={
+                **monitor,
+                "sources": {
+                    **monitor.get("sources", {}),
+                    **{
+                        source: {**monitor.get("sources", {}).get(source, {}), "final_jobs": n}
+                        for source, n in Counter(
+                            source_group(job) for job in normalized_jobs
+                        ).items()
+                    },
+                },
+            },
         )
         summary_path = Path(os.getenv("WCFI_LOG_DIR", "logs")) / "campaign_summary_latest.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
