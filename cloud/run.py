@@ -1,9 +1,12 @@
 """Entry point: run one campaign, then maintain the database and publish the R2 feed."""
 
+import argparse
 import asyncio
 import json
 import os
+import sys
 import time
+from pathlib import Path
 
 import psycopg
 
@@ -18,7 +21,14 @@ from cloud.storage.maintenance import acquire_campaign_lock, maintain
 CONFIG = DEFAULT_PLAN_PATH
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="python -m cloud.run")
+    parser.add_argument(
+        "--from-artifacts",
+        type=Path,
+        help="publish the shards collected by cloud.parallel instead of collecting here",
+    )
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     # These are workflow-only credentials. Desktop code imports neither boto3 nor this module.
     url = os.environ["DATABASE_URL"]
     store = r2_from_env()
@@ -35,8 +45,14 @@ def main():
             publish_ops(store, report)
 
         try:
-            checkpoint = QueryCheckpoint(db, CONFIG)
-            result = asyncio.run(run(CONFIG, 250, checkpoint=checkpoint))
+            if args.from_artifacts is not None:
+                from cloud.parallel import run_from_artifacts
+
+                checkpoint = None
+                result = asyncio.run(run_from_artifacts(args.from_artifacts, 250))
+            else:
+                checkpoint = QueryCheckpoint(db, CONFIG)
+                result = asyncio.run(run(CONFIG, 250, checkpoint=checkpoint))
         except Exception as error:
             report = {
                 "status": "error",
@@ -63,14 +79,16 @@ def main():
             finish_report(report)
             raise RuntimeError("Public job collection failed")
         try:
-            checkpoint.clear()
-            maintain(db, expire=result.status == "success")
+            if checkpoint is not None:
+                checkpoint.clear()
+            archived = maintain(db)
             manifest = publish(db, store)
         except Exception as error:
             report["status"] = "error"
             report["error"] = redact(f"publish: {type(error).__name__}: {error}")[:500]
             finish_report(report)
             raise
+        report["archived_jobs"] = archived
         report["feed"] = {
             "version": manifest["version"],
             "snapshot_jobs": manifest["snapshot"]["count"],

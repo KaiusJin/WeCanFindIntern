@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from cloud.console import log
 from cloud.sources.job_boards import collect_ats_jobs, load_boards
-from cloud.sources.job_boards.boards import merge_boards
+from cloud.sources.job_boards.boards import Board, merge_boards
 from cloud.sources.job_boards.providers import Scope as AtsScope
 from cloud.sources.job_boards.simplify import SimplifyListing, fetch_simplify
 from cloud.sources.job_boards.stapply import collect_stapply_jobs
@@ -40,22 +41,19 @@ def job_board_settings(defaults: dict[str, Any]) -> dict[str, Any]:
     return settings
 
 
-async def collect_job_boards(
-    config_path: Path, defaults: dict[str, Any]
-) -> tuple[list[NormalizedJob], dict[str, int], list[SimplifyListing]]:
-    """Backfill from the Stapply dataset, then poll Greenhouse/Lever/Ashby/Workday boards.
+@dataclass
+class BoardDiscovery:
+    boards: list[Board]
+    stapply_jobs: list[NormalizedJob]
+    simplify_listings: list[SimplifyListing]
+    stats: dict[str, int]
 
-    A failed board, or an unavailable Stapply snapshot, is logged and counted but
-    never fails the campaign: it is retried next run, and jobs already collected
-    stay live until the normal 14-day expiry.
-    """
-    settings = job_board_settings(defaults)
-    if not settings["enabled"]:
-        log("ATS stage disabled")
-        return [], {}, []
-    boards_path = config_path.parent / settings["boards_path"]
-    boards = load_boards(boards_path)
-    scope = AtsScope(include_new_grad=bool(settings["include_new_grad"]))
+
+async def discover_boards(
+    config_path: Path, settings: dict[str, Any], scope: AtsScope
+) -> BoardDiscovery:
+    """Committed registry + boards found in SimplifyJobs and Stapply, plus Stapply's jobs."""
+    boards = load_boards(config_path.parent / settings["boards_path"])
     stapply_jobs: list[NormalizedJob] = []
     stats: dict[str, int] = {}
     simplify_listings: list[SimplifyListing] = []
@@ -97,15 +95,22 @@ async def collect_job_boards(
                 f"Stapply backfill complete in {time.monotonic() - stapply_started:.1f}s: "
                 f"{len(stapply_jobs)} jobs, {len(boards) - known} new boards to poll"
             )
+    return BoardDiscovery(boards, stapply_jobs, simplify_listings, stats)
+
+
+async def poll_boards(
+    boards: list[Board], scope: AtsScope, *, concurrency: int, budget_seconds: float
+) -> tuple[list[NormalizedJob], dict[str, int]]:
+    """Poll the given boards until the budget runs out; failures are counted, not raised."""
     started = time.monotonic()
     collection = await asyncio.to_thread(
         collect_ats_jobs,
         boards,
         scope=scope,
-        concurrency=int(settings["concurrency"]),
-        deadline=started + float(settings["budget_seconds"]),
+        concurrency=concurrency,
+        deadline=started + budget_seconds,
     )
-    stats.update({f"ats_{key}": int(value) for key, value in collection.stats.items()})
+    stats = {f"ats_{key}": int(value) for key, value in collection.stats.items()}
     stats["ats_boards"] = len(boards)
     stats["ats_seconds"] = round(time.monotonic() - started)
     log(
@@ -117,4 +122,28 @@ async def collect_job_boards(
     )
     for failure in collection.failed_boards[:20]:
         log(f"ATS board failed: {failure}", "WARN")
-    return [*collection.jobs, *stapply_jobs], stats, simplify_listings
+    return collection.jobs, stats
+
+
+async def collect_job_boards(
+    config_path: Path, defaults: dict[str, Any]
+) -> tuple[list[NormalizedJob], dict[str, int], list[SimplifyListing]]:
+    """Single-process mode: discover boards, then poll all of them in one budget.
+
+    A failed board, or an unavailable Stapply snapshot, is logged and counted but
+    never fails the campaign: it is retried next run, and jobs already collected
+    stay live until the normal 14-day expiry.
+    """
+    settings = job_board_settings(defaults)
+    if not settings["enabled"]:
+        log("ATS stage disabled")
+        return [], {}, []
+    scope = AtsScope(include_new_grad=bool(settings["include_new_grad"]))
+    found = await discover_boards(config_path, settings, scope)
+    jobs, stats = await poll_boards(
+        found.boards,
+        scope,
+        concurrency=int(settings["concurrency"]),
+        budget_seconds=float(settings["budget_seconds"]),
+    )
+    return [*jobs, *found.stapply_jobs], {**found.stats, **stats}, found.simplify_listings

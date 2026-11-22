@@ -59,6 +59,8 @@ REPORT = {
         "jobs_new_this_run": 130,
         "jobs_updated_this_run": 900,
         "jobs_closed_this_run": 25,
+        "jobs_archived_this_run": 40,
+        "jobs_archived_total": 300,
         "sources": {"indeed": {"live_jobs": 3000, "seen_this_run": 2500, "new_this_run": 90}},
         "breakdowns": {"opportunity_type": {"internship": 5000, "co_op": 700, "new_grad": 300}},
     },
@@ -91,7 +93,7 @@ class FakeStore:
 def test_markdown_lists_sources_database_types_and_failures():
     text = render_markdown(REPORT)
     assert "Job collection: partial" in text
-    assert "6000 live jobs (130 new, 900 updated, 25 closed this run)" in text
+    assert "6000 live jobs (130 new, 900 updated, 40 archived this run, 300 in archive)" in text
     assert "| indeed | 2500 | 2500 | 12% |" in text
     assert "| indeed | 3000 | 2500 | 90 |" in text
     assert "| co_op | 700 |" in text
@@ -193,6 +195,9 @@ class FakeDb:
         ("length(j.description)", [(3, 4, 20, 1, 2, 5)]),
         ("pg_total_relation_size", [("jobs", 50_000_000), ("job_sources", 9_000_000)]),
         ("pg_database_size", [(80_000_000,)]),
+        ("to_regclass('jobs_archive')", [(True,)]),
+        ("FROM jobs_archive", [(300, 40)]),
+        ("interval '4 months' + interval '7 days'", [(12,)]),
         ("GROUP BY 1", [("x", 1)]),
     ]
 
@@ -233,3 +238,5 @@ def test_collect_db_stats_shapes_the_report():
     assert stats["quality"]["with_salary"] == 20
     assert stats["database_bytes"] == 80_000_000
     assert stats["table_bytes"] == {"jobs": 50_000_000, "job_sources": 9_000_000}
+    assert (stats["jobs_archived_total"], stats["jobs_archived_this_run"]) == (300, 40)
+    assert stats["jobs_archive_next_7_days"] == 12

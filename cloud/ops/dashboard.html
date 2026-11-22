@@ -83,7 +83,7 @@
     <h2>Trends (all runs; dashed line = selected run)</h2>
     <div class="grid">
       <div class="panel"><h3>Live jobs in database</h3><div id="liveChart"></div></div>
-      <div class="panel"><h3>New jobs written per run</h3><div id="newChart"></div></div>
+      <div class="panel"><h3>New and archived jobs per run</h3><div id="newChart"></div></div>
       <div class="panel"><h3>Jobs collected per collector</h3><div id="sourceChart"></div><div class="legend" id="sourceLegend"></div></div>
       <div class="panel"><h3>Live jobs by opportunity type</h3><div id="typeChart"></div><div class="legend" id="typeLegend"></div></div>
       <div class="panel"><h3>SimplifyJobs coverage</h3><div id="recallChart"></div></div>
@@ -96,6 +96,7 @@
       <div class="grid">
         <div class="panel"><h3>Collectors this run</h3><table id="collectors"></table></div>
         <div class="panel"><h3>Database by source</h3><table id="dbSources"></table></div>
+        <div class="panel"><h3>Parallel shards (GitHub Actions jobs)</h3><table id="shards"></table></div>
       </div>
 
       <h2>Database breakdown (live jobs after the selected run)</h2>
@@ -211,8 +212,8 @@ function renderTrends() {
   const colors = palette();
   lineChart($("liveChart"), runs.map((r) => ({ at: r.at, values: { live: r.db_live, feed: r.feed_jobs } })),
     [{ key: "live", color: colors[0] }, { key: "feed", color: colors[1] }], { mark });
-  lineChart($("newChart"), runs.map((r) => ({ at: r.at, values: { new: r.db_new ?? r.created, closed: r.db_closed } })),
-    [{ key: "new", color: colors[0] }, { key: "closed", color: colors[4] }], { mark });
+  lineChart($("newChart"), runs.map((r) => ({ at: r.at, values: { new: r.db_new ?? r.created, archived: r.db_archived } })),
+    [{ key: "new", color: colors[0] }, { key: "archived", color: colors[4] }], { mark });
   multiSeries($("sourceChart"), $("sourceLegend"), runs, (r) => r.sources, mark);
   multiSeries($("typeChart"), $("typeLegend"), runs, (r) => r.types, mark);
   lineChart($("recallChart"), runs.map((r) => ({ at: r.at, values: { recall: r.recall } })),
@@ -224,9 +225,9 @@ function renderTrends() {
 }
 
 function renderHistory() {
-  table($("history"), [["Finished"], ["Status"], ["Live", 1], ["New", 1], ["Closed", 1], ["Feed", 1], ["Recall", 1], ["Min", 1], ["Failed queries", 1], ["Links"]],
+  table($("history"), [["Finished"], ["Status"], ["Live", 1], ["New", 1], ["Archived", 1], ["Feed", 1], ["Recall", 1], ["Min", 1], ["Failed queries", 1], ["Links"]],
     runHistory.map((r) => [esc(when(r.at)), `<span class="status ${esc(r.status)}">${esc(r.status)}</span>`,
-      num(r.db_live), num(r.db_new ?? r.created), num(r.db_closed), num(r.feed_jobs), pct(r.recall),
+      num(r.db_live), num(r.db_new ?? r.created), num(r.db_archived), num(r.feed_jobs), pct(r.recall),
       r.duration_s ? Math.round(r.duration_s / 60) : "–", num(r.failed_queries),
       [r.run_url && `<a href="${esc(r.run_url)}" rel="noreferrer">run</a>`, r.log_key && `<a href="${esc(rel(r.log_key))}" download>log</a>`].filter(Boolean).join(" · ") || "–"]));
   [...$("history").tBodies[0].rows].forEach((tr, i) => {
@@ -258,7 +259,7 @@ function renderSelected(report, row) {
     ["Live jobs (DB)", num(db.jobs_live ?? row.db_live)],
     ["New this run", num(db.jobs_new_this_run ?? row.db_new ?? row.created)],
     ["Updated this run", num(db.jobs_updated_this_run)],
-    ["Closed this run", num(db.jobs_closed_this_run ?? row.db_closed)],
+    ["Archived this run", num(db.jobs_archived_this_run ?? row.db_archived)],
     ["Feed jobs", num(r.feed?.snapshot_jobs ?? row.feed_jobs)],
     ["Database size", (db.database_bytes ?? row.db_bytes) >= DB_WARN_BYTES ? `<span class="err">${mib(db.database_bytes ?? row.db_bytes)}</span>` : mib(db.database_bytes ?? row.db_bytes)],
     ["Simplify recall", pct(cov.recall ?? row.recall)],
@@ -271,6 +272,9 @@ function renderSelected(report, row) {
   const collectors = Object.entries(monitor.sources || {}).sort((a, b) => (b[1].final_jobs ?? b[1].jobs ?? 0) - (a[1].final_jobs ?? a[1].jobs ?? 0));
   table($("collectors"), [["Collector"], ["Jobs", 1], ["After gap fill", 1], ["Simplify recall", 1]],
     collectors.map(([name, s]) => [esc(name), num(s.jobs), num(s.final_jobs), pct(s.simplify_recall)]));
+  table($("shards"), [["Shard"], ["Jobs", 1], ["Seconds", 1], ["Status"]],
+    Object.entries(monitor.shards || {}).map(([name, s]) => [esc(name), num(s.jobs), num(s.seconds),
+      s.missing ? '<span class="err">missing</span>' : s.failures ? `${num(s.failures)} failures` : "ok"]));
   table($("dbSources"), [["Source"], ["Live jobs", 1], ["Seen this run", 1], ["New this run", 1]],
     Object.entries(db.sources || {}).map(([name, s]) => [esc(name), num(s.live_jobs), num(s.seen_this_run), num(s.new_this_run)]));
 
@@ -285,7 +289,9 @@ function renderSelected(report, row) {
     ["With salary", quality.with_salary], ["Description missing or short", quality.no_description],
     ["No posted date", quality.no_posted_date], ["No country", quality.no_country],
     ["Category 'other'", quality.category_other], ["Opportunity type unknown", quality.type_unknown],
-    ["Closed, awaiting deletion", db.jobs_closed],
+    ["In archive (total)", db.jobs_archived_total],
+    ["Reach 4-month archive age within 7 days", db.jobs_archive_next_7_days],
+    ["Closed by the old expiry rule (legacy)", db.jobs_closed],
   ].map(([k, v]) => [esc(k), num(v), live && v != null ? pct(v / live) : "–"]));
   table($("tables"), [["Table"], ["Size", 1]],
     Object.entries(db.table_bytes || {}).map(([name, bytes]) => [esc(name), mib(bytes)]));

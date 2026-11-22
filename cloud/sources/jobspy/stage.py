@@ -235,14 +235,28 @@ def linkedin_details_enabled(definitions: list[dict[str, Any]]) -> bool:
 
 async def hydrate_linkedin_descriptions(
     jobs: list[NormalizedJob],
-    cache: CollectionCacheRepository,
+    cache: CollectionCacheRepository | None,
     *,
     ttl_seconds: int,
     concurrency: int,
+    fetch: bool = True,
+    skip_fingerprints: frozenset[str] = frozenset(),
 ) -> tuple[list[NormalizedJob], dict[str, int]]:
-    """Reuse fresh LinkedIn JDs and fetch each remaining source ID only once."""
+    """Reuse fresh LinkedIn JDs and fetch each remaining source ID only once.
 
-    linkedin_jobs = [job for job in jobs if job.source == "linkedin"]
+    Parallel runs split this in two: a LinkedIn shard has no database, so it
+    fetches details (``cache=None``) except for ``skip_fingerprints`` that the
+    plan step found fresh in the cache; the publish step then fills those from
+    the cache with ``fetch=False``. Jobs that already carry a description are
+    left untouched.
+    """
+
+    linkedin_jobs = [job for job in jobs if job.source == "linkedin" and not job.description]
+    cached = (
+        await cache.linkedin_details([job.source_fingerprint for job in linkedin_jobs])
+        if cache is not None
+        else {}
+    )
     cached = await cache.linkedin_details([job.source_fingerprint for job in linkedin_jobs])
     fresh_since = datetime.now(UTC) - timedelta(seconds=max(0, ttl_seconds))
     hydrated: dict[str, NormalizedJob] = {}
@@ -271,7 +285,7 @@ async def hydrate_linkedin_descriptions(
 
     async def _fetch(job: NormalizedJob) -> None:
         nonlocal fetched, failed, stale_fallbacks, rate_limited
-        if job.source_fingerprint in hydrated:
+        if job.source_fingerprint in hydrated or job.source_fingerprint in skip_fingerprints:
             return
         if not job.source_job_id:
             async with counter_lock:
@@ -312,7 +326,8 @@ async def hydrate_linkedin_descriptions(
             async with counter_lock:
                 failed += 1
 
-    await asyncio.gather(*[_fetch(job) for job in linkedin_jobs])
+    if fetch:
+        await asyncio.gather(*[_fetch(job) for job in linkedin_jobs])
     merged_jobs = [hydrated.get(job.source_fingerprint, job) for job in jobs]
     return merged_jobs, {
         "linkedin_detail_cache_hits": cache_hits,

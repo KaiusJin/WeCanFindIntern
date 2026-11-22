@@ -43,7 +43,7 @@
   "defaults": {
     "interval_seconds": 43200,
     "recent_hours": 48,
-    "full_sweep_every": 10,
+    "full_sweep_every": 30,
     "page_size": 25,
     "max_results_per_source": 40,
     "max_results_by_source": {"indeed": 1000},
@@ -59,6 +59,8 @@
       "concurrency": 4,
       "include_new_grad": false,
       "budget_seconds": 2400,
+      "boards_budget_seconds": 900,
+      "workday_shard_budget_seconds": 2700,
       "stapply_enabled": true
     },
     "verbose": 1
