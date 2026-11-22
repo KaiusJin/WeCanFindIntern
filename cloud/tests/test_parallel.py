@@ -66,6 +66,24 @@ def test_workday_shards_split_big_pods_and_pool_small_ones(monkeypatch):
     assert not set(map(id, slices[0])) & set(map(id, slices[1]))
 
 
+def test_single_egress_keeps_each_pod_in_one_shard(monkeypatch):
+    monkeypatch.setattr(parallel, "WORKDAY_BOARDS_PER_SHARD", 10)
+    monkeypatch.setattr(parallel, "WORKDAY_SHARD_MIN_BOARDS", 5)
+    boards = [Board("workday", f"t{i}.wd1.myworkdayjobs.com/t{i}/Site") for i in range(25)]
+    boards += [Board("workday", "x.wd12.myworkdayjobs.com/x/Site")]
+    shards = parallel.workday_shards(boards, split_pods=False)
+    assert [(s["shard"], s["part"]) for s in shards] == [("wd1", [0, 1]), ("misc", [0, 1])]
+
+
+def test_single_egress_flag_comes_from_the_environment(monkeypatch):
+    monkeypatch.delenv("WORKDAY_SINGLE_EGRESS", raising=False)
+    assert not parallel.workday_single_egress()
+    monkeypatch.setenv("WORKDAY_SINGLE_EGRESS", "1")
+    assert parallel.workday_single_egress()
+    monkeypatch.setenv("WORKDAY_SINGLE_EGRESS", "")
+    assert not parallel.workday_single_egress()
+
+
 def test_jobs_and_listings_round_trip(tmp_path: Path):
     path = tmp_path / "jobs.jsonl.gz"
     parallel.write_jobs(path, [job("a"), job("b", "linkedin")])

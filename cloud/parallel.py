@@ -63,6 +63,15 @@ WORKDAY_BOARDS_PER_SHARD = 250
 WORKDAY_MAX_SHARDS = 12
 
 
+def workday_single_egress() -> bool:
+    """True when every Workday shard leaves through one proxy IP (the CSC tunnel).
+
+    Workday throttles per pod and client IP, so slices of one pod would then
+    compete on the same IP: each pod gets one shard and a longer budget instead.
+    """
+    return os.getenv("WORKDAY_SINGLE_EGRESS", "") == "1"
+
+
 # --------------------------------------------------------------------------- artifacts
 
 
@@ -199,13 +208,16 @@ def _pod_slug(pod: str) -> str:
     return slug(host.replace(".myworkdayjobs.com", "").replace(".myworkdaysite.com", "-site"))
 
 
-def workday_shards(boards: list[Board]) -> list[dict[str, Any]]:
-    """Group Workday boards by pod; split big pods, and let small pods share ``misc``."""
+def workday_shards(boards: list[Board], *, split_pods: bool = True) -> list[dict[str, Any]]:
+    """Group Workday boards by pod; split big pods, and let small pods share ``misc``.
+
+    ``split_pods=False`` keeps each pod in one shard (single egress IP).
+    """
     pods = Counter(host_key(board) for board in boards if board.provider == "workday")
     shards: list[dict[str, Any]] = []
     rest: list[str] = []
     for pod, count in pods.most_common():
-        parts = max(1, -(-count // WORKDAY_BOARDS_PER_SHARD))
+        parts = max(1, -(-count // WORKDAY_BOARDS_PER_SHARD)) if split_pods else 1
         if count < WORKDAY_SHARD_MIN_BOARDS or len(shards) + parts > WORKDAY_MAX_SHARDS - 1:
             rest.append(pod)
             continue
@@ -253,7 +265,7 @@ def discover(out: Path, config_path: Path = DEFAULT_PLAN_PATH) -> dict[str, Any]
     save_boards(out / "boards.json", boards, note="Boards for this run (registry + discovery).")
     write_jobs(out / "stapply.jsonl.gz", stapply_jobs)
     write_json(out / "simplify.json", [_listing_to_dict(item) for item in listings])
-    shards = workday_shards(boards)
+    shards = workday_shards(boards, split_pods=not workday_single_egress())
     data = {"stats": stats, "workday": shards, "seconds": round(time.monotonic() - started)}
     write_json(out / "discover.json", data)
     set_output("workday", shards)
@@ -377,7 +389,11 @@ def collect(
                 and host_key(board) in pods
                 and in_part(board, spec.get("part", [0, 1]))
             ]
-            budget = float(settings.get("workday_shard_budget_seconds", 2700))
+            budget = float(
+                settings.get("workday_single_egress_budget_seconds", 5400)
+                if workday_single_egress()
+                else settings.get("workday_shard_budget_seconds", 2700)
+            )
         jobs, stats = asyncio.run(
             poll_boards(
                 selected_boards,

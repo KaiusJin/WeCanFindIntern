@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -442,6 +443,51 @@ def test_rate_limit_never_fails_a_board_only_defers_it_to_the_deadline():
     assert result.stats["boards_failed"] == 0
     assert result.stats["boards_skipped_deadline"] == 1
     assert result.stats["rate_limited"] >= 4  # walked the cooldown ladder, never gave up
+
+
+def _getter_with(responses):
+    from collections import Counter
+
+    from cloud.sources.job_boards.collector import _http_getter
+
+    now, waits = [0.0], []
+
+    def sleep(seconds):
+        waits.append(seconds)
+        now[0] += seconds
+
+    session = SimpleNamespace(get=lambda url, params=None, timeout=None: responses.pop(0))
+    get = _http_getter(
+        session,
+        sleep=sleep,
+        clock=lambda: now[0],
+        deadline=None,
+        min_interval=0.0,
+        stats=Counter(),
+    )
+    return get, waits
+
+
+def test_cooldown_is_short_and_relaxes_after_each_success(monkeypatch):
+    monkeypatch.setattr("cloud.sources.job_boards.collector.random.uniform", lambda a, b: 1.0)
+    ok = FakeResponse(200, {"ok": True})
+    get, waits = _getter_with(
+        [FakeResponse(429), FakeResponse(429), FakeResponse(429), ok, FakeResponse(429), ok]
+    )
+    assert get("u") == {"ok": True}
+    assert waits == [10, 20, 40]  # ladder, not the old 30/60/120/300
+    assert get("u") == {"ok": True}
+    assert waits[-1] == 40  # next would have been 60; one success stepped it down
+
+
+def test_retry_after_header_wins_over_the_ladder(monkeypatch):
+    monkeypatch.setattr("cloud.sources.job_boards.collector.random.uniform", lambda a, b: 1.0)
+    limited, huge = FakeResponse(429), FakeResponse(429)
+    limited.headers["Retry-After"] = "3"
+    huge.headers["Retry-After"] = "9999"
+    get, waits = _getter_with([limited, huge, FakeResponse(200, {})])
+    assert get("u") == {}
+    assert waits == [3, 120]  # honoured, capped at RETRY_AFTER_MAX_SECONDS
 
 
 def test_workday_pods_get_their_own_sequential_queue():
