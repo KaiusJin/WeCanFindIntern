@@ -46,3 +46,51 @@ The last 30 historical campaign summaries in the development collector log avera
 | R2 requests | Roughly 300 Class A requests at three PUTs and two single-page LISTs per changed run. 1,000 clients polling six times/day and fetching one delta per poll use about 360,000 Class B requests before startup checks and retries. | 1 million A and 10 million B |
 
 Use the Actions log for collection duration, source job count, unavailable query rate, changed jobs, package sizes, database bytes and retained R2 bytes. In Supabase **Organization → Usage**, compare the database size and metered egress over several runs, including a full sweep. In **R2 → bucket → Metrics**, compare storage and Class A/B operations with the estimate. A sustained average above the modeled retention or transfer budget needs a new capacity calculation. [Supabase allowances](https://supabase.com/docs/guides/platform/billing-on-supabase) · [R2 allowances](https://developers.cloudflare.com/r2/pricing/)
+
+## Operator page
+
+Each run writes an operator report next to the feed. Open it at
+`<feed domain>/ops/index.html`. It is for operators only: the page is unlisted
+and marked `noindex`. To restrict it, protect the path `ops/*` with
+Cloudflare Access.
+
+| Object | Content |
+|---|---|
+| `ops/latest.json` | Full report of the last run, success or failure |
+| `ops/history.json` | One compact row per run, newest first, 500 rows max |
+| `ops/index.html` | Static dashboard over the two files above (`scripts/cloud/ops_dashboard.html`) |
+| `ops/logs/<run>-<attempt>.log` | The run's console log, gzip-encoded, newest 200 kept |
+
+The page shows:
+- **Totals for the last run.** Live jobs in the database; jobs new, updated and
+  closed this run; feed size; SimplifyJobs recall; duration; failure count.
+  It links to the GitHub Actions run and to the run log, which you can
+  download.
+- **Trends over time.** Live jobs and feed size; new and closed jobs per run;
+  jobs per collector; live jobs per opportunity type; SimplifyJobs recall; run
+  duration.
+- **Per-source tables.** Jobs per collector this run, with SimplifyJobs recall
+  and the effect of gap filling. Per database source: live jobs, rows seen
+  this run, rows new this run.
+- **Breakdowns of live jobs.** By opportunity type (internship, co-op, new
+  grad, ...), by title category, by top subcategories, by country, by
+  recruiting term and by work mode. New jobs this run are also broken down by
+  type.
+- **Data quality.** Multi-source jobs, salary coverage, missing or short
+  descriptions, missing posted dates, missing countries, category `other`,
+  unknown type, and jobs closed but not yet deleted.
+- **Health.** Indeed and LinkedIn query outcomes. ATS boards that were
+  failed, missing, skipped at the deadline or truncated, and 429 cooldowns.
+  Boards discovered through SimplifyJobs and Stapply. Stage timings, provider
+  failures, and a sample of missed SimplifyJobs listings.
+
+The same summary is appended to the GitHub Actions step summary.
+`scripts/cloud/ops_stats.py` computes the database figures with read-only
+aggregates after publishing; it treats `status` 1–2 as live.
+
+**Logs.** The workflow's collection step pipes its output through `tee
+run.log`. A final step runs `python -m scripts.cloud.ops_report upload-log
+run.log` even when the run failed or was cancelled. Before upload, it replaces
+the values of secret-looking environment variables and any `user:password@`
+URL credentials. Monitoring never fails a run: report, statistics and log
+uploads only print a warning on error.
