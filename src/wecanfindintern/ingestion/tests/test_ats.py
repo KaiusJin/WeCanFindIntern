@@ -695,3 +695,21 @@ def test_build_source_monitor_groups_collectors():
     assert monitor == {
         "sources": {"ats_workday": {"jobs": 1}, "indeed": {"jobs": 1}, "stapply": {"jobs": 1}}
     }
+
+
+def test_final_job_counts_use_the_same_collector_names():
+    from scripts.collection.run_collection_campaign import source_group
+    from wecanfindintern.domain.normalized_job import NormalizedJob
+
+    job = NormalizedJob(
+        source_fingerprint="1", source="oracle", source_url="u", title="t", raw={"via": "stapply"}
+    )
+    assert source_group(job) == "stapply"
+    gap = NormalizedJob(
+        source_fingerprint="2",
+        source="simplify",
+        source_url="u",
+        title="t",
+        raw={"via": "simplify"},
+    )
+    assert source_group(gap) == "simplify"

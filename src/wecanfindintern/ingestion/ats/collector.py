@@ -63,6 +63,7 @@ def _http_getter(
     deadline: float | None,
     min_interval: float,
     stats: Counter[str],
+    stats_lock: threading.Lock | None = None,
 ):
     state = {"last": 0.0, "level": 0, "ok_streak": 0}
 
@@ -88,7 +89,11 @@ def _http_getter(
             except Exception as exc:  # connection reset, timeout, DNS
                 status, last_error = None, type(exc).__name__
             if status in RATE_LIMIT_STATUS:
-                stats["rate_limited"] += 1
+                if stats_lock is None:
+                    stats["rate_limited"] += 1
+                else:
+                    with stats_lock:
+                        stats["rate_limited"] += 1
                 ladder = COOLDOWN_LADDER_SECONDS
                 cooldown = ladder[min(state["level"], len(ladder) - 1)]
                 retry_after = response.headers.get("Retry-After", "")
@@ -192,6 +197,7 @@ def collect_ats_jobs(
             deadline=deadline,
             min_interval=WORKDAY_MIN_INTERVAL_SECONDS if key.startswith("workday:") else 0.0,
             stats=result.stats,
+            stats_lock=lock,
         )
         while True:
             with lock:

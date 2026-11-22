@@ -765,7 +765,9 @@ async def run(
                     **monitor.get("sources", {}),
                     **{
                         source: {**monitor.get("sources", {}).get(source, {}), "final_jobs": n}
-                        for source, n in Counter(job.source for job in normalized_jobs).items()
+                        for source, n in Counter(
+                            source_group(job) for job in normalized_jobs
+                        ).items()
                     },
                 },
             },
