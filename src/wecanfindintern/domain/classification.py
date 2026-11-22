@@ -6,6 +6,7 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from enum import StrEnum
+from functools import lru_cache
 
 from pydantic import BaseModel, Field
 
@@ -630,10 +631,18 @@ def contains_any(text: str, patterns: Iterable[str]) -> bool:
 
 
 def contains_phrase(text: str, phrase: str) -> bool:
-    normalized_phrase = normalize_for_matching(phrase)
-    if not normalized_phrase:
+    normalized_phrase, pattern = _phrase_pattern(phrase)
+    # Cheap substring check first: the word-boundary regex can only match where
+    # the phrase occurs, and most phrases occur in few job descriptions.
+    if not normalized_phrase or normalized_phrase not in text:
         return False
-    return re.search(rf"(?<!\w){re.escape(normalized_phrase)}(?!\w)", text) is not None
+    return pattern.search(text) is not None
+
+
+@lru_cache(maxsize=4096)
+def _phrase_pattern(phrase: str) -> tuple[str, re.Pattern[str]]:
+    normalized_phrase = normalize_for_matching(phrase)
+    return normalized_phrase, re.compile(rf"(?<!\w){re.escape(normalized_phrase)}(?!\w)")
 
 
 def normalize_for_matching(value: str | None) -> str:
