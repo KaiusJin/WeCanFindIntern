@@ -99,31 +99,49 @@ def test_collection_error_classification() -> None:
     )
 
 
-def test_exhausted_linkedin_rate_limit_opens_only_linkedin_circuit(monkeypatch) -> None:
+def test_linkedin_rate_limit_waits_and_retries_the_same_page(monkeypatch) -> None:
     calls = []
+    waits = []
 
     def scrape(query):
         source = query.sites[0]
-        calls.append(source)
-        if source == "linkedin":
+        calls.append((source, query.offset))
+        if source == "linkedin" and calls.count(("linkedin", 0)) <= 2:
             raise LinkedInRateLimitException("HTTP 429 circuit is open", retry_after=300)
         return "frame", SimpleNamespace(jobs=[])
 
     monkeypatch.setattr(stage, "scrape_checked", scrape)
+    monkeypatch.setattr(stage, "linkedin_wait_seconds", lambda error: waits.append(error) or 0)
     definitions = [_definition(f"linkedin-{i}", "linkedin") for i in range(3)]
     definitions.append(_definition("indeed", "indeed"))
 
     _, failures, stats = asyncio.run(stage.collect_queries(definitions, concurrency=4))
 
-    assert calls.count("linkedin") == 1
-    assert calls.count("indeed") == 1
-    assert len(failures) == 1
-    assert {key: stats[key] for key in ("retried", "succeeded", "failed", "skipped")} == {
-        "retried": 0,
-        "succeeded": 1,
-        "failed": 1,
-        "skipped": 2,
-    }
+    assert not failures
+    assert len(waits) == 2
+    assert stats["linkedin_rate_limit_waits"] == 2
+    assert stats["linkedin_succeeded"] == 3  # no query skipped, no source disabled
+    assert stats["skipped"] == 0 and stats["failed"] == 0
+
+
+def test_linkedin_rate_limit_stops_only_at_the_deadline(monkeypatch) -> None:
+    def scrape(query):
+        if query.sites[0] == "linkedin":
+            raise LinkedInRateLimitException("HTTP 429 circuit is open", retry_after=300)
+        return "frame", SimpleNamespace(jobs=[])
+
+    monkeypatch.setattr(stage, "scrape_checked", scrape)
+    definitions = [_definition(f"linkedin-{i}", "linkedin") for i in range(2)]
+    definitions.append(_definition("indeed", "indeed"))
+
+    _, failures, stats = asyncio.run(
+        stage.collect_queries(definitions, concurrency=4, deadline=0.0)
+    )
+
+    assert stats["linkedin_unfinished"] == 2  # each query tried, none silently skipped
+    assert stats["skipped"] == 0
+    assert stats["indeed_succeeded"] == 1
+    assert all(":unfinished:" in failure for failure in failures)
 
 
 def test_queued_linkedin_queries_leave_capacity_for_indeed(monkeypatch) -> None:
@@ -158,8 +176,8 @@ def test_queued_linkedin_queries_leave_capacity_for_indeed(monkeypatch) -> None:
     assert stats["succeeded"] == 4
 
 
-def test_detail_rate_limit_stops_fetches_and_keeps_stale_cache(monkeypatch) -> None:
-    jobs = [
+def _linkedin_jobs(count: int):
+    return [
         normalize_record(
             {
                 "site": "linkedin",
@@ -168,8 +186,35 @@ def test_detail_rate_limit_stops_fetches_and_keeps_stale_cache(monkeypatch) -> N
                 "job_url": f"https://linkedin.test/jobs/view/{i}",
             }
         )
-        for i in range(3)
+        for i in range(count)
     ]
+
+
+def test_detail_rate_limit_waits_and_retries(monkeypatch) -> None:
+    jobs = _linkedin_jobs(3)
+    attempts: dict[str, int] = {}
+
+    def fetch(job_id):
+        attempts[job_id] = attempts.get(job_id, 0) + 1
+        if job_id == "li-0" and attempts[job_id] <= 2:
+            raise LinkedInRateLimitException("HTTP 429 circuit is open")
+        return {"description": f"JD for {job_id}"}
+
+    monkeypatch.setattr(stage, "fetch_linkedin_details", fetch)
+    monkeypatch.setattr(stage, "linkedin_wait_seconds", lambda error: 0)
+    hydrated, stats = asyncio.run(
+        stage.hydrate_linkedin_descriptions(jobs, None, ttl_seconds=86400, concurrency=1)
+    )
+
+    assert attempts == {"li-0": 3, "li-1": 1, "li-2": 1}
+    assert [job.description for job in hydrated] == ["JD for li-0", "JD for li-1", "JD for li-2"]
+    assert stats["linkedin_detail_fetched"] == 3
+    assert stats["linkedin_detail_rate_limit_waits"] == 2
+    assert stats["linkedin_detail_failed"] == 0
+
+
+def test_detail_deadline_marks_unfinished_and_keeps_stale_cache(monkeypatch) -> None:
+    jobs = _linkedin_jobs(3)
 
     class Cache:
         async def linkedin_details(self, _fingerprints):
@@ -185,21 +230,18 @@ def test_detail_rate_limit_stops_fetches_and_keeps_stale_cache(monkeypatch) -> N
 
     def fetch(job_id):
         calls.append(job_id)
-        raise LinkedInRateLimitException("HTTP 429 circuit is open")
+        raise LinkedInRateLimitException("HTTP 429 circuit is open", retry_after=300)
 
     monkeypatch.setattr(stage, "fetch_linkedin_details", fetch)
     hydrated, stats = asyncio.run(
         stage.hydrate_linkedin_descriptions(
-            jobs,
-            Cache(),
-            ttl_seconds=86400,
-            concurrency=1,
+            jobs, Cache(), ttl_seconds=86400, concurrency=1, deadline=0.0
         )
     )
 
-    assert len(calls) == 1
+    assert calls == []  # already past the deadline: no request is wasted
     assert all(job.description == "Cached description" for job in hydrated)
-    assert stats["linkedin_detail_failed"] == 3
+    assert stats["linkedin_detail_unfinished"] == 3
     assert stats["linkedin_detail_stale_fallbacks"] == 3
 
 
@@ -284,6 +326,8 @@ def test_linkedin_hydration_uses_cache_and_fetches_only_misses(monkeypatch) -> N
         "linkedin_detail_fetched": 1,
         "linkedin_detail_failed": 0,
         "linkedin_detail_stale_fallbacks": 0,
+        "linkedin_detail_unfinished": 0,
+        "linkedin_detail_rate_limit_waits": 0,
     }
 
 

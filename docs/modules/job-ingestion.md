@@ -266,11 +266,28 @@ LinkedIn search and detail HTTP requests share a process-wide controller in
 
 LinkedIn keyword queries are serialized outside the campaign's global semaphore,
 so queued LinkedIn work cannot occupy all slots while Indeed is collecting.
-When the controller opens its circuit, the campaign skips remaining LinkedIn
-queries for that run. Detail hydration pauses further fetches and uses stale
-cached descriptions where available. Other sources continue and the existing
-partial-result publication policy still applies. Controller state is local to
-the Python process; successful-query checkpoints remain durable separately.
+**A LinkedIn rate limit never abandons work.** When the controller raises
+`LinkedInRateLimitException` (its circuit is open), the campaign:
+- waits out the cooldown (`retry_after`, bounded to 60–600 seconds) and retries
+  the same page;
+- does not count rate-limit waits toward `max_attempts`;
+- does not disable the LinkedIn source, so later queries are not skipped.
+
+Detail hydration does the same for each ID. Only a deadline stops the waiting:
+- `linkedin_shard_budget_seconds` (default 45 min) bounds a parallel shard:
+  list pages may use 60% of it and details the rest;
+- `linkedin_budget_seconds` and `linkedin_detail_budget_seconds` bound
+  single-process runs.
+
+A query still throttled at the deadline is recorded as `unfinished`. It keeps
+the pages already collected, and it counts as a soft failure:
+- `linkedin_unfinished` and `linkedin_rate_limit_waits` in the query stats;
+- `linkedin_detail_unfinished` and `linkedin_detail_rate_limit_waits` for
+  details;
+- unfinished details fall back to a stale cached description when one exists.
+
+Other sources continue. Controller state is local to the Python process;
+successful-query checkpoints remain durable separately.
 
 When the request has `country_indeed=Canada` or `USA`/`United States`, the returned location is parsed and records outside the requested country are discarded before persistence. If no country scope is supplied, the adapter does not apply this filter.
 
