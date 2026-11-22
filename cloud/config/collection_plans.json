@@ -64,6 +64,7 @@
       "budget_seconds": 2400,
       "boards_budget_seconds": 900,
       "workday_shard_budget_seconds": 2700,
+      "simplify_detail_budget_seconds": 600,
       "stapply_enabled": true
     },
     "verbose": 1
