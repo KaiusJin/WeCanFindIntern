@@ -4,39 +4,11 @@ import asyncio
 from datetime import UTC, datetime
 
 from cloud.sources.jobspy.adapter import normalize_record
-from cloud.storage.jobs import JobIngestionRepository
+from cloud.storage.jobs import JobIngestionRepository, job_values, refresh_canonical_fields
 from wecanfindintern.domain.jobs import canonical_job_from_normalized
 
 
-def test_canonical_refresh_reclassifies_final_merged_evidence_atomically():
-    class FakeResult:
-        def __init__(self, row=None):
-            self.row = row
-
-        async def fetchone(self):
-            return self.row
-
-    class FakeConnection:
-        def __init__(self):
-            self.executed = []
-
-        async def execute(self, query, params):
-            assert query.count("%s") == len(params)
-            self.executed.append((query, params))
-            if "SELECT title, description" in query:
-                return FakeResult(
-                    {
-                        "title": "Python Software Engineer Intern",
-                        "description": "Build APIs",
-                        "employment_types": ["full_time"],
-                        "primary_employment_type": "full_time",
-                        "source_skills": ["postgresql"],
-                        "work_mode": "unknown",
-                        "description_length": 10,
-                    }
-                )
-            return FakeResult()
-
+def test_canonical_refresh_reclassifies_final_merged_evidence():
     normalized = normalize_record(
         {
             "site": "indeed",
@@ -52,22 +24,22 @@ def test_canonical_refresh_reclassifies_final_merged_evidence_atomically():
         normalized,
         scraped_at=datetime.now(UTC),
     )
-    connection = FakeConnection()
-
-    asyncio.run(
-        JobIngestionRepository(None)._refresh_canonical_job(
-            connection,
-            1,
-            canonical,
-            datetime.now(UTC),
-        )
+    current = job_values(canonical, datetime.now(UTC))
+    current.update(
+        {
+            "description": "Build APIs",
+            "employment_types": ["full_time"],
+            "primary_employment_type": "full_time",
+            "source_skills": ["postgresql"],
+            "work_mode": "unknown",
+        }
     )
+    refresh_canonical_fields(current, canonical, datetime.now(UTC))
 
-    update_sql, update_params = connection.executed[1]
-    assert "unnest(job_subcategories ||" not in update_sql
-    assert "job_category = %s" in update_sql
-    assert ["postgresql"] in update_params
-    assert canonical.classification_version in update_params
+    assert current["description"] == canonical.description
+    assert current["job_category"] == "software_engineering"
+    assert "postgresql" in current["source_skills"]
+    assert current["classification_version"] == canonical.classification_version
 
 
 def test_unchanged_sources_use_one_bulk_refresh_statement():
