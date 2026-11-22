@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Collector Ops</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e4e4df; --bar: #dfe8fb;
+    --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030; --accent: #2f6fdb;
+    --series: #2f6fdb, #1f8a4c, #b7791f, #8b5cf6, #c53030, #0e9aa7, #d946ef, #64748b, #ea580c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141413; --panel: #1d1d1b; --ink: #ecece8; --muted: #9b9b94; --line: #2f2f2c; --bar: #24324d;
+      --ok: #48bb78; --warn: #ecc94b; --bad: #fc8181; --accent: #7aa7ff;
+      --series: #7aa7ff, #48bb78, #ecc94b, #a78bfa, #fc8181, #2dd4bf, #f0abfc, #94a3b8, #fb923c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1160px; margin: 0 auto; padding: 24px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 28px 0 10px; }
+  nav { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 13px; }
+  .muted { color: var(--muted); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .tile .label { color: var(--muted); font-size: 12px; }
+  .tile .value { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+  .panel h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 500; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; }
+  .bars td.bar { width: 55%; }
+  .bars .fill { height: 10px; border-radius: 3px; background: var(--accent); min-width: 2px; }
+  .status { font-weight: 600; }
+  .status.success { color: var(--ok); } .status.partial { color: var(--warn); }
+  .status.failed, .status.error { color: var(--bad); }
+  svg { display: block; width: 100%; height: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  details { margin-top: 8px; } summary { cursor: pointer; color: var(--muted); }
+  ul.plain { margin: 6px 0 0; padding-left: 18px; }
+  .err { color: var(--bad); }
+  .runbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+  .runbar select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+                   border-radius: 8px; padding: 6px 8px; max-width: 100%; }
+  .runbar button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+                   border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  .runbar button:disabled { opacity: .4; cursor: default; }
+  #history tbody tr { cursor: pointer; }
+  #history tbody tr:hover { background: var(--bg); }
+  #history tbody tr.selected { background: var(--bar); }
+  .empty { margin-top: 24px; padding: 28px 18px; text-align: center; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Collector Ops</h1>
+  <div class="muted" id="subtitle">Loading…</div>
+  <div class="panel empty muted" id="empty" hidden>
+    No collection runs recorded yet. This page fills in after the first run of the
+    “Public job feed” workflow.
+  </div>
+  <div id="content" hidden>
+    <div class="runbar">
+      <button id="newer" title="Newer run">‹ Newer</button>
+      <select id="runSelect" aria-label="Run"></select>
+      <button id="older" title="Older run">Older ›</button>
+      <span class="muted" id="runNote"></span>
+    </div>
+    <nav id="links"></nav>
+    <div class="tiles" id="tiles"></div>
+
+    <h2>Trends (all runs; dashed line = selected run)</h2>
+    <div class="grid">
+      <div class="panel"><h3>Live jobs in database</h3><div id="liveChart"></div></div>
+      <div class="panel"><h3>New jobs written per run</h3><div id="newChart"></div></div>
+      <div class="panel"><h3>Jobs collected per collector</h3><div id="sourceChart"></div><div class="legend" id="sourceLegend"></div></div>
+      <div class="panel"><h3>Live jobs by opportunity type</h3><div id="typeChart"></div><div class="legend" id="typeLegend"></div></div>
+      <div class="panel"><h3>SimplifyJobs coverage</h3><div id="recallChart"></div></div>
+      <div class="panel"><h3>Run duration (minutes)</h3><div id="durationChart"></div></div>
+      <div class="panel"><h3>Database size (MiB, warn at 400)</h3><div id="sizeChart"></div></div>
+    </div>
+
+    <div id="details">
+      <h2>Sources (selected run)</h2>
+      <div class="grid">
+        <div class="panel"><h3>Collectors this run</h3><table id="collectors"></table></div>
+        <div class="panel"><h3>Database by source</h3><table id="dbSources"></table></div>
+      </div>
+
+      <h2>Database breakdown (live jobs after the selected run)</h2>
+      <div class="grid" id="breakdowns"></div>
+
+      <h2>Data quality (live jobs after the selected run)</h2>
+      <div class="grid">
+        <div class="panel"><table id="quality"></table></div>
+        <div class="panel"><h3>Largest tables</h3><table id="tables"></table></div>
+      </div>
+
+      <h2>Coverage by platform (selected run)</h2>
+      <div class="panel"><table id="platforms"></table>
+        <details><summary>Missed listings sample</summary><ul class="plain" id="misses"></ul></details>
+      </div>
+
+      <h2>Health (selected run)</h2>
+      <div class="panel"><table id="health"></table>
+        <details><summary>Failures</summary><ul class="plain" id="failures"></ul></details>
+      </div>
+    </div>
+
+    <h2>Run history (click a row to inspect it)</h2>
+    <div class="panel"><table id="history"></table></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const pct = (v) => v == null ? "–" : `${(v * 100).toFixed(0)}%`;
+const num = (v) => v == null ? "–" : Number(v).toLocaleString();
+const when = (s) => s ? new Date(s).toLocaleString() : "–";
+const palette = () => getComputedStyle(document.documentElement).getPropertyValue("--series").split(",").map((s) => s.trim());
+// Report, log and run keys are bucket paths ("ops/..."); this page lives in ops/.
+const rel = (key) => key ? key.replace(/^ops\//, "") : null;
+const LABELS = { co_op: "co-op", new_grad: "new grad", job_category: "Title category", opportunity_type: "Opportunity type",
+  country: "Country", work_mode: "Work mode", recruiting_term: "Recruiting term", subcategory_top: "Top subcategories",
+  new_by_opportunity_type: "New this run by type" };
+const mib = (b) => b == null ? "–" : `${Math.round(b / 1048576).toLocaleString()} MiB`;
+// Supabase free tier: 500 MB per project. Warn well before it.
+const DB_WARN_BYTES = 400 * 1048576;
+const label = (k) => LABELS[k] ?? String(k).replaceAll("_", " ");
+
+let runHistory = [];
+let selected = 0;
+const reports = new Map();
+
+function table(el, head, rows) {
+  el.innerHTML = `<thead><tr>${head.map(([h, n]) => `<th class="${n ? "num" : ""}">${esc(h)}</th>`).join("")}</tr></thead>` +
+    `<tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td class="${head[i][1] ? "num" : ""}">${c}</td>`).join("")}</tr>`).join("")}</tbody>`;
+}
+
+function bars(title, counts) {
+  const entries = Object.entries(counts || {});
+  if (!entries.length) return "";
+  const max = Math.max(...entries.map(([, v]) => v), 1);
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  const rows = entries.map(([k, v]) => `<tr><td>${esc(label(k))}</td><td class="bar"><div class="fill" style="width:${(100 * v / max).toFixed(1)}%"></div></td>` +
+    `<td class="num">${num(v)}</td><td class="num muted">${pct(v / total)}</td></tr>`).join("");
+  return `<div class="panel"><h3>${esc(label(title))}</h3><table class="bars">${rows}</table></div>`;
+}
+
+function lineChart(el, points, series, { max = null, format = (v) => num(Math.round(v)), mark = null } = {}) {
+  if (points.length < 2) { el.innerHTML = '<div class="muted">Needs at least two runs.</div>'; return; }
+  const W = 1000, H = 300, L = 60, R = 12, T = 12, B = 28;
+  const values = points.flatMap((p) => series.map((s) => p.values[s.key])).filter((v) => v != null);
+  const top = max ?? Math.max(1, ...values);
+  const x = (i) => L + (i / (points.length - 1)) * (W - L - R);
+  const y = (v) => T + (1 - v / top) * (H - T - B);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img">`;
+  for (let g = 0; g <= 4; g++) {
+    const v = (top * g) / 4;
+    svg += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>` +
+           `<text x="${L - 8}" y="${y(v) + 5}" text-anchor="end" font-size="14" fill="var(--muted)">${esc(format(v))}</text>`;
+  }
+  [0, points.length - 1].forEach((i) => {
+    svg += `<text x="${x(i)}" y="${H - 6}" text-anchor="${i ? "end" : "start"}" font-size="14" fill="var(--muted)">${esc(new Date(points[i].at).toLocaleDateString())}</text>`;
+  });
+  const m = points.findIndex((p) => p.at === mark);
+  if (m >= 0) svg += `<line x1="${x(m)}" x2="${x(m)}" y1="${T}" y2="${H - B}" stroke="var(--muted)" stroke-dasharray="6 5"/>`;
+  series.forEach((s) => {
+    const d = points.map((p, i) => p.values[s.key] == null ? null : `${x(i)},${y(p.values[s.key])}`).filter(Boolean);
+    if (d.length) svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" points="${d.join(" ")}"><title>${esc(label(s.key))}</title></polyline>`;
+  });
+  el.innerHTML = svg + "</svg>";
+}
+
+function multiSeries(chartEl, legendEl, runs, pick, mark) {
+  const keys = [...new Set(runs.flatMap((r) => Object.keys(pick(r) || {})))].sort();
+  const colors = palette();
+  const series = keys.map((key, i) => ({ key, color: colors[i % colors.length] }));
+  lineChart(chartEl, runs.map((r) => ({ at: r.at, values: pick(r) || {} })), series, { mark });
+  legendEl.innerHTML = series.map((s) => `<span><i style="background:${s.color}"></i>${esc(label(s.key))}</span>`).join("");
+}
+
+async function load(name) {
+  const res = await fetch(`${name}?t=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) { const error = new Error(`${name}: HTTP ${res.status}`); error.status = res.status; throw error; }
+  return res.json();
+}
+
+async function reportFor(index) {
+  const row = runHistory[index];
+  const key = row.report_key ? rel(row.report_key) : index === 0 ? "latest.json" : null;
+  if (!key) return null;  // rows written before per-run reports existed
+  if (!reports.has(key)) reports.set(key, load(key).catch(() => null));
+  return reports.get(key);
+}
+
+function renderTrends() {
+  const runs = [...runHistory].reverse().filter((r) => r.at);
+  const mark = runHistory[selected]?.at;
+  const colors = palette();
+  lineChart($("liveChart"), runs.map((r) => ({ at: r.at, values: { live: r.db_live, feed: r.feed_jobs } })),
+    [{ key: "live", color: colors[0] }, { key: "feed", color: colors[1] }], { mark });
+  lineChart($("newChart"), runs.map((r) => ({ at: r.at, values: { new: r.db_new ?? r.created, closed: r.db_closed } })),
+    [{ key: "new", color: colors[0] }, { key: "closed", color: colors[4] }], { mark });
+  multiSeries($("sourceChart"), $("sourceLegend"), runs, (r) => r.sources, mark);
+  multiSeries($("typeChart"), $("typeLegend"), runs, (r) => r.types, mark);
+  lineChart($("recallChart"), runs.map((r) => ({ at: r.at, values: { recall: r.recall } })),
+    [{ key: "recall", color: colors[0] }], { max: 1, format: pct, mark });
+  lineChart($("sizeChart"), runs.map((r) => ({ at: r.at, values: { size: r.db_bytes == null ? null : r.db_bytes / 1048576 } })),
+    [{ key: "size", color: colors[3] }], { mark });
+  lineChart($("durationChart"), runs.map((r) => ({ at: r.at, values: { min: r.duration_s == null ? null : r.duration_s / 60 } })),
+    [{ key: "min", color: colors[2] }], { mark });
+}
+
+function renderHistory() {
+  table($("history"), [["Finished"], ["Status"], ["Live", 1], ["New", 1], ["Closed", 1], ["Feed", 1], ["Recall", 1], ["Min", 1], ["Failed queries", 1], ["Links"]],
+    runHistory.map((r) => [esc(when(r.at)), `<span class="status ${esc(r.status)}">${esc(r.status)}</span>`,
+      num(r.db_live), num(r.db_new ?? r.created), num(r.db_closed), num(r.feed_jobs), pct(r.recall),
+      r.duration_s ? Math.round(r.duration_s / 60) : "–", num(r.failed_queries),
+      [r.run_url && `<a href="${esc(r.run_url)}" rel="noreferrer">run</a>`, r.log_key && `<a href="${esc(rel(r.log_key))}" download>log</a>`].filter(Boolean).join(" · ") || "–"]));
+  [...$("history").tBodies[0].rows].forEach((tr, i) => {
+    tr.addEventListener("click", (event) => { if (!event.target.closest("a")) select(i); });
+  });
+}
+
+function runLabel(r, i) {
+  return `${when(r.at)} · ${r.status ?? "?"}${i === 0 ? " · latest" : ""}`;
+}
+
+function renderSelected(report, row) {
+  const r = report || {};
+  const monitor = r.monitor || {}, q = r.query_stats || {}, cov = monitor.coverage || {};
+  const db = r.database || {}, run = r.run || { url: row.run_url, log_key: row.log_key };
+  $("subtitle").innerHTML = `Run finished ${esc(when(row.at))} · <span class="status ${esc(row.status)}">${esc(row.status)}</span>` +
+    (r.error || row.error ? ` · <span class="err">${esc(r.error || row.error)}</span>` : "") +
+    (r.database_error ? ` · <span class="err">DB stats: ${esc(r.database_error)}</span>` : "");
+  $("links").innerHTML = [
+    run.url && `<a href="${esc(run.url)}" rel="noreferrer">GitHub Actions run</a>`,
+    run.log_key && `<a href="${esc(rel(run.log_key))}" download>Download run log</a>`,
+    run.report_key && `<a href="${esc(rel(run.report_key))}">Report JSON</a>`,
+    `<a href="history.json">history.json</a>`,
+  ].filter(Boolean).join("");
+  $("runNote").textContent = report ? "" : "Full details were not stored for this run; showing its history summary.";
+  $("details").hidden = !report;
+
+  const tiles = [
+    ["Live jobs (DB)", num(db.jobs_live ?? row.db_live)],
+    ["New this run", num(db.jobs_new_this_run ?? row.db_new ?? row.created)],
+    ["Updated this run", num(db.jobs_updated_this_run)],
+    ["Closed this run", num(db.jobs_closed_this_run ?? row.db_closed)],
+    ["Feed jobs", num(r.feed?.snapshot_jobs ?? row.feed_jobs)],
+    ["Database size", (db.database_bytes ?? row.db_bytes) >= DB_WARN_BYTES ? `<span class="err">${mib(db.database_bytes ?? row.db_bytes)}</span>` : mib(db.database_bytes ?? row.db_bytes)],
+    ["Simplify recall", pct(cov.recall ?? row.recall)],
+    ["Duration", (r.duration_seconds ?? row.duration_s) ? `${Math.round((r.duration_seconds ?? row.duration_s) / 60)} min` : "–"],
+    ["Failures", report ? num((r.failures || []).length) : num(row.failed_queries)],
+  ];
+  $("tiles").innerHTML = tiles.map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+  if (!report) return;
+
+  const collectors = Object.entries(monitor.sources || {}).sort((a, b) => (b[1].final_jobs ?? b[1].jobs ?? 0) - (a[1].final_jobs ?? a[1].jobs ?? 0));
+  table($("collectors"), [["Collector"], ["Jobs", 1], ["After gap fill", 1], ["Simplify recall", 1]],
+    collectors.map(([name, s]) => [esc(name), num(s.jobs), num(s.final_jobs), pct(s.simplify_recall)]));
+  table($("dbSources"), [["Source"], ["Live jobs", 1], ["Seen this run", 1], ["New this run", 1]],
+    Object.entries(db.sources || {}).map(([name, s]) => [esc(name), num(s.live_jobs), num(s.seen_this_run), num(s.new_this_run)]));
+
+  const order = ["opportunity_type", "new_by_opportunity_type", "job_category", "subcategory_top", "country", "recruiting_term", "work_mode"];
+  const breakdowns = db.breakdowns || {};
+  $("breakdowns").innerHTML = order.map((k) => bars(k, breakdowns[k])).join("") ||
+    '<div class="panel muted">No database statistics in this report.</div>';
+
+  const quality = db.quality || {}, live = db.jobs_live || 0;
+  table($("quality"), [["Check"], ["Jobs", 1], ["Share", 1]], [
+    ["Multi-source (deduplicated across sources)", db.jobs_multi_source],
+    ["With salary", quality.with_salary], ["Description missing or short", quality.no_description],
+    ["No posted date", quality.no_posted_date], ["No country", quality.no_country],
+    ["Category 'other'", quality.category_other], ["Opportunity type unknown", quality.type_unknown],
+    ["Closed, awaiting deletion", db.jobs_closed],
+  ].map(([k, v]) => [esc(k), num(v), live && v != null ? pct(v / live) : "–"]));
+  table($("tables"), [["Table"], ["Size", 1]],
+    Object.entries(db.table_bytes || {}).map(([name, bytes]) => [esc(name), mib(bytes)]));
+
+  table($("platforms"), [["Platform"], ["Reference", 1], ["Covered", 1], ["Recall", 1]],
+    Object.entries(cov.by_platform || {}).map(([name, p]) => [esc(name), num(p.reference), num(p.covered), pct(p.recall)]));
+  $("misses").innerHTML = (cov.missed_sample || []).map((m) =>
+    `<li>${esc(m.company)}: <a href="${esc(m.url)}" rel="noreferrer">${esc(m.title)}</a> <span class="muted">(${esc(m.platform)})</span></li>`).join("") || "<li class='muted'>None</li>";
+
+  const health = [
+    ["Indeed queries ok / failed", `${num(q.indeed_succeeded)} / ${num(q.indeed_failed)}`],
+    ["LinkedIn queries ok / failed / skipped", `${num(q.linkedin_succeeded)} / ${num(q.linkedin_failed)} / ${num(q.linkedin_skipped)}`],
+    ["LinkedIn details fetched / failed", `${num(q.linkedin_detail_fetched)} / ${num(q.linkedin_detail_failed)}`],
+    ["ATS boards polled / ok", `${num(q.ats_boards)} / ${num(q.ats_boards_ok)}`],
+    ["ATS boards failed / missing", `${num(q.ats_boards_failed)} / ${num(q.ats_boards_missing)}`],
+    ["ATS boards skipped at deadline / truncated", `${num(q.ats_boards_skipped_deadline)} / ${num(q.ats_boards_truncated)}`],
+    ["ATS 429 cooldowns", num(q.ats_rate_limited)],
+    ["Boards discovered (Simplify / Stapply)", `${num(q.ats_boards_from_simplify)} / ${num(q.ats_boards_from_stapply)}`],
+    ["Stapply jobs kept", q.stapply_failed ? '<span class="err">unavailable</span>' : num(q.stapply_jobs_kept)],
+    ["Simplify listings / gap-fill jobs", q.simplify_failed ? '<span class="err">unavailable</span>' : `${num(q.simplify_active_in_scope)} / ${num(q.simplify_gap_fill_jobs)}`],
+    ["Stage seconds (Simplify / Stapply / ATS)", `${num(q.simplify_seconds)} / ${num(q.stapply_seconds)} / ${num(q.ats_seconds)}`],
+    ["Pipeline created / merged / updated / unchanged", ["created", "merged", "updated", "unchanged"].map((k) => num(r.database_stats?.[k])).join(" / ")],
+  ];
+  table($("health"), [["Check"], ["Value", 1]], health.map(([a, b]) => [esc(a), b]));
+  $("failures").innerHTML = (r.failures || []).slice(0, 100).map((f) => `<li>${esc(f)}</li>`).join("") || "<li class='muted'>None</li>";
+}
+
+async function select(index) {
+  selected = Math.max(0, Math.min(runHistory.length - 1, index));
+  const row = runHistory[selected];
+  $("runSelect").value = String(selected);
+  $("newer").disabled = selected === 0;
+  $("older").disabled = selected === runHistory.length - 1;
+  [...$("history").tBodies[0].rows].forEach((tr, i) => tr.classList.toggle("selected", i === selected));
+  window.history.replaceState(null, "", selected === 0 ? location.pathname : `#run=${encodeURIComponent(row.report_key || row.at)}`);
+  renderTrends();
+  renderSelected(await reportFor(selected), row);
+}
+
+(async () => {
+  try { runHistory = await load("history.json"); }
+  catch (e) {
+    if (e.status === 404) { $("subtitle").textContent = ""; $("empty").hidden = false; return; }
+    $("subtitle").innerHTML = `<span class="err">${esc(e.message)}</span>`; return;
+  }
+  if (!Array.isArray(runHistory) || !runHistory.length) { $("subtitle").textContent = ""; $("empty").hidden = false; return; }
+  $("content").hidden = false;
+  $("runSelect").innerHTML = runHistory.map((r, i) => `<option value="${i}">${esc(runLabel(r, i))}</option>`).join("");
+  $("runSelect").addEventListener("change", (e) => select(Number(e.target.value)));
+  $("newer").addEventListener("click", () => select(selected - 1));
+  $("older").addEventListener("click", () => select(selected + 1));
+  renderHistory();
+  const wanted = decodeURIComponent((location.hash.match(/^#run=(.+)$/) || [])[1] || "");
+  const index = wanted ? runHistory.findIndex((r) => r.report_key === wanted || r.at === wanted) : 0;
+  await select(index >= 0 ? index : 0);
+})();
+</script>
+</body>
+</html>
