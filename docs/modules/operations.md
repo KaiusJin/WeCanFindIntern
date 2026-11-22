@@ -68,8 +68,8 @@ feed` workflow to start a complete run, or select `validate_database_only` for a
 read-only database check. See [Cloud job feed](../CLOUD_JOB_FEED.md) for setup,
 configuration, and recovery.
 
-`scripts/collection/run_collection_campaign.py` supplies the campaign implementation
-called by `scripts/cloud/run.py`; it has no standalone local command or OS scheduler.
+`cloud/campaign.py` supplies the campaign implementation
+called by `cloud/run.py`; it has no standalone local command or OS scheduler.
 GitHub Actions concurrency and a PostgreSQL advisory lock prevent overlapping runs.
 The cloud runner checkpoints completed queries; a retry can reuse those results.
 

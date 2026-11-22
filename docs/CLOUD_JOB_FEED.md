@@ -52,7 +52,7 @@ Use the Actions log for collection duration, source job count, unavailable query
 The operator page is a permanent page at `<feed domain>/ops/index.html`. It is
 for operators only: it is unlisted and marked `noindex`. To restrict it,
 protect the path `ops/*` with Cloudflare Access.
-- The page (`scripts/cloud/ops_dashboard.html`) is deployed by the
+- The page (`cloud/ops/dashboard.html`) is deployed by the
   **Ops dashboard** workflow whenever it changes on `main`, or by hand with
   `workflow_dispatch`. It exists before the first collection run; until then
   it says that no runs have been recorded.
@@ -98,11 +98,11 @@ The page shows:
   failures, and a sample of missed SimplifyJobs listings.
 
 The same summary is appended to the GitHub Actions step summary.
-`scripts/cloud/ops_stats.py` computes the database figures with read-only
+`cloud/ops/stats.py` computes the database figures with read-only
 aggregates after publishing; it treats `status` 1–2 as live.
 
 **Logs.** The workflow's collection step pipes its output through `tee
-run.log`. A final step runs `python -m scripts.cloud.ops_report upload-log
+run.log`. A final step runs `python -m cloud.ops.report upload-log
 run.log` even when the run failed or was cancelled. Before upload, it replaces
 the values of secret-looking environment variables and any `user:password@`
 URL credentials. Monitoring never fails a run: report, statistics and log

@@ -1,5 +1,1 @@
-"""Local WaterlooWorks browser-session collection."""
-
-from wecanfindintern.waterlooworks.service import WaterlooWorksService
-
-__all__ = ["WaterlooWorksService"]
+"""Local WaterlooWorks context: domain rules, feature slices, and infrastructure."""

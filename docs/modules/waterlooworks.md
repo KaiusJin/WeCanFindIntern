@@ -15,24 +15,43 @@ flowchart LR
     A --> T[Tracker snapshot and status sync]
 ```
 
-The module consists of:
+The WaterlooWorks bounded context combines shared domain rules with vertical feature
+slices. Each slice owns its HTTP entry point and its use case. Domain rules do not
+import FastAPI, Chrome, SQLite, or environment configuration. Use cases depend on
+contracts in `application/ports.py`; `bootstrap.py` wires the concrete adapters.
 
-| File | Responsibility |
-|---|---|
-| `waterlooworks/browser.py` | Chrome discovery, launch, debug-port reuse, target selection, navigation, and JavaScript evaluation |
-| `waterlooworks/browser_scripts.py` | Shared extraction JavaScript used by job and application pages |
-| `waterlooworks/config.py` | Provider origin, board catalog, and local filesystem configuration |
-| `waterlooworks/extractor.py` | Authenticated list/detail API extraction and provider-to-domain normalization |
-| `waterlooworks/collector.py` | Board-by-board asynchronous collection and progress updates |
-| `waterlooworks/repository.py` | SQLite schema, insert-once jobs, application state, board links, run history, and queries |
-| `waterlooworks/records.py` | Shared SQLite row decoding and removal of internal fields |
-| `waterlooworks/dates.py` | Toronto-local date parsing for typed consumers; no display conversion |
-| `waterlooworks/models.py` | Typed list/detail API contracts |
-| `waterlooworks/state.py` | Snapshot and per-board state model |
-| `waterlooworks/service.py` | Lifecycle orchestration and concurrency guard |
-| `waterlooworks/taxonomy.py` | Canonical board labels plus separate employment/opportunity mappings |
-| `application/waterlooworks_tracker.py` | WaterlooWorks-to-Tracker orchestration adapter |
-| `api/routes/waterlooworks.py` | HTTP boundary |
+```text
+src/wecanfindintern/waterlooworks/
+├── domain/                 Board semantics, posting normalization, salary and date rules
+├── application/            Ports and shared runtime/progress state used by every slice
+├── features/
+│   ├── connection/         Launch/login status: api.py + use_case.py
+│   ├── collect_jobs/       Start collection and board workflow: api.py + use_case.py + collector.py
+│   ├── browse_jobs/        List/detail queries: api.py + queries.py + schemas.py
+│   └── sync_applications/  Submitted-application import: api.py + use_case.py
+├── infrastructure/
+│   ├── browser/            Chrome/CDP, page navigation, and extraction scripts
+│   ├── persistence/        SQLite repository and stored-row decoding
+│   └── settings.py         Local filesystem configuration
+├── integrations/
+│   └── tracker.py          Public anti-corruption adapter for the Tracker context
+├── service.py              Public facade over the slices for desktop and agent consumers
+├── bootstrap.py            Construct and connect the runtime, use cases, and adapters
+├── api.py                  Mount the feature routers
+└── tests/                  Existing module tests
+```
+
+`service.py` is the small public facade for desktop and agent consumers. It sits
+above the slices, so `application/` never imports `features/`;
+collection, queries, connection policy, and application sync live in their slices.
+All slices share one runtime lock and background-task slot, so job collection and
+application sync cannot run concurrently against the dedicated Chrome session.
+Browser readers handle navigation and extraction; use cases own progress, run
+state, storage calls, and error handling. The SQLite schema, API URLs, and local
+database/profile paths are unchanged.
+
+Other contexts import WaterlooWorks only through `service.py`, `api.py`,
+`bootstrap.py`, and `integrations/`; they never reach into `infrastructure/`.
 
 ## Browser security boundary
 

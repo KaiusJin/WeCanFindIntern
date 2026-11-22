@@ -22,6 +22,7 @@ analysis = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
+    excludes=["cloud"],
     noarchive=False,
 )
 # The upstream PyInstaller hook bundles ~100 MB of discovery documents for

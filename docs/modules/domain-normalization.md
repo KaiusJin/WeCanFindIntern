@@ -98,7 +98,7 @@ Annualization uses hourly × 2,080, daily × 260, weekly × 52, monthly × 12, a
 
 `domain/recruiting_term.py` extracts a normalized season and year from titles and descriptions. The supported seasons are Winter, Spring, Summer, and Fall. It preserves the normalized `recruiting_term` string together with separate `recruiting_season` and `recruiting_year` fields for filtering.
 
-After deduplication, `ingestion/recruiting_term_enrichment.py` runs deterministic
+After deduplication, `cloud/pipeline/recruiting_term.py` runs deterministic
 normalization over the title and full JD. Explicit work dates, field context,
 and candidate scores determine the primary term. January-April maps to Winter,
 May-August to Summer, September-December to Fall; an explicitly named Spring
@@ -109,7 +109,7 @@ record is involved.
 
 ## Deduplication inputs
 
-`deduplication.py` does not compare every job with every other job. It generates indexed candidates using direct URL hash, company/location block, and a ±60-day publication window, capped at 25 candidates. Candidate comparison considers direct URL, company, title, location/work mode, date distance, and 5-token description shingles.
+`cloud/storage/deduplication.py` does not compare every job with every other job. It generates indexed candidates using direct URL hash, company/location block, and a ±60-day publication window, capped at 25 candidates. Candidate comparison considers direct URL, company, title, location/work mode, date distance, and 5-token description shingles.
 
 The result is a scored decision with matched rules and algorithm version. A confirmed match attaches another source to the existing canonical job; an uncertain/non-match keeps a separate job. Source-level idempotency and cross-source identity are distinct decisions.
 
@@ -139,6 +139,6 @@ flowchart TD
 ## Verification surface
 
 Domain behavior is covered by `src/wecanfindintern/domain/tests/test_location.py`,
-`src/wecanfindintern/domain/tests/test_job_classification.py`, `src/wecanfindintern/ingestion/tests/test_salary_enrichment.py`, and
-`src/wecanfindintern/ingestion/tests/test_recruiting_term.py`. Public vocabulary is cross-checked against
+`src/wecanfindintern/domain/tests/test_job_classification.py`, `cloud/tests/pipeline/test_salary_enrichment.py`, and
+`cloud/tests/pipeline/test_recruiting_term.py`. Public vocabulary is cross-checked against
 [Job Data Taxonomy](../JOB_DATA_TAXONOMY.md) and the schemas in `schemas/`.

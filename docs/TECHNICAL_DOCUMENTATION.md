@@ -10,7 +10,7 @@ route details are linked from the final section.
 WeCanFindIntern is a local-first, single-user career workspace with these
 integrated capabilities:
 
-- collection from Indeed and LinkedIn through the vendored JobSpy source;
+- collection from Indeed and LinkedIn through the integrated JobSpy-derived source;
 - normalization, classification, cross-source deduplication, salary and
   recruiting-term enrichment, search facets, result counts, and geographic
   distribution;
@@ -38,10 +38,9 @@ a Tracker application has its own UUID and preserves the originating reference.
 src/wecanfindintern/
 ├── api/                 FastAPI assembly, dependencies, routes, request models
 ├── application/         API projections and cross-module application services
-├── ingestion/           JobSpy adapter, catalog expansion, enrichment pipeline
+├── waterlooworks/       DDD context: domain/, application/, features/, infrastructure/
 ├── domain/              normalization, classification, salary, location, identity
-├── db/                  pool, public reads, ingestion/enrichment repositories
-├── waterlooworks/       Chrome control, authenticated extraction, SQLite, sync
+├── db/                  shared pool, public reads, and projections
 ├── profile/             profile.v1, resume validation/parsing, persistence
 ├── ats/                 deterministic parsing and job-match diagnostics
 ├── cover_letter/        Writer/Reviewer workflow and DOCX/PDF export
@@ -56,14 +55,23 @@ desktop/                 Electron main/preload, PostgreSQL, backups, packaging
 └── build/               backend.spec and native desktop build tools
 database/                final desktop PostgreSQL schema
 schemas/                 exported public-job JSON Schemas
-scripts/                 cloud collection, maintenance, and verification
-└── collection/          campaign runner, collection_plans.json, and tests
-vendor/JobSpy/           audited local JobSpy source
+cloud/                   batch collector: planning, sources, pipeline, storage, publish, ops (see cloud/README.md)
+scripts/                 maintenance and development verification
 tests/                   cross-module database and integration checks
 **/tests/                module-owned Python, web, and desktop tests
 ```
 
-Dependencies flow from routes and scripts into application services, domain
+The cloud entry point is `python -m cloud.run`.
+Run it from the repository root with `PYTHONPATH=src`. Its JSON defaults live in
+`cloud/config/`; the optional
+board-registry refresher is `python -m cloud.discover_boards`.
+Cloud code lives outside the desktop source package. Importing WaterlooWorks does not load
+pandas, DuckDB, or cloud publishing dependencies. The cloud workflow installs
+`cloud/requirements.txt`; desktop installs only the main package.
+LinkedIn and Indeed implementations are separate directories under
+`cloud/sources/jobspy/`, with shared source support in `cloud/sources/jobspy/shared/`.
+
+Dependencies flow from routes and collectors into application services, domain
 functions, and repositories. Provider DataFrames remain inside the ingestion
 boundary. SQL is owned by repositories and schema definitions. LLM output passes typed
 validation and receives neither a database connection nor browser credentials.

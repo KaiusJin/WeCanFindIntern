@@ -27,3 +27,6 @@ data/raw/*
 /desktop/renderer/web/vendor/liquid-glass.js
 /desktop/renderer/web/vendor/liquid-glass.css
 /desktop/renderer/web/vendor/liquid-glass-LICENSE.txt
+
+# Local planning notes (not tracked)
+plan/

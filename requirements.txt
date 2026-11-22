@@ -1,3 +1,3 @@
-# JobSpy 源码已固定在 vendor/JobSpy，使用本地 editable 安装以便审计和升级。
--e ./vendor/JobSpy
+# 安装云端采集依赖和本项目；LinkedIn、Indeed 源码位于 ingestion 下。
+-r cloud/requirements.txt
 -e .

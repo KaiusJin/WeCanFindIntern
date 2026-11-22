@@ -8,18 +8,24 @@ The ingestion module turns source-specific JobSpy results into stable internal r
 
 | Component | File | Responsibility |
 |---|---|---|
-| Query contract | `src/wecanfindintern/ingestion/jobspy_adapter.py` | Validates the arguments passed to JobSpy |
-| JobSpy boundary | `src/wecanfindintern/ingestion/jobspy_adapter.py` | Calls vendored JobSpy and normalizes rows |
-| Query location | `src/wecanfindintern/ingestion/location_query.py` | Applies source-specific location/country query values |
-| Collection catalog | `src/wecanfindintern/ingestion/collection_catalog.py` | Expands JSON plans into executable definitions |
-| Detail cache | `src/wecanfindintern/db/repositories/collection_cache.py` | Reads durable campaign counts and reusable LinkedIn detail payloads |
-| Campaign runner | `scripts/collection/run_collection_campaign.py` | Runs every query, retries failures, then persists and enriches |
-| ATS boards | `src/wecanfindintern/ingestion/ats/` | Polls public Greenhouse / Lever / Ashby boards and emits `NormalizedJob` |
-| ATS registry | `scripts/collection/ats_boards.json` | Company boards to poll; refreshed by `scripts/collection/discover_ats_boards.py` |
+| Query contract | `cloud/sources/jobspy/adapter.py` | Validates the arguments passed to JobSpy |
+| JobSpy boundary | `cloud/sources/jobspy/adapter.py` | Calls vendored JobSpy and normalizes rows |
+| Query location | `cloud/planning/location_query.py` | Applies source-specific location/country query values |
+| Collection catalog | `cloud/planning/collection_catalog.py` | Expands JSON plans into executable definitions |
+| Detail cache | `cloud/storage/collection_cache.py` | Reads durable campaign counts and reusable LinkedIn detail payloads |
+| Sweep cadence | `cloud/planning/sweep.py` | Chooses a full sweep or a rolling `hours_old` window |
+| JobSpy stage | `cloud/sources/jobspy/stage.py` | Runs every Indeed/LinkedIn query with retries and source circuits, then hydrates LinkedIn details |
+| Job-board stage | `cloud/sources/job_boards/stage.py` | Loads SimplifyJobs and Stapply, then polls every board |
+| Post-collection pipeline | `cloud/pipeline/` | Persists and deduplicates, then enriches salary and recruiting term |
+| Campaign runner | `cloud/campaign.py` | Orchestrates planning, both source stages and the pipeline |
+| Source monitor | `cloud/ops/monitor.py` | Per-collector counts and SimplifyJobs recall for the ops report |
+| Job boards | `cloud/sources/job_boards/` | Polls public Greenhouse / Lever / Ashby / Workday boards and emits `NormalizedJob` |
+| Board registry | `cloud/config/job_boards.json` | Company boards to poll; refreshed by `cloud/discover_boards.py` |
 
-The vendored Indeed and LinkedIn implementation is in `vendor/JobSpy`. The project pins
-and audits the local source rather than importing an unconstrained package at
-runtime.
+The Indeed and LinkedIn implementations live in separate `sources/jobspy/indeed/`
+and `sources/jobspy/linkedin/` directories under `cloud/`. Their models,
+HTTP helpers and dispatch live in `sources/jobspy/shared/`. The project uses this
+integrated source with the cloud dependency list in `cloud/requirements.txt`.
 
 ## Input contract
 
@@ -82,9 +88,9 @@ Workday notes:
   a tenant; a tenant's sites share them, so the same job posted on several of
   its sites is merged.
 
-- **Registry.** `ats_boards.json` is the committed fallback list of
+- **Registry.** `job_boards.json` is the committed fallback list of
   `{provider, token, company}` rows. Each run adds the boards discovered from
-  SimplifyJobs and Stapply (below) to it. `discover_ats_boards.py` refreshes
+  SimplifyJobs and Stapply (below) to it. `discover_boards.py` refreshes
   the fallback by hand and never removes rows, so a company can also be added
   by hand.
 - **SimplifyJobs** (`ats/simplify.py`). Each run downloads the community
@@ -177,14 +183,14 @@ holds operator statistics computed before SimplifyJobs gap filling:
 - One JobSpy call follows Indeed's GraphQL cursor to the end of the result set,
   about 750 results for a broad US query. Fetching it in 25-result chunks would
   restart from page 1 for every chunk.
-- The vendored Indeed scraper stops when the cursor runs out, instead of
+- The Indeed scraper stops when the cursor runs out, instead of
   starting over from the first page.
 
 LinkedIn keeps the 40-result cap because of its rate limits.
 
 ## Campaign lifecycle
 
-`run_collection_campaign.py` separates provider collection from database
+`cloud/campaign.py` separates provider collection from database
 mutation and records the selected sweep mode in each ingestion run:
 
 ```mermaid
@@ -243,7 +249,7 @@ queries for that source are skipped. One source failure does not cancel unrelate
 sources.
 
 LinkedIn search and detail HTTP requests share a process-wide controller in
-`vendor/JobSpy/jobspy/linkedin/request.py`, which spaces request starts and allows up to two in flight:
+`cloud/sources/jobspy/linkedin/request.py`, which spaces request starts and allows up to two in flight:
 
 - **AIMD:** starts at 0.2 requests/second. Each successful response adds 0.02
   requests/second, up to one request per second. Each HTTP 429 halves the
@@ -342,22 +348,23 @@ A successful salary extraction is `complete`, and a definitive miss is
 
 ## Verification surface
 
-- `src/wecanfindintern/ingestion/tests/test_jobspy_adapter.py`: stable columns, conversion, query validation.
-- `src/wecanfindintern/ingestion/tests/test_scrape_checked.py`: empty success versus logged source failure.
-- `src/wecanfindintern/ingestion/tests/test_linkedin_requests.py`: country display,
+- `cloud/tests/sources/test_jobspy_adapter.py`: stable columns, conversion, query validation.
+- `cloud/tests/sources/test_scrape_checked.py`: empty success versus logged source failure.
+- `cloud/tests/sources/test_linkedin_requests.py`: country display,
   real card normalization, shared AIMD pacing, Retry-After/backoff, and circuit probes.
-- `src/wecanfindintern/ingestion/tests/test_collection_catalog.py`: catalog expansion and source overrides.
-- `scripts/collection/tests/test_collection_campaign.py`: sweep cadence, LinkedIn cache/hydration,
-  retry isolation, and campaign status.
-- `src/wecanfindintern/db/tests/test_job_ingestion_repository.py`: persistence and identity behavior.
-- `src/wecanfindintern/ingestion/tests/test_salary_enrichment.py`: signal gating, content-hash state, and
+- `cloud/tests/planning/test_collection_catalog.py`: catalog expansion and source overrides.
+- `cloud/tests/sources/test_jobspy_stage.py`: LinkedIn cache/hydration and retry isolation.
+- `cloud/tests/planning/test_sweep.py`: sweep cadence.
+- `cloud/tests/test_campaign.py`: campaign result payload.
+- `cloud/tests/storage/test_job_ingestion_repository.py`: persistence and identity behavior.
+- `cloud/tests/pipeline/test_salary_enrichment.py`: signal gating, content-hash state, and
   structured/regex/model precedence.
 
 ## Safe extension procedure
 
 When adding or upgrading a source:
 
-1. Compare the vendored JobSpy model and desired column order.
+1. Compare the shared source model and desired column order.
 2. Update the adapter’s stable columns and row mapping.
 3. Add source-specific query overrides only in the catalog/config boundary.
 4. Test zero-result, partial-field, salary, URL, date, and logged-error responses.

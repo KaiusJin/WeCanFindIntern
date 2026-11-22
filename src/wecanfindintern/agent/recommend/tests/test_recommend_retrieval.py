@@ -12,7 +12,7 @@ from wecanfindintern.agent.recommend.repository import (
     _document_filter_sql,
     _ranked_ids_with_lexical_floor,
 )
-from wecanfindintern.waterlooworks.taxonomy import infer_waterloo_opportunity_type
+from wecanfindintern.waterlooworks.domain.boards import infer_waterloo_opportunity_type
 
 
 def test_waterloo_opportunity_type_is_indexed():

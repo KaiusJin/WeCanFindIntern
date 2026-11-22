@@ -20,8 +20,10 @@ from wecanfindintern.agent.recommend.documents import (
     vector_literal,
 )
 from wecanfindintern.agent.recommend.embeddings import EmbeddingGateway
-from wecanfindintern.waterlooworks.config import waterlooworks_database_path
-from wecanfindintern.waterlooworks.records import decode_waterlooworks_job
+from wecanfindintern.waterlooworks.infrastructure.persistence.records import (
+    decode_waterlooworks_job,
+)
+from wecanfindintern.waterlooworks.infrastructure.settings import waterlooworks_database_path
 
 
 def load_waterloo_jobs_from_sqlite(
