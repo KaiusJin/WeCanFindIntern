@@ -59,7 +59,7 @@ discover ─┬─ boards (GH/Lever/Ashby) ────────────�
 | `linkedin` × term × country | `collect linkedin <country>-<term-slug> --plan … --out out` | None. One search term in one country (e.g. `us-software-engineer-intern`), up to `max_results_by_source.linkedin` (60) cards in pages of 10. Cards whose ID was seen in the last 24 h are **discarded** (by ID only; content changes are ignored). Then JDs for the remaining cards |
 | `linkedin-details` | `collect linkedin-details --plan … --inputs … --out out` | None. After all LinkedIn shards: retries the JD of every LinkedIn job a shard returned without one. Same waits; budget `linkedin_details_budget_seconds`. If this step is missing, the jobs are still published (soft failure) |
 | `boards` | `collect boards --plan … --discover … --out out` | None. Budget `ats.boards_budget_seconds` |
-| `workday` × shard | `collect workday <shard> --plan … --discover … --out out` | None. One shard per Workday pod; pods above 250 boards are split by a CRC32 of the board token, small pods share `misc`. Budget `ats.workday_shard_budget_seconds` |
+| `workday` × shard | `collect workday <shard> --plan … --discover … --out out` | CSC tunnel (optional). One shard per Workday pod; small pods share `misc`. Without the tunnel, pods above 250 boards are split by a CRC32 of the board token, budget `ats.workday_shard_budget_seconds`. With it, pods are not split (one shared IP), budget `ats.workday_single_egress_budget_seconds` |
 | `merge` | `python -m cloud.parallel merge artifacts merged` | None. Runs even when collectors failed: best record per fingerprint, missing shards listed (hard), soft failures kept |
 | `simplify-gap-fill` | `python -m cloud.parallel gap-fill merged gapfill` | None. SimplifyJobs coverage, gap-fill jobs and their JDs (`ats.simplify_detail_budget_seconds`) |
 | `publish` | `python -m cloud.run --from-artifacts artifacts` | `DATABASE_URL`, R2. Dedupe + persist → 4-month archive → R2 feed → ops report. Runs even if `simplify-gap-fill` failed (coverage is then measured locally, soft failure) |
@@ -70,5 +70,10 @@ discover ─┬─ boards (GH/Lever/Ashby) ────────────�
 - No failed collector blocks anything downstream. `merge` and `publish` run with `always()`. Only a failed `plan` (no `plan.json`) or a failed `merge` stops the run from publishing.
 - A shard that failed, timed out or was cancelled leaves no artifact. It is reported as a failure, the run is `partial`, and everything else is published.
 - Retention does not depend on what a run saw: jobs move to `jobs_archive` four months after they were first written (`cloud/storage/maintenance.py`).
-- Because each runner has its own egress IP, LinkedIn and Workday rate limits apply per shard instead of to the whole campaign.
+- Because each runner has its own egress IP, LinkedIn rate limits apply per shard instead of to the whole campaign.
+- Workday throttles GitHub-hosted runner IPs almost completely. When the repository
+  secrets `CSC_SSH_HOST`, `CSC_SSH_USER`, `CSC_SSH_KEY` and `CSC_KNOWN_HOSTS` are set,
+  the `workday` shards and `simplify-gap-fill` open an SSH SOCKS tunnel to the CSC
+  server (`.github/actions/csc-tunnel`) and only their collect step uses it
+  (`HTTPS_PROXY`). Without the secrets they run direct, as before.
 

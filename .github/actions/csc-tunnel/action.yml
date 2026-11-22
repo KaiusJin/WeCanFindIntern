@@ -1,0 +1,54 @@
+name: CSC SOCKS tunnel
+description: >
+  Open an SSH SOCKS5 tunnel to the CSC server and route this job's HTTP(S)
+  expose it as CSC_PROXY (socks5h URL). A step that sets HTTPS_PROXY to it is seen
+  by Workday with the CSC egress IP instead of a GitHub-hosted runner IP. Fails
+  the job if the tunnel cannot be opened.
+inputs:
+  host:
+    description: SSH host
+    required: true
+  user:
+    description: SSH user
+    required: true
+  key:
+    description: Private key (dedicated, forwarding only)
+    required: true
+  known-hosts:
+    description: known_hosts line(s) for the host
+    required: true
+  port:
+    description: Local SOCKS port
+    default: '1080'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CSC_HOST: ${{ inputs.host }}
+        CSC_USER: ${{ inputs.user }}
+        CSC_KEY: ${{ inputs.key }}
+        CSC_KNOWN_HOSTS: ${{ inputs.known-hosts }}
+        SOCKS_PORT: ${{ inputs.port }}
+      run: |
+        set -euo pipefail
+        install -m 700 -d ~/.ssh
+        printf '%s\n' "$CSC_KEY" > ~/.ssh/csc_tunnel
+        chmod 600 ~/.ssh/csc_tunnel
+        printf '%s\n' "$CSC_KNOWN_HOSTS" > ~/.ssh/known_hosts
+        ssh -i ~/.ssh/csc_tunnel \
+          -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+          -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
+          -f -N -D "127.0.0.1:${SOCKS_PORT}" "${CSC_USER}@${CSC_HOST}"
+        for _ in $(seq 1 20); do
+          if curl -fsS --max-time 10 --socks5-hostname "127.0.0.1:${SOCKS_PORT}" \
+              https://checkip.amazonaws.com >/tmp/egress_ip; then
+            break
+          fi
+          sleep 1
+        done
+        test -s /tmp/egress_ip || { echo "::error::CSC tunnel did not come up"; exit 1; }
+        echo "Egress IP via CSC: $(cat /tmp/egress_ip)"
+        # Exposed as CSC_PROXY only: steps opt in with HTTPS_PROXY=${{ env.CSC_PROXY }},
+        # so actions such as upload-artifact never go through the tunnel.
+        echo "CSC_PROXY=socks5h://127.0.0.1:${SOCKS_PORT}" >> "$GITHUB_ENV"

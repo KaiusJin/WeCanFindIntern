@@ -8,10 +8,12 @@ name: Public job feed
 # publish = dedupe + persist → 4-month archive → R2 feed → ops report.
 # Every job after the collectors runs even when collectors failed; publish also
 # runs when simplify-gap-fill failed.
-# Collector shards hold no secrets and each runs on its own egress IP, so
-# LinkedIn and Workday rate limits apply per shard. LinkedIn shards drop IDs
-# seen in the last 24 h; linkedin-details retries the JDs the shards could not
-# fetch. A missing shard is a hard failure (red run); everything else is published.
+# Collector shards hold no database or R2 secrets. Each runs on its own egress
+# IP, so LinkedIn rate limits apply per shard. Workday throttles runner IPs, so
+# when the CSC_SSH_* secrets are set, the workday shards and simplify-gap-fill
+# tunnel through the CSC server (.github/actions/csc-tunnel), one shard per pod.
+# LinkedIn shards drop IDs seen in the last 24 h; linkedin-details retries the
+# JDs the shards could not fetch. A missing shard is a hard failure (red run); everything else is published.
 on:
   schedule:
     - cron: '17 */12 * * *'
@@ -126,6 +128,9 @@ jobs:
     if: ${{ !inputs.validate_database_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # With the CSC tunnel every Workday shard shares one IP: one shard per pod.
+      WORKDAY_SINGLE_EGRESS: ${{ secrets.CSC_SSH_HOST != '' && '1' || '' }}
     outputs:
       workday: ${{ steps.discover.outputs.workday }}
     steps:
@@ -285,7 +290,12 @@ jobs:
     needs: [plan, discover]
     if: ${{ needs.discover.outputs.workday != '[]' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Budget: ats.workday_single_egress_budget_seconds (90 min) via CSC,
+    # otherwise ats.workday_shard_budget_seconds (45 min).
+    timeout-minutes: 105
+    env:
+      CSC_SSH_HOST: ${{ secrets.CSC_SSH_HOST }}
+      WORKDAY_SINGLE_EGRESS: ${{ secrets.CSC_SSH_HOST != '' && '1' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -310,7 +320,18 @@ jobs:
         with:
           name: discover
           path: work/discover
+      - name: Route traffic through the CSC tunnel
+        if: ${{ env.CSC_SSH_HOST != '' }}
+        uses: ./.github/actions/csc-tunnel
+        with:
+          host: ${{ secrets.CSC_SSH_HOST }}
+          user: ${{ secrets.CSC_SSH_USER }}
+          key: ${{ secrets.CSC_SSH_KEY }}
+          known-hosts: ${{ secrets.CSC_KNOWN_HOSTS }}
       - run: python -m cloud.parallel collect workday ${{ matrix.shard }} --plan work/plan --discover work/discover --out out
+        env:
+          HTTPS_PROXY: ${{ env.CSC_PROXY }}
+          HTTP_PROXY: ${{ env.CSC_PROXY }}
       - uses: actions/upload-artifact@v4
         with:
           name: out-workday-${{ matrix.shard }}
@@ -354,6 +375,9 @@ jobs:
     if: ${{ always() && needs.merge.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Workday JD pages are throttled on runner IPs too.
+      CSC_SSH_HOST: ${{ secrets.CSC_SSH_HOST }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -370,7 +394,18 @@ jobs:
         with:
           name: merged
           path: merged
+      - name: Route traffic through the CSC tunnel
+        if: ${{ env.CSC_SSH_HOST != '' }}
+        uses: ./.github/actions/csc-tunnel
+        with:
+          host: ${{ secrets.CSC_SSH_HOST }}
+          user: ${{ secrets.CSC_SSH_USER }}
+          key: ${{ secrets.CSC_SSH_KEY }}
+          known-hosts: ${{ secrets.CSC_KNOWN_HOSTS }}
       - run: python -m cloud.parallel gap-fill merged gapfill
+        env:
+          HTTPS_PROXY: ${{ env.CSC_PROXY }}
+          HTTP_PROXY: ${{ env.CSC_PROXY }}
       - uses: actions/upload-artifact@v4
         with:
           name: gapfill
