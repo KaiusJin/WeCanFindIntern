@@ -18,6 +18,7 @@ from cloud.ops.monitor import build_source_monitor, source_group
 from cloud.pipeline.ingest import run_ingestion_pipeline
 from cloud.planning.collection_catalog import expand_collection_catalog
 from cloud.planning.sweep import collection_hours_window
+from cloud.sources.job_boards.details import fetch_descriptions
 from cloud.sources.job_boards.simplify import SimplifyListing, gap_fill_jobs
 from cloud.sources.job_boards.stage import collect_job_boards
 from cloud.sources.jobspy.stage import (
@@ -155,7 +156,14 @@ async def run(
         ats_jobs, ats_stats, simplify_listings = await collect_job_boards(config_path, defaults)
         normalized_jobs = [*normalized_jobs, *ats_jobs]
         query_stats.update(ats_stats)
-        normalized_jobs, monitor = finalize_sources(normalized_jobs, simplify_listings, query_stats)
+        normalized_jobs, monitor = finalize_sources(
+            normalized_jobs,
+            simplify_listings,
+            query_stats,
+            detail_budget_seconds=float(
+                (defaults.get("ats") or {}).get("simplify_detail_budget_seconds", 600)
+            ),
+        )
 
         collection_seconds = time.monotonic() - collection_started
         log(
@@ -187,6 +195,24 @@ async def run(
     return result
 
 
+def describe_gap_fill(
+    fill: list[NormalizedJob], budget_seconds: float, query_stats: dict[str, int]
+) -> list[NormalizedJob]:
+    started = time.monotonic()
+    result = fetch_descriptions([job.source_url for job in fill], budget_seconds=budget_seconds)
+    query_stats.update({f"simplify_detail_{k}": int(v) for k, v in result.stats.items()})
+    log(
+        f"SimplifyJobs gap-fill descriptions: {result.stats['found']}/{len(fill)} found "
+        f"in {time.monotonic() - started:.0f}s"
+    )
+    return [
+        job.model_copy(update={"description": result.descriptions[job.source_url]})
+        if job.source_url in result.descriptions
+        else job
+        for job in fill
+    ]
+
+
 @dataclass(frozen=True, slots=True)
 class SweepInfo:
     number: int
@@ -198,11 +224,19 @@ def finalize_sources(
     normalized_jobs: list[NormalizedJob],
     simplify_listings: list[SimplifyListing],
     query_stats: dict[str, int],
+    *,
+    detail_budget_seconds: float = 600.0,
 ) -> tuple[list[NormalizedJob], dict[str, Any]]:
-    """Measure SimplifyJobs coverage, then add the listings no source collected."""
+    """Measure SimplifyJobs coverage, then add the listings no source collected.
+
+    Gap-fill jobs get their description from the employer's posting (ATS API or
+    the page's JobPosting JSON-LD) within ``detail_budget_seconds``.
+    """
     monitor = build_source_monitor(normalized_jobs, simplify_listings)
     if simplify_listings:
         fill = gap_fill_jobs(simplify_listings, normalized_jobs)
+        if fill and detail_budget_seconds > 0:
+            fill = describe_gap_fill(fill, detail_budget_seconds, query_stats)
         normalized_jobs = [*normalized_jobs, *fill]
         query_stats["simplify_gap_fill_jobs"] = len(fill)
         monitor["simplify_gap_fill_jobs"] = len(fill)

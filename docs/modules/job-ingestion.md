@@ -100,9 +100,22 @@ Workday notes:
      run. For company pages that embed Greenhouse (`?gh_jid=`), the board token
      is guessed from the host or path and confirmed against the Greenhouse API.
   2. **Gap filling.** Active, in-scope listings that no other source collected
-     are emitted as `source="simplify"` jobs. They carry the employer's posting
-     URL and no description. A listing counts as collected when its posting id
-     appears in a collected URL, or when its company and title match.
+     are emitted as `source="simplify"` jobs with the employer's posting URL.
+     A listing counts as collected when its posting id appears in a collected
+     URL, or when its company and title match.
+
+     Their description comes from the employer's posting
+     (`cloud/sources/job_boards/details.py`), using one sequential queue per
+     host within `ats.simplify_detail_budget_seconds` (default 600):
+     - public posting APIs for Greenhouse (including `?gh_jid=` embeds),
+       Lever, Ashby, Workday, SmartRecruiters, Workable and BambooHR;
+     - otherwise the page's schema.org `JobPosting` JSON-LD.
+
+     Pages that need a browser or block bots (Tesla, Oracle and UKG
+     single-page apps) keep no description. Counters are
+     `simplify_detail_found_<method>` and `simplify_detail_missing_<method>`.
+     In a test over 1,341 gap-fill postings, 741 (55%) got a description in
+     77 s; ATS APIs succeed for about 90% of their postings.
   3. **Coverage.** The same listings are the yardstick for the run report (see
      "Run monitor").
 

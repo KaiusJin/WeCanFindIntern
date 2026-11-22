@@ -458,7 +458,14 @@ async def run_from_artifacts(root: Path, batch_size: int, config_path: Path = DE
             **collected.query_stats,
             **{"linkedin_detail_cache_hits": detail_stats["linkedin_detail_cache_hits"]},
         }
-        jobs, monitor = finalize_sources(jobs, collected.listings, query_stats)
+        jobs, monitor = finalize_sources(
+            jobs,
+            collected.listings,
+            query_stats,
+            detail_budget_seconds=float(
+                (defaults.get("ats") or {}).get("simplify_detail_budget_seconds", 600)
+            ),
+        )
         monitor["shards"] = collected.shards
         plan_data = collected.plan
         return await persist_collection(
