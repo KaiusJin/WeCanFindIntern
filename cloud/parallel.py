@@ -24,7 +24,7 @@ GitHub Actions runs each step as its own job (see ``.github/workflows/cloud-jobs
 Usage: ``python -m cloud.parallel {plan,discover} OUT``,
 ``python -m cloud.parallel merge ARTIFACTS OUT``,
 ``python -m cloud.parallel gap-fill MERGED OUT`` and
-``python -m cloud.parallel collect KIND SHARD --plan DIR --discover DIR OUT``.
+``python -m cloud.parallel collect KIND [SHARD] --plan DIR [--discover DIR] --out OUT``.
 """
 
 from __future__ import annotations
@@ -664,7 +664,9 @@ def main(argv: list[str]) -> int:
     collect_parser.add_argument("--plan", type=Path, required=True)
     collect_parser.add_argument("--discover", type=Path)
     collect_parser.add_argument("--inputs", type=Path, help="LinkedIn shard artifacts")
-    collect_parser.add_argument("out", type=Path)
+    # A positional output after flags makes argparse consume SHARD as OUT and
+    # reject the real output directory. Keep the output explicit for every kind.
+    collect_parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command == "plan":
         plan(args.out)
