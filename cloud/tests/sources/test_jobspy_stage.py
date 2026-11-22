@@ -365,3 +365,35 @@ def test_linkedin_hydration_keeps_stale_detail_when_refresh_fails(monkeypatch) -
     assert hydrated[0].details_fetched_at == stale_at
     assert stats["linkedin_detail_failed"] == 1
     assert stats["linkedin_detail_stale_fallbacks"] == 1
+
+
+def test_short_page_ends_the_query_without_a_second_pass(monkeypatch) -> None:
+    calls = []
+
+    def scrape(query):
+        calls.append((query.offset, query.results_wanted))
+        jobs = [
+            normalize_record(
+                {
+                    "site": "indeed",
+                    "id": f"in-{query.offset + i}",
+                    "title": "Software Engineer Intern",
+                    "job_url": f"https://indeed.test/{query.offset + i}",
+                    "location": "Toronto, ON, Canada",
+                }
+            )
+            for i in range(3)
+        ]
+        return "frame", SimpleNamespace(jobs=jobs)
+
+    monkeypatch.setattr(stage, "scrape_checked", scrape)
+    definition = {
+        **_definition("indeed-all", "indeed"),
+        "page_size": 1000,
+        "max_results_per_source": 1000,
+    }
+
+    jobs, failures, _ = asyncio.run(stage.collect_queries([definition]))
+
+    assert calls == [(0, 1000)]  # 3 < 1000 requested: the cursor ended, no re-scan
+    assert len(jobs) == 3 and not failures

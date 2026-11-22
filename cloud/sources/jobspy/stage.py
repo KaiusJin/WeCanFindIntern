@@ -227,6 +227,10 @@ async def collect_queries(
                 seen_for_query.update(job.source_fingerprint for job in new_jobs)
                 query_jobs.extend(new_jobs)
                 offset += len(result.jobs)
+                if len(result.jobs) < requested:
+                    # The provider ran out of results (Indeed's cursor ended). Asking
+                    # for the remainder would page through the whole query again.
+                    break
 
             if checkpoint is not None and cached is None and not query_has_failed:
                 await asyncio.to_thread(checkpoint.save, key, query_jobs)
