@@ -73,6 +73,8 @@ class Indeed(Scraper):
                 break
             job_list += jobs
             page += 1
+            if not cursor:  # last page; a None cursor would restart from page 1
+                break
         return JobResponse(
             jobs=job_list[
                 scraper_input.offset : scraper_input.offset

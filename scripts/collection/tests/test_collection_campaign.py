@@ -46,7 +46,12 @@ def test_permanent_provider_failure_opens_circuit(monkeypatch) -> None:
     assert jobs == []
     assert calls == 1
     assert len(failures) == 1
-    assert stats == {"retried": 0, "succeeded": 0, "failed": 1, "skipped": 2}
+    assert {key: stats[key] for key in ("retried", "succeeded", "failed", "skipped")} == {
+        "retried": 0,
+        "succeeded": 0,
+        "failed": 1,
+        "skipped": 2,
+    }
 
 
 def test_transient_provider_failure_retries_then_succeeds(monkeypatch) -> None:
@@ -72,7 +77,12 @@ def test_transient_provider_failure_retries_then_succeeds(monkeypatch) -> None:
     assert jobs == []
     assert failures == []
     assert calls == 3
-    assert stats == {"retried": 2, "succeeded": 1, "failed": 0, "skipped": 0}
+    assert {key: stats[key] for key in ("retried", "succeeded", "failed", "skipped")} == {
+        "retried": 2,
+        "succeeded": 1,
+        "failed": 0,
+        "skipped": 0,
+    }
 
 
 def test_collection_error_classification() -> None:
@@ -106,7 +116,12 @@ def test_exhausted_linkedin_rate_limit_opens_only_linkedin_circuit(monkeypatch) 
     assert calls.count("linkedin") == 1
     assert calls.count("indeed") == 1
     assert len(failures) == 1
-    assert stats == {"retried": 0, "succeeded": 1, "failed": 1, "skipped": 2}
+    assert {key: stats[key] for key in ("retried", "succeeded", "failed", "skipped")} == {
+        "retried": 0,
+        "succeeded": 1,
+        "failed": 1,
+        "skipped": 2,
+    }
 
 
 def test_queued_linkedin_queries_leave_capacity_for_indeed(monkeypatch) -> None:

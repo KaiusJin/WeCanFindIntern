@@ -14,6 +14,8 @@ The ingestion module turns source-specific JobSpy results into stable internal r
 | Collection catalog | `src/wecanfindintern/ingestion/collection_catalog.py` | Expands JSON plans into executable definitions |
 | Detail cache | `src/wecanfindintern/db/repositories/collection_cache.py` | Reads durable campaign counts and reusable LinkedIn detail payloads |
 | Campaign runner | `scripts/collection/run_collection_campaign.py` | Runs every query, retries failures, then persists and enriches |
+| ATS boards | `src/wecanfindintern/ingestion/ats/` | Polls public Greenhouse / Lever / Ashby boards and emits `NormalizedJob` |
+| ATS registry | `scripts/collection/ats_boards.json` | Company boards to poll; refreshed by `scripts/collection/discover_ats_boards.py` |
 
 The vendored Indeed and LinkedIn implementation is in `vendor/JobSpy`. The project pins
 and audits the local source rather than importing an unconstrained package at
@@ -54,6 +56,131 @@ The handler only captures errors for the query's own sources, so a concurrent
 LinkedIn failure cannot turn a genuinely empty Indeed result into a failure.
 It is always removed in a `finally` block so repeated collection does not
 accumulate logging handlers.
+
+## ATS board sources
+
+Greenhouse, Lever, Ashby and Workday publish the open postings of a company
+without authentication, so the collector polls company boards instead of
+running keyword searches on LinkedIn or Indeed:
+
+| Provider | Endpoint | Notes |
+|---|---|---|
+| `greenhouse` | `boards-api.greenhouse.io/v1/boards/{token}/jobs` | Listed without content; `/jobs/{id}` is fetched only for postings that pass the filters |
+| `lever` | `api.lever.co/v0/postings/{token}?mode=json` | Uses the ISO `country` field and `categories.commitment` |
+| `ashby` | `api.ashbyhq.com/posting-api/job-board/{token}` | Uses structured addresses; unlisted postings are skipped |
+| `workday` | `POST {host}/wday/cxs/{tenant}/{site}/jobs`, then `GET {host}/wday/cxs/{tenant}/{site}{externalPath}` | See the Workday notes below |
+
+Workday notes:
+- The token is `{host}/{tenant}/{site}`, for example
+  `nvidia.wd5.myworkdayjobs.com/nvidia/NVIDIAExternalCareerSite`.
+- The career site is searched for "intern" and "co-op", 20 results per page.
+  The search is fuzzy: "intern" also matches "International". Paging stops
+  after two consecutive pages with no intern-like title, or after 25 pages.
+- A detail page is fetched only when the title passes the filter and the listed
+  location is not clearly outside the US and Canada.
+- Job ids are `{tenant}:{jobReqId}`. Requisition numbers are unique only within
+  a tenant; a tenant's sites share them, so the same job posted on several of
+  its sites is merged.
+
+- **Registry.** `ats_boards.json` is the committed fallback list of
+  `{provider, token, company}` rows. Each run adds the boards discovered from
+  SimplifyJobs and Stapply (below) to it. `discover_ats_boards.py` refreshes
+  the fallback by hand and never removes rows, so a company can also be added
+  by hand.
+- **SimplifyJobs** (`ats/simplify.py`). Each run downloads the community
+  `listings.json` of the SimplifyJobs internship and new-grad repositories, a
+  few seconds of work. It is used three ways:
+  1. **Discovery.** Board URLs on the four polled platforms are added to the
+     run. For company pages that embed Greenhouse (`?gh_jid=`), the board token
+     is guessed from the host or path and confirmed against the Greenhouse API.
+  2. **Gap filling.** Active, in-scope listings that no other source collected
+     are emitted as `source="simplify"` jobs. They carry the employer's posting
+     URL and no description. A listing counts as collected when its posting id
+     appears in a collected URL, or when its company and title match.
+  3. **Coverage.** The same listings are the yardstick for the run report (see
+     "Run monitor").
+
+  If the lists cannot be downloaded, the step is skipped with a warning.
+  `WCFI_SIMPLIFY_ENABLED=0` or `defaults.ats.simplify_enabled` turns it off.
+- **Stapply backfill.** `ats/stapply.py` reads the open
+  [Stapply dataset](https://github.com/kalil0321/ats-scrapers) (MIT, refreshed
+  about daily). It holds about 90 ATS platforms and company career APIs,
+  including iCIMS, Oracle, UKG, SmartRecruiters, Phenom, SuccessFactors,
+  Eightfold (Microsoft, NVIDIA, Qualcomm), TikTok, ByteDance, Amazon, Google and
+  Meta.
+  - DuckDB reads only the US/Canada, non-stale, intern-like rows of
+    `all.parquet`, which takes a few minutes. `title_kind` then applies the
+    same scope as the board pollers.
+  - Rows from Greenhouse, Lever, Ashby and Workday are not emitted, because the
+    collector polls those platforms itself. Their URLs are used only to add
+    boards to this run.
+  - If the dataset cannot be read, the backfill is skipped with a warning and
+    the campaign continues. `WCFI_STAPPLY_ENABLED=0` or
+    `defaults.ats.stapply_enabled` turns it off.
+- **Scope.** `ats/relevance.py` keeps a posting only if:
+  - its title has a computer-science signal and no excluded signal (mechanical,
+    hardware/FPGA, marketing, sales, MBA, and so on);
+  - its title, or the provider's employment type, marks it as an internship or
+    co-op. New-grad titles are also kept when `defaults.ats.include_new_grad` is
+    true; it is false by default;
+  - one of its locations is in the US or Canada.
+- **Locations.** `location_text` always ends with an explicit country, for
+  example "Palo Alto, CA, United States". Without the country, the shared
+  `parse_location()` would read a trailing California "CA" as Canada.
+- **Scheduling.** Boards are queued per API host:
+  - Each Workday pod (`wd1`, `wd3`, `wd5`, ...) gets one sequential worker,
+    with at least 0.3 s between requests. A pod hosts many tenants and
+    throttles them together.
+  - Greenhouse, Lever and Ashby each get `concurrency` workers.
+  - Each queue starts at a different board every hour. Boards cut off by the
+    deadline are therefore reached first on a later run.
+- **Rate limits.** A 429 pauses only the worker for that host. It cools down
+  for 30/60/120/300 s (or longer if `Retry-After` asks for it) and then retries
+  the same request. A 429 never fails a board. If the cooldown would pass the
+  stage deadline, the board is counted as `skipped_deadline`. A board that was
+  part-way through when the deadline arrived is counted as `truncated`.
+- **Other failures.** A board that returns 404, 410 or 422 is counted as
+  `missing`; Workday returns 422 for a removed site. 5xx responses and
+  connection errors are retried after 2, 5 and 15 s; after that the board is
+  logged and counted as `failed`. None of these fail the campaign or mark it
+  partial. The board is polled again on the next run, and its jobs stay live
+  until the normal 14-day expiry.
+- **Configuration.** The `defaults.ats` block in `collection_plans.json` holds
+  `enabled`, `boards_path`, `concurrency`, `include_new_grad` and
+  `budget_seconds`. Setting `WCFI_ATS_ENABLED=0` turns the stage off.
+- **Run statistics.** The stage runs after LinkedIn detail hydration and before
+  persistence. Its counters are added to `query_stats` with `ats_` and
+  `stapply_` prefixes.
+
+## Run monitor
+
+`CampaignResult.monitor`, also written to `campaign_summary_latest.json`,
+holds operator statistics computed before SimplifyJobs gap filling:
+- `sources`: jobs per collector (`indeed`, `linkedin`, `ats_greenhouse`,
+  `ats_lever`, `ats_ashby`, `ats_workday`, `stapply`), each with its own
+  SimplifyJobs recall, plus `final_jobs` after gap filling, including
+  `simplify`;
+- `coverage`: overall recall against the active in-scope SimplifyJobs
+  listings, recall per platform (`greenhouse`, `lever`, `ashby`, `workday`,
+  `greenhouse_embed`, `other`), and a sample of missed listings;
+- `simplify_gap_fill_jobs`: how many listings were added as `simplify` jobs.
+
+`query_stats` also counts Indeed and LinkedIn queries per source
+(`indeed_succeeded`, `linkedin_failed`, ...) and the stage timings
+(`simplify_seconds`, `stapply_seconds`, `ats_seconds`).
+
+## Per-source result caps
+
+`defaults.max_results_by_source` and `defaults.page_size_by_source` override
+`max_results_per_source` and `page_size` for one provider. Indeed is set to
+1000 and 1000:
+- One JobSpy call follows Indeed's GraphQL cursor to the end of the result set,
+  about 750 results for a broad US query. Fetching it in 25-result chunks would
+  restart from page 1 for every chunk.
+- The vendored Indeed scraper stops when the cursor runs out, instead of
+  starting over from the first page.
+
+LinkedIn keeps the 40-result cap because of its rate limits.
 
 ## Campaign lifecycle
 

@@ -46,11 +46,21 @@
     "full_sweep_every": 10,
     "page_size": 25,
     "max_results_per_source": 40,
+    "max_results_by_source": {"indeed": 1000},
+    "page_size_by_source": {"indeed": 1000},
     "max_attempts": 3,
     "distance": 100,
     "linkedin_fetch_description": true,
     "linkedin_detail_ttl_seconds": 86400,
     "linkedin_detail_concurrency": 4,
+    "ats": {
+      "enabled": true,
+      "boards_path": "ats_boards.json",
+      "concurrency": 4,
+      "include_new_grad": false,
+      "budget_seconds": 2400,
+      "stapply_enabled": true
+    },
     "verbose": 1
   }
 }

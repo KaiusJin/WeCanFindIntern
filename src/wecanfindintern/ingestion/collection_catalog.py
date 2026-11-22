@@ -51,9 +51,11 @@ def expand_collection_catalog(raw: Any) -> list[dict[str, Any]]:
                         },
                         "interval_seconds": defaults.get("interval_seconds", 43_200),
                         "page_size": defaults.get("page_size", 25),
-                        "max_results_per_source": defaults.get(
-                            "max_results_per_source", 40
-                        ),
+                        "max_results_per_source": defaults.get("max_results_per_source", 40),
+                        # Per-source overrides: Indeed has no practical rate limit and
+                        # pages with a cursor, so it is read to the end in one call.
+                        "page_size_by_source": dict(defaults.get("page_size_by_source", {})),
+                        "max_results_by_source": dict(defaults.get("max_results_by_source", {})),
                         "max_attempts": defaults.get("max_attempts", 3),
                     }
                 )
