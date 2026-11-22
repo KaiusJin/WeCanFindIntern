@@ -2,18 +2,20 @@
 
 GitHub Actions runs each step as its own job (see ``.github/workflows/cloud-jobs.yml``):
 
-- ``plan``      reads the database once: sweep window and LinkedIn IDs whose job
-               description is still fresh in the cache; emits the LinkedIn matrix.
+- ``plan``      reads the database once: sweep window and the LinkedIn IDs seen in
+               the last 24 h (shards discard them); emits the LinkedIn matrix.
 - ``discover``  merges the board registry with SimplifyJobs and Stapply, keeps the
                Stapply jobs, and emits the Workday matrix (one shard per pod).
 - ``collect``   one shard: ``indeed``, ``linkedin`` (one search term, both countries),
                ``boards`` (Greenhouse/Lever/Ashby) or ``workday`` (one pod group).
                Shards never touch the database or any secret, and each runner has
                its own egress IP, so LinkedIn and Workday limits apply per shard.
+- ``collect linkedin-details`` runs after the LinkedIn shards and retries the JD of
+               every LinkedIn job they returned without one (same waits and budget).
 - ``publish``   (``python -m cloud.run --from-artifacts DIR``) merges every shard,
-               fills LinkedIn descriptions from the cache, runs SimplifyJobs gap
-               filling, persists, publishes and writes the ops report. A missing
-               shard is a failure, so the run is ``partial`` and nothing expires.
+               runs SimplifyJobs gap filling, persists, publishes and writes the ops
+               report. A missing collector shard is a hard failure (red run); a
+               missing linkedin-details step is soft.
 
 Usage: ``python -m cloud.parallel {plan,discover} OUT`` and
 ``python -m cloud.parallel collect KIND SHARD --plan DIR --discover DIR OUT``.
@@ -120,8 +122,8 @@ def plan(out: Path, config_path: Path = DEFAULT_PLAN_PATH) -> dict[str, Any]:
     full_every = int(
         os.getenv("WCFI_COLLECTION_FULL_SWEEP_EVERY", defaults.get("full_sweep_every", 30))
     )
-    ttl = int(defaults.get("linkedin_detail_ttl_seconds", 86_400))
-    completed, fresh = 0, []
+    seen_window = int(defaults.get("linkedin_seen_window_seconds", 86_400))
+    completed, seen = 0, []
     url = os.getenv("DATABASE_URL")
     if url:
         import psycopg
@@ -135,13 +137,15 @@ def plan(out: Path, config_path: Path = DEFAULT_PLAN_PATH) -> dict[str, Any]:
                 """,
                 (config_path.name,),
             ).fetchone()[0]
-            since = datetime.now(UTC) - timedelta(seconds=ttl)
-            fresh = [
+            # LinkedIn IDs already collected in the window: shards discard them
+            # outright (ID only; a changed card is not re-collected inside the window).
+            since = datetime.now(UTC) - timedelta(seconds=seen_window)
+            seen = [
                 row[0]
                 for row in db.execute(
                     """
                     SELECT encode(source_fingerprint, 'hex') FROM job_sources
-                    WHERE source = 'linkedin' AND details_fetched_at >= %s
+                    WHERE source = 'linkedin' AND last_seen_at >= %s
                     """,
                     (since,),
                 ).fetchall()
@@ -156,13 +160,14 @@ def plan(out: Path, config_path: Path = DEFAULT_PLAN_PATH) -> dict[str, Any]:
         "hours_old": hours_old,
         "plan_count": len(definitions),
         "linkedin": linkedin_shards(definitions),
-        "fresh_linkedin": fresh,
+        "seen_linkedin": seen,
     }
     write_json(out / "plan.json", data)
     set_output("linkedin", data["linkedin"])
     log(
         f"Plan: sweep #{data['sweep_number']} ({data['sweep_mode']}), "
-        f"{len(data['linkedin'])} LinkedIn shards, {len(fresh)} fresh LinkedIn details"
+        f"{len(data['linkedin'])} LinkedIn shards, "
+        f"{len(seen)} LinkedIn IDs seen in the last {seen_window // 3600} h"
     )
     return data
 
@@ -262,6 +267,7 @@ def collect(
     discover_dir: Path | None,
     out: Path,
     config_path: Path = DEFAULT_PLAN_PATH,
+    inputs: Path | None = None,
 ) -> dict[str, Any]:
     definitions, defaults = _load_config(config_path)
     started = time.monotonic()
@@ -289,17 +295,46 @@ def collect(
         )
         stats.update(query_stats)
         if kind == "linkedin":
+            seen = frozenset(plan_data.get("seen_linkedin") or [])
+            kept = [job for job in jobs if job.source_fingerprint not in seen]
+            stats["linkedin_discarded_seen"] = len(jobs) - len(kept)
             jobs, detail_stats = asyncio.run(
                 hydrate_linkedin_descriptions(
-                    jobs,
+                    kept,
                     None,
                     ttl_seconds=0,
                     concurrency=int(defaults.get("linkedin_detail_concurrency", 4)),
-                    skip_fingerprints=frozenset(plan_data.get("fresh_linkedin") or []),
                     deadline=detail_deadline,
                 )
             )
             stats.update(detail_stats)
+    elif kind == "linkedin-details":
+        # Retry step between the LinkedIn shards and publish: fetch the JD of every
+        # LinkedIn job a shard could not describe, with the same never-give-up waits.
+        if inputs is None:
+            raise ValueError("linkedin-details needs --inputs")
+        pending: dict[str, NormalizedJob] = {}
+        for path in sorted(inputs.rglob("jobs.jsonl.gz")):
+            for job in read_jobs(path):
+                if job.source == "linkedin" and not job.description:
+                    pending.setdefault(job.source_fingerprint, job)
+        budget = float(defaults.get("linkedin_details_budget_seconds", 2700))
+        jobs, detail_stats = asyncio.run(
+            hydrate_linkedin_descriptions(
+                list(pending.values()),
+                None,
+                ttl_seconds=0,
+                concurrency=int(defaults.get("linkedin_detail_concurrency", 4)),
+                deadline=started + budget,
+            )
+        )
+        stats["linkedin_retry_pending"] = len(pending)
+        stats.update(
+            {
+                key.replace("linkedin_detail_", "linkedin_retry_detail_"): value
+                for key, value in detail_stats.items()
+            }
+        )
     elif kind in {"boards", "workday"}:
         if discover_dir is None:
             raise ValueError("board shards need --discover")
@@ -431,6 +466,16 @@ def gather_artifacts(root: Path) -> Collected:
                 "failures": 1,
                 "missing": True,
             }
+    if plan_data.get("linkedin") and "linkedin-details" not in shards:
+        # A retry step: without it the jobs are still published, only some lack a JD.
+        failures.append("linkedin-details: retry step produced no artifact")
+        shards["linkedin-details"] = {
+            "kind": "linkedin-details",
+            "jobs": None,
+            "seconds": None,
+            "failures": 1,
+            "missing": True,
+        }
     return Collected(
         jobs=sorted(best.values(), key=lambda job: job.source_fingerprint),
         failures=failures,
@@ -445,7 +490,6 @@ def gather_artifacts(root: Path) -> Collected:
 async def run_from_artifacts(root: Path, batch_size: int, config_path: Path = DEFAULT_PLAN_PATH):
     """Publish step: everything ``cloud.campaign.run`` does after collection."""
     from cloud.campaign import SweepInfo, finalize_sources, persist_collection
-    from cloud.storage.collection_cache import CollectionCacheRepository
     from wecanfindintern.config import Settings
     from wecanfindintern.db.pool import Database
 
@@ -459,19 +503,9 @@ async def run_from_artifacts(root: Path, batch_size: int, config_path: Path = DE
     database = Database(Settings.from_env())
     await database.open()
     try:
-        jobs, detail_stats = await hydrate_linkedin_descriptions(
-            collected.jobs,
-            CollectionCacheRepository(database.pool),
-            ttl_seconds=int(defaults.get("linkedin_detail_ttl_seconds", 86_400)),
-            concurrency=1,
-            fetch=False,
-        )
-        query_stats = {
-            **collected.query_stats,
-            **{"linkedin_detail_cache_hits": detail_stats["linkedin_detail_cache_hits"]},
-        }
+        query_stats = dict(collected.query_stats)
         jobs, monitor = finalize_sources(
-            jobs,
+            collected.jobs,
             collected.listings,
             query_stats,
             detail_budget_seconds=float(
@@ -508,10 +542,13 @@ def main(argv: list[str]) -> int:
     sub.add_parser("plan").add_argument("out", type=Path)
     sub.add_parser("discover").add_argument("out", type=Path)
     collect_parser = sub.add_parser("collect")
-    collect_parser.add_argument("kind", choices=["indeed", "linkedin", "boards", "workday"])
+    collect_parser.add_argument(
+        "kind", choices=["indeed", "linkedin", "linkedin-details", "boards", "workday"]
+    )
     collect_parser.add_argument("shard", nargs="?", default="")
     collect_parser.add_argument("--plan", type=Path, required=True)
     collect_parser.add_argument("--discover", type=Path)
+    collect_parser.add_argument("--inputs", type=Path, help="LinkedIn shard artifacts")
     collect_parser.add_argument("out", type=Path)
     args = parser.parse_args(argv)
     if args.command == "plan":
@@ -519,7 +556,14 @@ def main(argv: list[str]) -> int:
     elif args.command == "discover":
         discover(args.out)
     else:
-        collect(args.kind, args.shard, plan_dir=args.plan, discover_dir=args.discover, out=args.out)
+        collect(
+            args.kind,
+            args.shard,
+            plan_dir=args.plan,
+            discover_dir=args.discover,
+            out=args.out,
+            inputs=args.inputs,
+        )
     return 0
 
 

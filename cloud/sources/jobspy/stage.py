@@ -292,11 +292,11 @@ async def hydrate_linkedin_descriptions(
 ) -> tuple[list[NormalizedJob], dict[str, int]]:
     """Reuse fresh LinkedIn JDs and fetch each remaining source ID only once.
 
-    Parallel runs split this in two: a LinkedIn shard has no database, so it
-    fetches details (``cache=None``) except for ``skip_fingerprints`` that the
-    plan step found fresh in the cache; the publish step then fills those from
-    the cache with ``fetch=False``. Jobs that already carry a description are
-    left untouched.
+    Parallel runs pass ``cache=None``: LinkedIn shards fetch the JD of every
+    new card (IDs seen in the last 24 h are already discarded), and the
+    ``linkedin-details`` step retries whatever is still missing. Single-process
+    runs use the database cache. Jobs that already carry a description are left
+    untouched.
     """
 
     linkedin_jobs = [job for job in jobs if job.source == "linkedin" and not job.description]

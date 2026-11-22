@@ -54,6 +54,8 @@
     "linkedin_detail_ttl_seconds": 86400,
     "linkedin_detail_concurrency": 4,
     "linkedin_shard_budget_seconds": 2700,
+    "linkedin_seen_window_seconds": 86400,
+    "linkedin_details_budget_seconds": 2700,
     "linkedin_budget_seconds": 3600,
     "linkedin_detail_budget_seconds": 1800,
     "ats": {
