@@ -92,4 +92,17 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           DB_POOL_MAX_SIZE: '4'
           DB_STATEMENT_TIMEOUT_MS: '60000'
-        run: python -m scripts.cloud.run
+        # bash (not the default sh) gives pipefail, so a failed run still fails the step.
+        shell: bash
+        run: python -u -m scripts.cloud.run 2>&1 | tee run.log
+      - name: Upload run log for the ops page
+        if: ${{ always() && !inputs.validate_database_only }}
+        env:
+          PYTHONPATH: src
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+          R2_ENDPOINT_URL: ${{ vars.R2_ENDPOINT_URL }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        # DATABASE_URL is only listed so its value is redacted from the uploaded log.
+        run: test -f run.log && python -m scripts.cloud.ops_report upload-log run.log || true
