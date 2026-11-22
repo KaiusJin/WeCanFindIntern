@@ -82,7 +82,7 @@ async def run(
     full_sweep_every = int(
         os.getenv(
             "WCFI_COLLECTION_FULL_SWEEP_EVERY",
-            defaults.get("full_sweep_every", 10),
+            defaults.get("full_sweep_every", 30),
         )
     )
 

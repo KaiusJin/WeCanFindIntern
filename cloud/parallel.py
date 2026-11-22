@@ -118,7 +118,7 @@ def plan(out: Path, config_path: Path = DEFAULT_PLAN_PATH) -> dict[str, Any]:
     definitions, defaults = _load_config(config_path)
     recent_hours = int(os.getenv("WCFI_COLLECTION_RECENT_HOURS", defaults.get("recent_hours", 48)))
     full_every = int(
-        os.getenv("WCFI_COLLECTION_FULL_SWEEP_EVERY", defaults.get("full_sweep_every", 10))
+        os.getenv("WCFI_COLLECTION_FULL_SWEEP_EVERY", defaults.get("full_sweep_every", 30))
     )
     ttl = int(defaults.get("linkedin_detail_ttl_seconds", 86_400))
     completed, fresh = 0, []
