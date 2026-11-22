@@ -153,7 +153,7 @@ def test_gather_artifacts_merges_shards_and_flags_missing_ones(tmp_path: Path):
     assert collected.query_stats["succeeded"] == 3 and collected.query_stats["failed"] == 1
     assert collected.query_stats["stapply_jobs_kept"] == 1
     missing = sorted(name for name, s in collected.shards.items() if s.get("missing"))
-    assert missing == ["linkedin-ml", "workday-wd1"]
+    assert missing == ["linkedin-details", "linkedin-ml", "workday-wd1"]
     assert any("linkedin-ml" in f for f in collected.failures)
     assert "us-swe:linkedin:429" in collected.failures
 
@@ -204,7 +204,8 @@ def test_only_missing_shards_are_hard_failures(tmp_path: Path):
         "discover: artifact missing (SimplifyJobs/Stapply/boards skipped)",
         "linkedin-ml: shard produced no artifact (failed, cancelled or timed out)",
     ]
-    assert len(collected.failures) == 3  # the unfinished LinkedIn query stays soft
+    # The unfinished LinkedIn query and the missing linkedin-details retry stay soft.
+    assert len(collected.failures) == 4
 
 
 def test_signal_outcome_is_red_only_for_hard_failures(capsys):
@@ -225,3 +226,90 @@ def test_signal_outcome_is_red_only_for_hard_failures(capsys):
     with pytest.raises(RuntimeError, match="1 hard failures"):
         signal_outcome(hard)
     signal_outcome(SimpleNamespace(failures=(), hard_failures=()))
+
+
+def test_linkedin_shard_discards_ids_seen_in_the_window(tmp_path: Path, monkeypatch):
+    parallel.write_json(
+        tmp_path / "plan" / "plan.json",
+        {
+            "sweep_number": 2,
+            "sweep_mode": "recent-48h",
+            "hours_old": 48,
+            "linkedin": [{"shard": "software-engineer-intern", "term": "software engineer intern"}],
+            "seen_linkedin": ["seen-1"],
+        },
+    )
+
+    async def fake_queries(selected, **kwargs):
+        return [job("seen-1", "linkedin"), job("new-1", "linkedin")], [], {"succeeded": 2}
+
+    fetched = []
+
+    async def fake_hydrate(jobs, cache, **kwargs):
+        fetched.extend(j.source_fingerprint for j in jobs)
+        return [j.model_copy(update={"description": "JD"}) for j in jobs], {
+            "linkedin_detail_fetched": len(jobs)
+        }
+
+    monkeypatch.setattr(parallel, "collect_queries", fake_queries)
+    monkeypatch.setattr(parallel, "hydrate_linkedin_descriptions", fake_hydrate)
+    result = parallel.collect(
+        "linkedin",
+        "software-engineer-intern",
+        plan_dir=tmp_path / "plan",
+        discover_dir=None,
+        out=tmp_path / "out",
+    )
+    assert fetched == ["new-1"]  # the seen ID never reaches the detail fetch
+    assert result["stats"]["linkedin_discarded_seen"] == 1
+    assert [
+        j.source_fingerprint for j in parallel.read_jobs(tmp_path / "out" / "jobs.jsonl.gz")
+    ] == ["new-1"]
+
+
+def test_linkedin_details_retries_only_jobs_without_a_description(tmp_path: Path, monkeypatch):
+    parallel.write_json(tmp_path / "plan" / "plan.json", {"sweep_number": 1, "hours_old": None})
+    _shard(
+        tmp_path / "inputs",
+        "linkedin-a",
+        "linkedin",
+        [job("a", "linkedin"), job("b", "linkedin", description="has JD"), job("i")],
+    )
+    _shard(tmp_path / "inputs", "linkedin-b", "linkedin", [job("a", "linkedin")])
+
+    async def fake_hydrate(jobs, cache, **kwargs):
+        assert [j.source_fingerprint for j in jobs] == ["a"]  # deduped, JD-less LinkedIn only
+        assert kwargs["deadline"] is not None
+        return [j.model_copy(update={"description": "retried JD"}) for j in jobs], {
+            "linkedin_detail_fetched": 1,
+            "linkedin_detail_unfinished": 0,
+        }
+
+    monkeypatch.setattr(parallel, "hydrate_linkedin_descriptions", fake_hydrate)
+    result = parallel.collect(
+        "linkedin-details",
+        "",
+        plan_dir=tmp_path / "plan",
+        discover_dir=None,
+        out=tmp_path / "out",
+        inputs=tmp_path / "inputs",
+    )
+    assert result["name"] == "linkedin-details"
+    assert result["stats"]["linkedin_retry_pending"] == 1
+    assert result["stats"]["linkedin_retry_detail_fetched"] == 1
+    out = parallel.read_jobs(tmp_path / "out" / "jobs.jsonl.gz")
+    assert [(j.source_fingerprint, j.description) for j in out] == [("a", "retried JD")]
+
+    # publish merge: the retried copy (longer description) replaces the shard copy
+    parallel.write_json(
+        tmp_path / "inputs" / "plan" / "plan.json",
+        {
+            "sweep_number": 1,
+            "sweep_mode": "full",
+            "hours_old": None,
+            "linkedin": [{"shard": "a", "term": "a"}, {"shard": "b", "term": "b"}],
+        },
+    )
+    _shard(tmp_path / "inputs", "linkedin-details", "linkedin-details", out)
+    merged = {j.source_fingerprint: j for j in parallel.gather_artifacts(tmp_path / "inputs").jobs}
+    assert merged["a"].description == "retried JD"

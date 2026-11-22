@@ -45,24 +45,25 @@ Third-party code and data are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOT
 ## Parallel workflow
 
 ```text
-plan ─┬─ indeed ─────────────────────┐
-      └─ linkedin × search term ─────┤
-discover ─┬─ boards (GH/Lever/Ashby) ┼─ publish
-          └─ workday × pod slice ────┘
+plan ─┬─ indeed ──────────────────────────────────────┐
+      └─ linkedin × search term ── linkedin-details ──┤
+discover ─┬─ boards (GH/Lever/Ashby) ─────────────────┼─ publish
+          └─ workday × pod slice ─────────────────────┘
 ```
 
 | Job | Command | Database / secrets |
 |---|---|---|
-| `plan` | `python -m cloud.parallel plan work/plan` | Read-only `DATABASE_URL` for the sweep window and the LinkedIn IDs whose description is still fresh (their details are not fetched again) |
+| `plan` | `python -m cloud.parallel plan work/plan` | Read-only `DATABASE_URL` for the sweep window and the LinkedIn IDs seen in the last 24 h (`linkedin_seen_window_seconds`) |
 | `discover` | `python -m cloud.parallel discover work/discover` | None. Registry + SimplifyJobs + Stapply → `boards.json`, `stapply.jsonl.gz`, `simplify.json` and the Workday matrix |
 | `indeed` | `collect indeed --plan …` | None |
-| `linkedin` × term | `collect linkedin <term-slug> --plan …` | None. Both countries for one search term, then details for IDs not fresh in the cache |
+| `linkedin` × term | `collect linkedin <term-slug> --plan …` | None. Both countries for one search term. Cards whose ID was seen in the last 24 h are **discarded** (by ID only; content changes are ignored). Then JDs for the remaining cards |
+| `linkedin-details` | `collect linkedin-details --plan … --inputs …` | None. After all LinkedIn shards: retries the JD of every LinkedIn job a shard returned without one. Same waits; budget `linkedin_details_budget_seconds`. If this step is missing, the jobs are still published (soft failure) |
 | `boards` | `collect boards --plan … --discover …` | None. Budget `ats.boards_budget_seconds` |
 | `workday` × shard | `collect workday <shard> --plan … --discover …` | None. One shard per Workday pod; pods above 250 boards are split by a CRC32 of the board token, small pods share `misc`. Budget `ats.workday_shard_budget_seconds` |
 | `publish` | `python -m cloud.run --from-artifacts artifacts` | `DATABASE_URL`, R2 |
 
 - Every collector shard writes `jobs.jsonl.gz` + `result.json` (stats, failures, seconds) as an artifact.
-- `publish` merges all shards (best record per fingerprint), fills LinkedIn descriptions from the database cache, then runs SimplifyJobs gap filling, persistence, maintenance, publishing and the ops report. The ops report lists every shard.
+- `publish` merges all shards (best record per fingerprint, so a JD found by `linkedin-details` replaces the shard's copy without one), then runs SimplifyJobs gap filling, persistence, maintenance, publishing and the ops report. The ops report lists every shard.
 - A shard that failed, timed out or was cancelled leaves no artifact. It is reported as a failure, the run is `partial`, and everything else is published.
 - Retention does not depend on what a run saw: jobs move to `jobs_archive` four months after they were first written (`cloud/storage/maintenance.py`).
 - Because each runner has its own egress IP, LinkedIn and Workday rate limits apply per shard instead of to the whole campaign.

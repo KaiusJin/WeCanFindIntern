@@ -304,7 +304,10 @@ function renderSelected(report, row) {
   const health = [
     ["Indeed queries ok / failed", `${num(q.indeed_succeeded)} / ${num(q.indeed_failed)}`],
     ["LinkedIn queries ok / failed / skipped", `${num(q.linkedin_succeeded)} / ${num(q.linkedin_failed)} / ${num(q.linkedin_skipped)}`],
-    ["LinkedIn details fetched / failed", `${num(q.linkedin_detail_fetched)} / ${num(q.linkedin_detail_failed)}`],
+    ["LinkedIn IDs discarded (seen in last 24 h)", num(q.linkedin_discarded_seen)],
+    ["LinkedIn shard JDs fetched / failed / unfinished", `${num(q.linkedin_detail_fetched)} / ${num(q.linkedin_detail_failed)} / ${num(q.linkedin_detail_unfinished)}`],
+    ["LinkedIn JD retry: pending / fetched / still missing", `${num(q.linkedin_retry_pending)} / ${num(q.linkedin_retry_detail_fetched)} / ${num((q.linkedin_retry_detail_failed ?? 0) + (q.linkedin_retry_detail_unfinished ?? 0))}`],
+    ["LinkedIn rate-limit waits (lists / JDs / retry)", `${num(q.linkedin_rate_limit_waits)} / ${num(q.linkedin_detail_rate_limit_waits)} / ${num(q.linkedin_retry_detail_rate_limit_waits)}`],
     ["ATS boards polled / ok", `${num(q.ats_boards)} / ${num(q.ats_boards_ok)}`],
     ["ATS boards failed / missing", `${num(q.ats_boards_failed)} / ${num(q.ats_boards_missing)}`],
     ["ATS boards skipped at deadline / truncated", `${num(q.ats_boards_skipped_deadline)} / ${num(q.ats_boards_truncated)}`],
