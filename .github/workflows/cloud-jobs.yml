@@ -10,7 +10,7 @@ name: Public job feed
 # run partial: the rest is published, and nothing is expired.
 on:
   schedule:
-    - cron: '17 */3 * * *'
+    - cron: '17 */12 * * *'
   workflow_dispatch:
     inputs:
       validate_database_only:
