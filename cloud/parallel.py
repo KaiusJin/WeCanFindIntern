@@ -22,7 +22,8 @@ GitHub Actions runs each step as its own job (see ``.github/workflows/cloud-jobs
                failed (soft failure). A missing collector shard is a hard failure.
 
 Usage: ``python -m cloud.parallel {plan,discover} OUT``,
-``python -m cloud.parallel merge ARTIFACTS OUT``, ``python -m cloud.parallel gap-fill MERGED OUT`` and
+``python -m cloud.parallel merge ARTIFACTS OUT``,
+``python -m cloud.parallel gap-fill MERGED OUT`` and
 ``python -m cloud.parallel collect KIND SHARD --plan DIR --discover DIR OUT``.
 """
 
