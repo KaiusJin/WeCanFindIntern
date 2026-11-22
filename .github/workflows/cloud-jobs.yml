@@ -3,8 +3,11 @@ name: Public job feed
 # Parallel campaign (see cloud/parallel.py):
 #   plan ─┬─ indeed ──────────────────────────────────────┐
 #         └─ linkedin × search term ── linkedin-details ──┤
-#   discover ─┬─ boards ──────────────────────────────────┼─ publish (dedupe, persist, R2 feed, ops report)
+#   discover ─┬─ boards ──────────────────────────────────┼─ merge ─ simplify-gap-fill ─ publish
 #             └─ workday × pod slice ─────────────────────┘
+# publish = dedupe + persist → 4-month archive → R2 feed → ops report.
+# Every job after the collectors runs even when collectors failed; publish also
+# runs when simplify-gap-fill failed.
 # Collector shards hold no secrets and each runs on its own egress IP, so
 # LinkedIn and Workday rate limits apply per shard. LinkedIn shards drop IDs
 # seen in the last 24 h; linkedin-details retries the JDs the shards could not
@@ -315,10 +318,70 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  publish:
+  merge:
+    # Combine every collector artifact; any collector may have failed.
     needs: [plan, discover, indeed, linkedin, linkedin-details, boards, workday]
-    # Publish whatever was collected; missing shards are reported as failures.
     if: ${{ always() && !inputs.validate_database_only && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - run: python -m cloud.parallel merge artifacts merged
+      - uses: actions/upload-artifact@v4
+        with:
+          name: merged
+          path: merged
+          retention-days: 3
+          if-no-files-found: error
+
+  simplify-gap-fill:
+    # SimplifyJobs coverage + gap-fill jobs with their JDs. If this job fails,
+    # publish still runs and records it as a soft failure.
+    needs: merge
+    if: ${{ always() && needs.merge.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: merged
+          path: merged
+      - run: python -m cloud.parallel gap-fill merged gapfill
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gapfill
+          path: gapfill
+          retention-days: 3
+          if-no-files-found: error
+
+  publish:
+    # Dedupe + persist → 4-month archive → R2 feed → ops report.
+    needs: [merge, simplify-gap-fill]
+    if: ${{ always() && needs.merge.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -335,7 +398,14 @@ jobs:
       - run: python -m pip install -r cloud/requirements.txt
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: merged
+          path: artifacts/merged
+      - uses: actions/download-artifact@v4
+        # Missing when simplify-gap-fill failed; publish proceeds without it.
+        continue-on-error: true
+        with:
+          name: gapfill
+          path: artifacts/gapfill
       - name: Persist and publish
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}

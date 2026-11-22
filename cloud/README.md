@@ -47,7 +47,7 @@ Third-party code and data are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOT
 ```text
 plan ─┬─ indeed ──────────────────────────────────────┐
       └─ linkedin × search term ── linkedin-details ──┤
-discover ─┬─ boards (GH/Lever/Ashby) ─────────────────┼─ publish
+discover ─┬─ boards (GH/Lever/Ashby) ─────────────────┼─ merge ─ simplify-gap-fill ─ publish
           └─ workday × pod slice ─────────────────────┘
 ```
 
@@ -60,10 +60,13 @@ discover ─┬─ boards (GH/Lever/Ashby) ────────────�
 | `linkedin-details` | `collect linkedin-details --plan … --inputs …` | None. After all LinkedIn shards: retries the JD of every LinkedIn job a shard returned without one. Same waits; budget `linkedin_details_budget_seconds`. If this step is missing, the jobs are still published (soft failure) |
 | `boards` | `collect boards --plan … --discover …` | None. Budget `ats.boards_budget_seconds` |
 | `workday` × shard | `collect workday <shard> --plan … --discover …` | None. One shard per Workday pod; pods above 250 boards are split by a CRC32 of the board token, small pods share `misc`. Budget `ats.workday_shard_budget_seconds` |
-| `publish` | `python -m cloud.run --from-artifacts artifacts` | `DATABASE_URL`, R2 |
+| `merge` | `python -m cloud.parallel merge artifacts merged` | None. Runs even when collectors failed: best record per fingerprint, missing shards listed (hard), soft failures kept |
+| `simplify-gap-fill` | `python -m cloud.parallel gap-fill merged gapfill` | None. SimplifyJobs coverage, gap-fill jobs and their JDs (`ats.simplify_detail_budget_seconds`) |
+| `publish` | `python -m cloud.run --from-artifacts artifacts` | `DATABASE_URL`, R2. Dedupe + persist → 4-month archive → R2 feed → ops report. Runs even if `simplify-gap-fill` failed (coverage is then measured locally, soft failure) |
 
 - Every collector shard writes `jobs.jsonl.gz` + `result.json` (stats, failures, seconds) as an artifact.
-- `publish` merges all shards (best record per fingerprint, so a JD found by `linkedin-details` replaces the shard's copy without one), then runs SimplifyJobs gap filling, persistence, maintenance, publishing and the ops report. The ops report lists every shard.
+- `merge` keeps the best record per fingerprint, so a JD found by `linkedin-details` replaces the shard's copy without one. The ops report lists every shard, plus `merge` and `simplify-gap-fill`.
+- No failed collector blocks anything downstream. `merge` and `publish` run with `always()`. Only a failed `plan` (no `plan.json`) or a failed `merge` stops the run from publishing.
 - A shard that failed, timed out or was cancelled leaves no artifact. It is reported as a failure, the run is `partial`, and everything else is published.
 - Retention does not depend on what a run saw: jobs move to `jobs_archive` four months after they were first written (`cloud/storage/maintenance.py`).
 - Because each runner has its own egress IP, LinkedIn and Workday rate limits apply per shard instead of to the whole campaign.

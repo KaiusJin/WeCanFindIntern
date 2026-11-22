@@ -240,20 +240,37 @@ def finalize_sources(
     Gap-fill jobs get their description from the employer's posting (ATS API or
     the page's JobPosting JSON-LD) within ``detail_budget_seconds``.
     """
+    fill, monitor = simplify_gap_fill(
+        normalized_jobs,
+        simplify_listings,
+        query_stats,
+        detail_budget_seconds=detail_budget_seconds,
+    )
+    return [*normalized_jobs, *fill], monitor
+
+
+def simplify_gap_fill(
+    normalized_jobs: list[NormalizedJob],
+    simplify_listings: list[SimplifyListing],
+    query_stats: dict[str, int],
+    *,
+    detail_budget_seconds: float = 600.0,
+) -> tuple[list[NormalizedJob], dict[str, Any]]:
+    """(gap-fill jobs with descriptions, source monitor measured before the fill)."""
     monitor = build_source_monitor(normalized_jobs, simplify_listings)
-    if simplify_listings:
-        fill = gap_fill_jobs(simplify_listings, normalized_jobs)
-        if fill and detail_budget_seconds > 0:
-            fill = describe_gap_fill(fill, detail_budget_seconds, query_stats)
-        normalized_jobs = [*normalized_jobs, *fill]
-        query_stats["simplify_gap_fill_jobs"] = len(fill)
-        monitor["simplify_gap_fill_jobs"] = len(fill)
-        log(
-            "SimplifyJobs coverage before gap fill: "
-            f"{monitor['coverage']['covered']}/{monitor['coverage']['reference']}; "
-            f"added {len(fill)} gap-fill jobs"
-        )
-    return normalized_jobs, monitor
+    if not simplify_listings:
+        return [], monitor
+    fill = gap_fill_jobs(simplify_listings, normalized_jobs)
+    if fill and detail_budget_seconds > 0:
+        fill = describe_gap_fill(fill, detail_budget_seconds, query_stats)
+    query_stats["simplify_gap_fill_jobs"] = len(fill)
+    monitor["simplify_gap_fill_jobs"] = len(fill)
+    log(
+        "SimplifyJobs coverage before gap fill: "
+        f"{monitor['coverage']['covered']}/{monitor['coverage']['reference']}; "
+        f"added {len(fill)} gap-fill jobs"
+    )
+    return fill, monitor
 
 
 async def persist_collection(
