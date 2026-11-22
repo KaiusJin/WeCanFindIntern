@@ -6,7 +6,7 @@ GitHub Actions runs each step as its own job (see ``.github/workflows/cloud-jobs
                the last 24 h (shards discard them); emits the LinkedIn matrix.
 - ``discover``  merges the board registry with SimplifyJobs and Stapply, keeps the
                Stapply jobs, and emits the Workday matrix (one shard per pod).
-- ``collect``   one shard: ``indeed``, ``linkedin`` (one search term, both countries),
+- ``collect``   one shard: ``indeed``, ``linkedin`` (one search term in one country),
                ``boards`` (Greenhouse/Lever/Ashby) or ``workday`` (one pod group).
                Shards never touch the database or any secret, and each runner has
                its own egress IP, so LinkedIn and Workday limits apply per shard.
@@ -112,14 +112,27 @@ def _load_config(config_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any
 # --------------------------------------------------------------------------- plan
 
 
+def linkedin_shard_key(definition: dict[str, Any]) -> str:
+    """``<country>-<search term>``, e.g. ``us-software-engineer-intern``."""
+    query = definition["query"]
+    country = str((query.get("location") or {}).get("country_code", "")).casefold()
+    return slug(f"{country} {query['search_term']}")
+
+
 def linkedin_shards(definitions: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """One LinkedIn shard per search term (both countries run inside the shard)."""
-    terms: dict[str, str] = {}
+    """One LinkedIn shard per search term and country."""
+    shards: dict[str, dict[str, str]] = {}
     for definition in definitions:
         if definition.get("enabled", True) and "linkedin" in definition["sites"]:
-            term = definition["query"]["search_term"]
-            terms.setdefault(slug(term), term)
-    return [{"shard": key, "term": term} for key, term in sorted(terms.items())]
+            query = definition["query"]
+            shards.setdefault(
+                linkedin_shard_key(definition),
+                {
+                    "term": query["search_term"],
+                    "country": str((query.get("location") or {}).get("country_code", "")),
+                },
+            )
+    return [{"shard": key, **value} for key, value in sorted(shards.items())]
 
 
 def plan(out: Path, config_path: Path = DEFAULT_PLAN_PATH) -> dict[str, Any]:
@@ -254,12 +267,12 @@ def discover(out: Path, config_path: Path = DEFAULT_PLAN_PATH) -> dict[str, Any]
 # --------------------------------------------------------------------------- collect
 
 
-def _definitions_for(definitions: list[dict[str, Any]], source: str, term: str | None):
+def _definitions_for(definitions: list[dict[str, Any]], source: str, shard: str | None):
     selected = []
     for definition in definitions:
         if not definition.get("enabled", True) or source not in definition["sites"]:
             continue
-        if term is not None and slug(definition["query"]["search_term"]) != term:
+        if shard is not None and linkedin_shard_key(definition) != shard:
             continue
         selected.append({**definition, "sites": [source]})
     return selected

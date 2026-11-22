@@ -2,7 +2,7 @@ name: Public job feed
 
 # Parallel campaign (see cloud/parallel.py):
 #   plan ─┬─ indeed ──────────────────────────────────────┐
-#         └─ linkedin × search term ── linkedin-details ──┤
+#         └─ linkedin × term × country ── linkedin-details ┤
 #   discover ─┬─ boards ──────────────────────────────────┼─ merge ─ simplify-gap-fill ─ publish
 #             └─ workday × pod slice ─────────────────────┘
 # publish = dedupe + persist → 4-month archive → R2 feed → ops report.

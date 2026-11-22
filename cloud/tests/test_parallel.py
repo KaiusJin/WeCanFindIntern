@@ -31,22 +31,21 @@ def definition(term: str, country: str, sites=("indeed", "linkedin")) -> dict:
     }
 
 
-def test_linkedin_matrix_has_one_shard_per_search_term():
+def test_linkedin_matrix_has_one_shard_per_search_term_and_country():
     definitions = [
         definition("software engineer intern", "US"),
         definition("software engineer intern", "CA"),
         definition("MLOps intern", "US"),
         definition("data analyst intern", "US", sites=("indeed",)),
     ]
+    swe = "software engineer intern"
     assert parallel.linkedin_shards(definitions) == [
-        {"shard": "mlops-intern", "term": "MLOps intern"},
-        {"shard": "software-engineer-intern", "term": "software engineer intern"},
+        {"shard": "ca-software-engineer-intern", "term": swe, "country": "CA"},
+        {"shard": "us-mlops-intern", "term": "MLOps intern", "country": "US"},
+        {"shard": "us-software-engineer-intern", "term": swe, "country": "US"},
     ]
-    selected = parallel._definitions_for(definitions, "linkedin", "software-engineer-intern")
-    assert [d["name"] for d in selected] == [
-        "US-software engineer intern",
-        "CA-software engineer intern",
-    ]
+    selected = parallel._definitions_for(definitions, "linkedin", "us-software-engineer-intern")
+    assert [d["name"] for d in selected] == ["US-software engineer intern"]
     assert all(d["sites"] == ["linkedin"] for d in selected)
     assert len(parallel._definitions_for(definitions, "indeed", None)) == 4
 
@@ -235,7 +234,13 @@ def test_linkedin_shard_discards_ids_seen_in_the_window(tmp_path: Path, monkeypa
             "sweep_number": 2,
             "sweep_mode": "recent-48h",
             "hours_old": 48,
-            "linkedin": [{"shard": "software-engineer-intern", "term": "software engineer intern"}],
+            "linkedin": [
+                {
+                    "shard": "us-software-engineer-intern",
+                    "term": "software engineer intern",
+                    "country": "US",
+                }
+            ],
             "seen_linkedin": ["seen-1"],
         },
     )
@@ -255,7 +260,7 @@ def test_linkedin_shard_discards_ids_seen_in_the_window(tmp_path: Path, monkeypa
     monkeypatch.setattr(parallel, "hydrate_linkedin_descriptions", fake_hydrate)
     result = parallel.collect(
         "linkedin",
-        "software-engineer-intern",
+        "us-software-engineer-intern",
         plan_dir=tmp_path / "plan",
         discover_dir=None,
         out=tmp_path / "out",
