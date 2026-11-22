@@ -18,7 +18,7 @@ from cloud.ops.monitor import build_source_monitor, source_group
 from cloud.pipeline.ingest import run_ingestion_pipeline
 from cloud.planning.collection_catalog import expand_collection_catalog
 from cloud.planning.sweep import collection_hours_window
-from cloud.sources.job_boards.simplify import gap_fill_jobs
+from cloud.sources.job_boards.simplify import SimplifyListing, gap_fill_jobs
 from cloud.sources.job_boards.stage import collect_job_boards
 from cloud.sources.jobspy.stage import (
     collect_queries,
@@ -29,6 +29,7 @@ from cloud.storage.collection_cache import CollectionCacheRepository
 from cloud.storage.jobs import DedupeTimings, JobIngestionRepository
 from wecanfindintern.config import Settings
 from wecanfindintern.db.pool import Database
+from wecanfindintern.domain.normalized_job import NormalizedJob
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,12 +88,8 @@ async def run(
 
     database = Database(Settings.from_env())
     await database.open()
-    repository: JobIngestionRepository | None = None
-    run_record = None
-    counts: Counter[str] = Counter()
     failures: list[str] = []
     query_stats: dict[str, int] = {}
-    result: CampaignResult | None = None
     try:
         collection_cache = CollectionCacheRepository(database.pool)
         completed_campaigns = await collection_cache.completed_campaign_count(config_path.name)
@@ -158,17 +155,7 @@ async def run(
         ats_jobs, ats_stats, simplify_listings = await collect_job_boards(config_path, defaults)
         normalized_jobs = [*normalized_jobs, *ats_jobs]
         query_stats.update(ats_stats)
-        monitor = build_source_monitor(normalized_jobs, simplify_listings)
-        if simplify_listings:
-            fill = gap_fill_jobs(simplify_listings, normalized_jobs)
-            normalized_jobs = [*normalized_jobs, *fill]
-            query_stats["simplify_gap_fill_jobs"] = len(fill)
-            monitor["simplify_gap_fill_jobs"] = len(fill)
-            log(
-                "SimplifyJobs coverage before gap fill: "
-                f"{monitor['coverage']['covered']}/{monitor['coverage']['reference']}; "
-                f"added {len(fill)} gap-fill jobs"
-            )
+        normalized_jobs, monitor = finalize_sources(normalized_jobs, simplify_listings, query_stats)
 
         collection_seconds = time.monotonic() - collection_started
         log(
@@ -177,14 +164,82 @@ async def run(
             f"(queries succeeded={query_stats['succeeded']}, "
             f"failed={query_stats['failed']}, retried={query_stats['retried']})"
         )
+        sweep = SweepInfo(sweep_number, sweep_mode, hours_old)
+        result = await persist_collection(
+            database,
+            config_path=config_path,
+            plan_count=len(definitions),
+            sweep=sweep,
+            normalized_jobs=normalized_jobs,
+            failures=failures,
+            query_stats=query_stats,
+            monitor=monitor,
+            batch_size=batch_size,
+            start_time=start_time,
+        )
+    finally:
+        await database.close()
 
+    if failures:
+        log(f"Source failures encountered: {len(failures)}", level="WARN")
+        for failure in failures:
+            log(f"- {failure}", level="WARN")
+    return result
+
+
+@dataclass(frozen=True, slots=True)
+class SweepInfo:
+    number: int
+    mode: str
+    hours_old: int | None
+
+
+def finalize_sources(
+    normalized_jobs: list[NormalizedJob],
+    simplify_listings: list[SimplifyListing],
+    query_stats: dict[str, int],
+) -> tuple[list[NormalizedJob], dict[str, Any]]:
+    """Measure SimplifyJobs coverage, then add the listings no source collected."""
+    monitor = build_source_monitor(normalized_jobs, simplify_listings)
+    if simplify_listings:
+        fill = gap_fill_jobs(simplify_listings, normalized_jobs)
+        normalized_jobs = [*normalized_jobs, *fill]
+        query_stats["simplify_gap_fill_jobs"] = len(fill)
+        monitor["simplify_gap_fill_jobs"] = len(fill)
+        log(
+            "SimplifyJobs coverage before gap fill: "
+            f"{monitor['coverage']['covered']}/{monitor['coverage']['reference']}; "
+            f"added {len(fill)} gap-fill jobs"
+        )
+    return normalized_jobs, monitor
+
+
+async def persist_collection(
+    database: Database,
+    *,
+    config_path: Path,
+    plan_count: int,
+    sweep: SweepInfo,
+    normalized_jobs: list[NormalizedJob],
+    failures: list[str],
+    query_stats: dict[str, int],
+    monitor: dict[str, Any],
+    batch_size: int,
+    start_time: float,
+) -> CampaignResult:
+    """Persist, dedupe and enrich collected records, then build the campaign result."""
+    repository: JobIngestionRepository | None = None
+    run_record = None
+    counts: Counter[str] = Counter()
+    sweep_number, sweep_mode, hours_old = sweep.number, sweep.mode, sweep.hours_old
+    try:
         repository = JobIngestionRepository(database.pool)
         sources = sorted({job.source for job in normalized_jobs})
         run_record = await repository.start_run(
             sources=sources,
             query={
                 "campaign": config_path.name,
-                "plan_count": len(definitions),
+                "plan_count": plan_count,
                 "sweep_number": sweep_number,
                 "sweep_mode": sweep_mode,
                 "recent_hours": hours_old,
@@ -283,7 +338,7 @@ async def run(
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(result.payload(), indent=2), encoding="utf-8")
         log(f"Collection campaign finished in {duration:.1f}s. Summary written to {summary_path}")
-
+        return result
     except Exception as error:
         if repository is not None and run_record is not None:
             await repository.finish_run(
@@ -294,13 +349,3 @@ async def run(
             )
         log(f"Campaign encountered fatal error: {error}", level="ERROR")
         raise
-    finally:
-        await database.close()
-
-    if failures:
-        log(f"Source failures encountered: {len(failures)}", level="WARN")
-        for failure in failures:
-            log(f"- {failure}", level="WARN")
-    if result is None:
-        raise RuntimeError("collection campaign ended without a result")
-    return result

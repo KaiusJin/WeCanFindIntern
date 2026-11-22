@@ -1,15 +1,22 @@
 name: Public job feed
 
+# Parallel campaign (see cloud/parallel.py):
+#   plan ─┬─ indeed ─────────────────┐
+#         └─ linkedin × search term ─┤
+#   discover ─┬─ boards ─────────────┼─ publish (dedupe, persist, R2 feed, ops report)
+#             └─ workday × pod slice ┘
+# Collector shards hold no secrets and each runs on its own egress IP, so
+# LinkedIn and Workday rate limits apply per shard. A missing shard makes the
+# run partial: the rest is published, and nothing is expired.
 on:
   schedule:
-    - cron: '17 */12 * * *'
+    - cron: '17 */3 * * *'
   workflow_dispatch:
     inputs:
       validate_database_only:
         description: Check the Supabase connection, tables and permissions without collecting or publishing
         type: boolean
         default: false
-
 
 permissions:
   contents: read
@@ -18,12 +25,15 @@ concurrency:
   group: public-job-feed
   cancel-in-progress: false
 
+env:
+  PYTHONPATH: src
+  PYTHONUNBUFFERED: '1'
+
 jobs:
-  collect-and-publish:
+  validate:
+    if: ${{ inputs.validate_database_only }}
     runs-on: ubuntu-latest
-    # Public repository: hosted runners allow up to 6 h per job. LinkedIn cooldowns,
-    # the 40-minute ATS budget and deduplicating ~10k+ records need the headroom.
-    timeout-minutes: 330
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,13 +45,9 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             cloud/requirements.txt
-            .github/workflows/cloud-jobs.yml
-      - name: Install collector dependencies
-        run: python -m pip install -r cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
       - name: Validate Supabase database
-        if: ${{ inputs.validate_database_only }}
         env:
-          PYTHONPATH: src
           DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
         run: |
           python - <<'PYTHON'
@@ -81,10 +87,220 @@ jobs:
               # Connection exceptions can contain DSN details; keep credentials out of logs.
               raise SystemExit(f"Database validation failed: {type(exc).__name__}; SQLSTATE={exc.sqlstate}") from None
           PYTHON
-      - name: Collect and publish
-        if: ${{ !inputs.validate_database_only }}
+
+  plan:
+    if: ${{ !inputs.validate_database_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      linkedin: ${{ steps.plan.outputs.linkedin }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
+      - id: plan
         env:
-          PYTHONPATH: src
+          # Read-only: sweep window and fresh LinkedIn detail IDs.
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+        run: python -m cloud.parallel plan work/plan
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plan
+          path: work/plan
+          retention-days: 3
+          if-no-files-found: error
+
+  discover:
+    if: ${{ !inputs.validate_database_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      workday: ${{ steps.discover.outputs.workday }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
+      - id: discover
+        run: python -m cloud.parallel discover work/discover
+      - uses: actions/upload-artifact@v4
+        with:
+          name: discover
+          path: work/discover
+          retention-days: 3
+          if-no-files-found: error
+
+  indeed:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: plan
+          path: work/plan
+      - run: python -m cloud.parallel collect indeed --plan work/plan out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: out-indeed
+          path: out
+          retention-days: 3
+          if-no-files-found: error
+
+  linkedin:
+    name: linkedin ${{ matrix.shard }}
+    needs: plan
+    if: ${{ needs.plan.outputs.linkedin != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.linkedin) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: plan
+          path: work/plan
+      - run: python -m cloud.parallel collect linkedin ${{ matrix.shard }} --plan work/plan out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: out-linkedin-${{ matrix.shard }}
+          path: out
+          retention-days: 3
+          if-no-files-found: error
+
+  boards:
+    needs: [plan, discover]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: plan
+          path: work/plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: discover
+          path: work/discover
+      - run: python -m cloud.parallel collect boards --plan work/plan --discover work/discover out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: out-boards
+          path: out
+          retention-days: 3
+          if-no-files-found: error
+
+  workday:
+    name: workday ${{ matrix.shard }}
+    needs: [plan, discover]
+    if: ${{ needs.discover.outputs.workday != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.workday) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: plan
+          path: work/plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: discover
+          path: work/discover
+      - run: python -m cloud.parallel collect workday ${{ matrix.shard }} --plan work/plan --discover work/discover out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: out-workday-${{ matrix.shard }}
+          path: out
+          retention-days: 3
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, discover, indeed, linkedin, boards, workday]
+    # Publish whatever was collected; missing shards are reported as failures.
+    if: ${{ always() && !inputs.validate_database_only && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            cloud/requirements.txt
+      - run: python -m pip install -r cloud/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Persist and publish
+        env:
           DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
           R2_ENDPOINT_URL: ${{ vars.R2_ENDPOINT_URL }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}
@@ -94,11 +310,10 @@ jobs:
           DB_STATEMENT_TIMEOUT_MS: '60000'
         # bash (not the default sh) gives pipefail, so a failed run still fails the step.
         shell: bash
-        run: python -u -m cloud.run 2>&1 | tee run.log
+        run: python -u -m cloud.run --from-artifacts artifacts 2>&1 | tee run.log
       - name: Upload run log for the ops page
-        if: ${{ always() && !inputs.validate_database_only }}
+        if: ${{ always() }}
         env:
-          PYTHONPATH: src
           DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
           R2_ENDPOINT_URL: ${{ vars.R2_ENDPOINT_URL }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}

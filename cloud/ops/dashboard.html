@@ -96,6 +96,7 @@
       <div class="grid">
         <div class="panel"><h3>Collectors this run</h3><table id="collectors"></table></div>
         <div class="panel"><h3>Database by source</h3><table id="dbSources"></table></div>
+        <div class="panel"><h3>Parallel shards (GitHub Actions jobs)</h3><table id="shards"></table></div>
       </div>
 
       <h2>Database breakdown (live jobs after the selected run)</h2>
@@ -271,6 +272,9 @@ function renderSelected(report, row) {
   const collectors = Object.entries(monitor.sources || {}).sort((a, b) => (b[1].final_jobs ?? b[1].jobs ?? 0) - (a[1].final_jobs ?? a[1].jobs ?? 0));
   table($("collectors"), [["Collector"], ["Jobs", 1], ["After gap fill", 1], ["Simplify recall", 1]],
     collectors.map(([name, s]) => [esc(name), num(s.jobs), num(s.final_jobs), pct(s.simplify_recall)]));
+  table($("shards"), [["Shard"], ["Jobs", 1], ["Seconds", 1], ["Status"]],
+    Object.entries(monitor.shards || {}).map(([name, s]) => [esc(name), num(s.jobs), num(s.seconds),
+      s.missing ? '<span class="err">missing</span>' : s.failures ? `${num(s.failures)} failures` : "ok"]));
   table($("dbSources"), [["Source"], ["Live jobs", 1], ["Seen this run", 1], ["New this run", 1]],
     Object.entries(db.sources || {}).map(([name, s]) => [esc(name), num(s.live_jobs), num(s.seen_this_run), num(s.new_this_run)]));
 

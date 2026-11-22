@@ -59,6 +59,8 @@
       "concurrency": 4,
       "include_new_grad": false,
       "budget_seconds": 2400,
+      "boards_budget_seconds": 900,
+      "workday_shard_budget_seconds": 2700,
       "stapply_enabled": true
     },
     "verbose": 1
