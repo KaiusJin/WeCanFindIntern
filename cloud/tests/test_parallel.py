@@ -179,3 +179,49 @@ def test_set_output_writes_github_output(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("GITHUB_OUTPUT", str(target))
     parallel.set_output("workday", [{"shard": "wd1"}])
     assert target.read_text() == 'workday=[{"shard":"wd1"}]\n'
+
+
+def test_only_missing_shards_are_hard_failures(tmp_path: Path):
+    parallel.write_json(
+        tmp_path / "plan" / "plan.json",
+        {
+            "sweep_number": 1,
+            "sweep_mode": "full",
+            "hours_old": None,
+            "linkedin": [{"shard": "swe", "term": "swe"}, {"shard": "ml", "term": "ml"}],
+        },
+    )
+    _shard(tmp_path, "indeed", "indeed", [job("i")])
+    _shard(
+        tmp_path,
+        "linkedin-swe",
+        "linkedin",
+        [job("l", "linkedin")],
+        failures=["us-swe:linkedin:unfinished: still rate limited at the shard deadline"],
+    )
+    collected = parallel.gather_artifacts(tmp_path)
+    assert sorted(collected.hard_failures) == [
+        "discover: artifact missing (SimplifyJobs/Stapply/boards skipped)",
+        "linkedin-ml: shard produced no artifact (failed, cancelled or timed out)",
+    ]
+    assert len(collected.failures) == 3  # the unfinished LinkedIn query stays soft
+
+
+def test_signal_outcome_is_red_only_for_hard_failures(capsys):
+    from types import SimpleNamespace
+
+    import pytest
+
+    from cloud.run import signal_outcome
+
+    soft = SimpleNamespace(failures=("us-swe:linkedin:429",), hard_failures=())
+    signal_outcome(soft)  # green: annotation only
+    assert "::warning title=Collection::1 soft failures" in capsys.readouterr().out
+
+    hard = SimpleNamespace(
+        failures=("workday-wd1: shard produced no artifact", "us-swe:linkedin:429"),
+        hard_failures=("workday-wd1: shard produced no artifact",),
+    )
+    with pytest.raises(RuntimeError, match="1 hard failures"):
+        signal_outcome(hard)
+    signal_outcome(SimpleNamespace(failures=(), hard_failures=()))

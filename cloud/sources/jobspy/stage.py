@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+import time
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -23,11 +24,22 @@ from cloud.storage.collection_cache import CollectionCacheRepository
 from wecanfindintern.domain.location import parse_location
 
 _RETRYABLE_HTTP_STATUSES = {408, 425, 429}
+# A LinkedIn 429 never fails a query: wait out the gate's cooldown (bounded
+# here) and retry the same page until the shard's deadline.
+LINKEDIN_MIN_WAIT_SECONDS = 60.0
+LINKEDIN_MAX_WAIT_SECONDS = 600.0
+
+
+def linkedin_wait_seconds(error: LinkedInRateLimitException) -> float:
+    wait = float(getattr(error, "retry_after", 0.0) or 0.0)
+    return min(LINKEDIN_MAX_WAIT_SECONDS, max(LINKEDIN_MIN_WAIT_SECONDS, wait)) + random.uniform(
+        0, 5
+    )
 _PERMANENT_ERROR_MARKERS = ("location not parsed", "has no attribute")
 
 
 def is_retryable_collection_error(error: Exception) -> bool:
-    """Stop deterministic errors and exhausted rate limits for this campaign."""
+    """Stop deterministic errors; LinkedIn rate limits are waited out by the caller."""
 
     if isinstance(error, LinkedInRateLimitException):
         return False
@@ -56,7 +68,14 @@ async def collect_queries(
     defer_linkedin_descriptions: bool = False,
     hours_old_override: int | None = None,
     checkpoint=None,
+    deadline: float | None = None,
 ) -> tuple[list[NormalizedJob], list[str], dict[str, int]]:
+    """Run every planned query.
+
+    ``deadline`` (``time.monotonic()``) bounds LinkedIn rate-limit waits: a
+    query still throttled when it passes is recorded as unfinished, never
+    abandoned earlier.
+    """
     collected: dict[str, NormalizedJob] = {}
     failures: list[str] = []
     stats: Counter[str] = Counter(retried=0, succeeded=0, failed=0, skipped=0)
@@ -124,6 +143,30 @@ async def collect_queries(
                     try:
                         _, result = await asyncio.to_thread(scrape_checked, query)
                         break
+                    except LinkedInRateLimitException as error:
+                        wait = linkedin_wait_seconds(error)
+                        if deadline is not None and time.monotonic() + wait > deadline:
+                            query_has_failed = True
+                            async with lock:
+                                stats[f"{source}_unfinished"] += 1
+                                failures.append(
+                                    f"{definition['name']}:{source}:unfinished: still rate "
+                                    f"limited at the shard deadline ({len(query_jobs)} jobs kept)"
+                                )
+                            log(
+                                f"[{task_idx}/{total_tasks}] Unfinished at deadline: "
+                                f"{definition['name']} / {source}",
+                                level="WARN",
+                            )
+                            break
+                        async with lock:
+                            stats[f"{source}_rate_limit_waits"] += 1
+                        log(
+                            f"[{task_idx}/{total_tasks}] LinkedIn rate limited; retrying "
+                            f"{definition['name']} offset {offset} in {wait:.0f}s",
+                            level="WARN",
+                        )
+                        await asyncio.sleep(wait)
                     except Exception as error:
                         retryable = is_retryable_collection_error(error)
                         if not retryable:
@@ -241,6 +284,7 @@ async def hydrate_linkedin_descriptions(
     concurrency: int,
     fetch: bool = True,
     skip_fingerprints: frozenset[str] = frozenset(),
+    deadline: float | None = None,
 ) -> tuple[list[NormalizedJob], dict[str, int]]:
     """Reuse fresh LinkedIn JDs and fetch each remaining source ID only once.
 
@@ -257,7 +301,6 @@ async def hydrate_linkedin_descriptions(
         if cache is not None
         else {}
     )
-    cached = await cache.linkedin_details([job.source_fingerprint for job in linkedin_jobs])
     fresh_since = datetime.now(UTC) - timedelta(seconds=max(0, ttl_seconds))
     hydrated: dict[str, NormalizedJob] = {}
     cache_hits = 0
@@ -281,34 +324,48 @@ async def hydrate_linkedin_descriptions(
     failed = 0
     stale_fallbacks = 0
     counter_lock = asyncio.Lock()
-    rate_limited = False
+    unfinished = 0
+    rate_limit_waits = 0
+    past_deadline = False
 
     async def _fetch(job: NormalizedJob) -> None:
-        nonlocal fetched, failed, stale_fallbacks, rate_limited
+        nonlocal fetched, failed, stale_fallbacks, unfinished, rate_limit_waits, past_deadline
         if job.source_fingerprint in hydrated or job.source_fingerprint in skip_fingerprints:
             return
         if not job.source_job_id:
             async with counter_lock:
                 failed += 1
             return
+        details: dict[str, Any] = {}
+        ran_out = False
         async with semaphore:
-            try:
-                details = (
-                    {}
-                    if rate_limited
-                    else await asyncio.to_thread(fetch_linkedin_details, job.source_job_id)
-                )
-            except LinkedInRateLimitException as error:
-                rate_limited = True
-                log(f"Paused LinkedIn detail fetches: {error}", level="WARN")
-                details = {}
-            except Exception as error:
-                log(
-                    f"LinkedIn detail fetch failed for {job.source_job_id}: "
-                    f"{type(error).__name__}: {error}",
-                    level="WARN",
-                )
-                details = {}
+            # A 429 never abandons the remaining details: wait out the cooldown and
+            # retry this ID; only the deadline stops it (counted as unfinished).
+            while True:
+                if past_deadline or (deadline is not None and time.monotonic() > deadline):
+                    past_deadline = True
+                    ran_out = True
+                    break
+                try:
+                    details = await asyncio.to_thread(fetch_linkedin_details, job.source_job_id)
+                    break
+                except LinkedInRateLimitException as error:
+                    wait = linkedin_wait_seconds(error)
+                    if deadline is not None and time.monotonic() + wait > deadline:
+                        past_deadline = True
+                        continue
+                    async with counter_lock:
+                        rate_limit_waits += 1
+                    log(f"LinkedIn details rate limited; retrying in {wait:.0f}s", level="WARN")
+                    await asyncio.sleep(wait)
+                except Exception as error:
+                    log(
+                        f"LinkedIn detail fetch failed for {job.source_job_id}: "
+                        f"{type(error).__name__}: {error}",
+                        level="WARN",
+                    )
+                    details = {}
+                    break
         if details.get("description"):
             hydrated[job.source_fingerprint] = merge_linkedin_details(job, details)
             async with counter_lock:
@@ -324,7 +381,10 @@ async def hydrate_linkedin_descriptions(
                 async with counter_lock:
                     stale_fallbacks += 1
             async with counter_lock:
-                failed += 1
+                if ran_out:
+                    unfinished += 1
+                else:
+                    failed += 1
 
     if fetch:
         await asyncio.gather(*[_fetch(job) for job in linkedin_jobs])
@@ -334,6 +394,8 @@ async def hydrate_linkedin_descriptions(
         "linkedin_detail_fetched": fetched,
         "linkedin_detail_failed": failed,
         "linkedin_detail_stale_fallbacks": stale_fallbacks,
+        "linkedin_detail_unfinished": unfinished,
+        "linkedin_detail_rate_limit_waits": rate_limit_waits,
     }
 
 

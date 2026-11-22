@@ -53,6 +53,9 @@
     "linkedin_fetch_description": true,
     "linkedin_detail_ttl_seconds": 86400,
     "linkedin_detail_concurrency": 4,
+    "linkedin_shard_budget_seconds": 2700,
+    "linkedin_budget_seconds": 3600,
+    "linkedin_detail_budget_seconds": 1800,
     "ats": {
       "enabled": true,
       "boards_path": "job_boards.json",

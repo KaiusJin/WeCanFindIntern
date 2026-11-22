@@ -48,6 +48,9 @@ class CampaignResult:
     dedupe_seconds: dict[str, float] = dataclasses.field(default_factory=dict)
     # Operator report: per-source counts, timings and SimplifyJobs coverage.
     monitor: dict[str, Any] = dataclasses.field(default_factory=dict)
+    # Failures that make the workflow red (a shard or discovery produced nothing).
+    # Everything else in ``failures`` is soft: shown on the ops page as a warning.
+    hard_failures: tuple[str, ...] = ()
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -63,6 +66,7 @@ class CampaignResult:
             "monitor": self.monitor,
             "failure_count": len(self.failures),
             "failures": list(self.failures),
+            "hard_failures": list(self.hard_failures),
         }
 
 
@@ -118,6 +122,8 @@ async def run(
             defer_linkedin_descriptions=defer_linkedin,
             hours_old_override=hours_old,
             checkpoint=checkpoint,
+            # Single-process mode: LinkedIn waits out 429s for at most this long.
+            deadline=collection_started + float(defaults.get("linkedin_budget_seconds", 3600)),
         )
         query_stats.update(
             {
@@ -143,6 +149,8 @@ async def run(
                         defaults.get("linkedin_detail_concurrency", 4),
                     )
                 ),
+                deadline=time.monotonic()
+                + float(defaults.get("linkedin_detail_budget_seconds", 1800)),
             )
             query_stats.update(detail_stats)
             log(
@@ -226,8 +234,10 @@ async def persist_collection(
     monitor: dict[str, Any],
     batch_size: int,
     start_time: float,
+    hard_failures: list[str] | None = None,
 ) -> CampaignResult:
     """Persist, dedupe and enrich collected records, then build the campaign result."""
+    hard_failures = list(hard_failures or [])
     repository: JobIngestionRepository | None = None
     run_record = None
     counts: Counter[str] = Counter()
@@ -321,6 +331,7 @@ async def persist_collection(
             },
             query_stats=query_stats,
             failures=tuple(failures),
+            hard_failures=tuple(hard_failures),
             monitor={
                 **monitor,
                 "sources": {

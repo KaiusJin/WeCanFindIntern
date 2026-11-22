@@ -272,6 +272,11 @@ def collect(
 
     if kind in {"indeed", "linkedin"}:
         selected = _definitions_for(definitions, kind, shard if kind == "linkedin" else None)
+        # LinkedIn waits out every 429 instead of giving up, so the shard needs a
+        # budget below the job timeout: list pages get 60% of it, details the rest.
+        budget = float(defaults.get("linkedin_shard_budget_seconds", 2700))
+        list_deadline = started + 0.6 * budget if kind == "linkedin" else None
+        detail_deadline = started + budget
         jobs, failures, query_stats = asyncio.run(
             collect_queries(
                 selected,
@@ -279,6 +284,7 @@ def collect(
                 max_retries=int(defaults.get("max_attempts", 3)),
                 defer_linkedin_descriptions=kind == "linkedin",
                 hours_old_override=plan_data["hours_old"],
+                deadline=list_deadline,
             )
         )
         stats.update(query_stats)
@@ -290,6 +296,7 @@ def collect(
                     ttl_seconds=0,
                     concurrency=int(defaults.get("linkedin_detail_concurrency", 4)),
                     skip_fingerprints=frozenset(plan_data.get("fresh_linkedin") or []),
+                    deadline=detail_deadline,
                 )
             )
             stats.update(detail_stats)
@@ -350,6 +357,7 @@ def collect(
 class Collected:
     jobs: list[NormalizedJob]
     failures: list[str]
+    hard_failures: list[str]
     query_stats: dict[str, int]
     listings: list[SimplifyListing]
     plan: dict[str, Any]
@@ -383,6 +391,7 @@ def gather_artifacts(root: Path) -> Collected:
 
     totals: Counter[str] = Counter(retried=0, succeeded=0, failed=0, skipped=0)
     failures: list[str] = []
+    hard: list[str] = []
     shards: dict[str, dict[str, Any]] = {}
     for result_path in sorted(root.rglob("result.json")):
         result = read_json(result_path)
@@ -410,9 +419,11 @@ def gather_artifacts(root: Path) -> Collected:
         }
     else:
         failures.append("discover: artifact missing (SimplifyJobs/Stapply/boards skipped)")
+        hard.append(failures[-1])
     for name in expected_shards(plan_data, discover_data):
         if name not in shards:
             failures.append(f"{name}: shard produced no artifact (failed, cancelled or timed out)")
+            hard.append(failures[-1])
             shards[name] = {
                 "kind": name.split("-", 1)[0],
                 "jobs": None,
@@ -423,6 +434,7 @@ def gather_artifacts(root: Path) -> Collected:
     return Collected(
         jobs=sorted(best.values(), key=lambda job: job.source_fingerprint),
         failures=failures,
+        hard_failures=hard,
         query_stats=dict(totals),
         listings=listings,
         plan=plan_data,
@@ -470,6 +482,7 @@ async def run_from_artifacts(root: Path, batch_size: int, config_path: Path = DE
             ),
             normalized_jobs=jobs,
             failures=collected.failures,
+            hard_failures=collected.hard_failures,
             query_stats=query_stats,
             monitor=monitor,
             batch_size=batch_size,

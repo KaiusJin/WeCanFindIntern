@@ -21,6 +21,27 @@ from cloud.storage.maintenance import acquire_campaign_lock, maintain
 CONFIG = DEFAULT_PLAN_PATH
 
 
+def signal_outcome(result) -> None:
+    """Fail the workflow only for hard failures; soft ones become annotations.
+
+    Hard: a shard or the discovery step produced nothing (raised here), or the
+    whole collection failed (raised before publishing). Soft: individual queries
+    or boards that failed, or LinkedIn work left unfinished at a shard deadline.
+    Soft failures are on the ops page and appear as GitHub warning annotations,
+    so a green run means everything was published.
+    """
+    hard = list(getattr(result, "hard_failures", ()) or ())
+    soft = [failure for failure in result.failures if failure not in hard]
+    if soft:
+        print(
+            f"::warning title=Collection::{len(soft)} soft failures; see the ops page", flush=True
+        )
+        for failure in soft[:10]:
+            print(f"::warning title=Collection::{redact(failure)[:300]}", flush=True)
+    if hard:
+        raise RuntimeError(f"Published available jobs; {len(hard)} hard failures: {hard[:3]}")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m cloud.run")
     parser.add_argument(
@@ -94,8 +115,7 @@ def main(argv=None):
             "snapshot_jobs": manifest["snapshot"]["count"],
         }
         finish_report(report)
-        if result.status == "partial":
-            raise RuntimeError("Published available jobs; some provider queries failed")
+        signal_outcome(result)
 
 
 if __name__ == "__main__":
