@@ -26,7 +26,11 @@ TRANSIENT_STATUS = {500, 502, 503, 504}
 MISSING_STATUS = {404, 410, 422}
 TRANSIENT_BACKOFF_SECONDS = (2, 5, 15)
 # A 429 pauses only that host and retries the same request; it never fails a board.
-COOLDOWN_LADDER_SECONDS = (30, 60, 120, 300)
+# Workday throttles every client per pod (residential and CSC IPs alike), so short
+# pauses that relax after each success keep the queue moving; a Retry-After header
+# from the host wins over the ladder.
+COOLDOWN_LADDER_SECONDS = (10, 20, 40, 60)
+RETRY_AFTER_MAX_SECONDS = 120
 # Workday pods (wd1, wd3, wd5, ...) host many tenants and throttle per pod, so each
 # pod gets a single sequential worker; the JSON board APIs tolerate a few in parallel.
 WORKDAY_MIN_INTERVAL_SECONDS = 0.3
@@ -65,7 +69,7 @@ def _http_getter(
     stats: Counter[str],
     stats_lock: threading.Lock | None = None,
 ):
-    state = {"last": 0.0, "level": 0, "ok_streak": 0}
+    state = {"last": 0.0, "level": 0}
 
     def wait(seconds: float) -> None:
         if deadline is not None and clock() + seconds > deadline:
@@ -95,12 +99,12 @@ def _http_getter(
                     with stats_lock:
                         stats["rate_limited"] += 1
                 ladder = COOLDOWN_LADDER_SECONDS
-                cooldown = ladder[min(state["level"], len(ladder) - 1)]
-                retry_after = response.headers.get("Retry-After", "")
+                retry_after = str(response.headers.get("Retry-After", "")).strip()
                 if retry_after.isdigit():
-                    cooldown = max(cooldown, min(int(retry_after), 600))
-                state["level"] += 1
-                state["ok_streak"] = 0
+                    cooldown = min(max(int(retry_after), 1), RETRY_AFTER_MAX_SECONDS)
+                else:
+                    cooldown = ladder[min(state["level"], len(ladder) - 1)]
+                state["level"] = min(state["level"] + 1, len(ladder) - 1)
                 wait(cooldown * random.uniform(0.9, 1.2))
                 continue
             if status is None or status in TRANSIENT_STATUS:
@@ -110,10 +114,8 @@ def _http_getter(
                 wait(TRANSIENT_BACKOFF_SECONDS[transient] * random.uniform(0.8, 1.2))
                 transient += 1
                 continue
-            state["ok_streak"] += 1
-            if state["ok_streak"] >= 20 and state["level"]:
-                state["level"] -= 1
-                state["ok_streak"] = 0
+            if state["level"]:
+                state["level"] -= 1  # every success relaxes the next cooldown one step
             if status in MISSING_STATUS:
                 return None
             if status >= 400:
