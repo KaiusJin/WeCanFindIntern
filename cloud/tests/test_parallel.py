@@ -313,3 +313,77 @@ def test_linkedin_details_retries_only_jobs_without_a_description(tmp_path: Path
     _shard(tmp_path / "inputs", "linkedin-details", "linkedin-details", out)
     merged = {j.source_fingerprint: j for j in parallel.gather_artifacts(tmp_path / "inputs").jobs}
     assert merged["a"].description == "retried JD"
+
+
+def _collector_artifacts(root: Path) -> None:
+    parallel.write_json(
+        root / "plan" / "plan.json",
+        {
+            "sweep_number": 4,
+            "sweep_mode": "full",
+            "hours_old": None,
+            "plan_count": 2,
+            "linkedin": [],
+        },
+    )
+    parallel.write_json(root / "discover" / "discover.json", {"stats": {}, "workday": []})
+    parallel.write_jobs(root / "discover" / "stapply.jsonl.gz", [job("s", "oracle")])
+    listing = SimplifyListing(
+        "internships",
+        "9",
+        "Acme",
+        "Software Engineer Intern",
+        "https://acme.example/jobs/9",
+        ["Austin, TX"],
+        {"US"},
+        "internship",
+        1793000000,
+        "Software",
+    )
+    parallel.write_json(root / "discover" / "simplify.json", [parallel._listing_to_dict(listing)])
+    _shard(root, "indeed", "indeed", [job("i")], stats={"succeeded": 1})
+    _shard(root, "boards", "boards", [job("g", "greenhouse")])
+
+
+def test_merge_then_gap_fill_then_publish_inputs(tmp_path: Path, monkeypatch):
+    _collector_artifacts(tmp_path / "artifacts")
+    summary = parallel.merge(tmp_path / "artifacts", tmp_path / "merged")
+    assert summary["plan"]["sweep_number"] == 4 and "merge" in summary["shards"]
+    assert len(parallel.read_jobs(tmp_path / "merged" / "merged.jsonl.gz")) == 3
+
+    from cloud import campaign
+
+    def fake_fill(jobs, listings, stats, *, detail_budget_seconds):
+        stats["simplify_gap_fill_jobs"] = 1
+        return [job("fill", "simplify", description="JD")], {
+            "sources": {},
+            "coverage": {"recall": 0.5},
+        }
+
+    monkeypatch.setattr(campaign, "simplify_gap_fill", fake_fill)
+    parallel.gap_fill(tmp_path / "merged", tmp_path / "gapfill")
+
+    inputs = parallel.assemble_publish_inputs(tmp_path)  # finds merged/ and gapfill/
+    assert sorted(j.source_fingerprint for j in inputs.jobs) == ["fill", "g", "i", "s"]
+    assert inputs.monitor["coverage"]["recall"] == 0.5
+    assert inputs.query_stats["simplify_gap_fill_jobs"] == 1
+    assert inputs.monitor["shards"]["simplify-gap-fill"]["jobs"] == 1
+    assert not inputs.failures and not inputs.hard_failures
+
+
+def test_publish_inputs_without_gap_fill_is_a_soft_failure(tmp_path: Path):
+    _collector_artifacts(tmp_path / "artifacts")
+    parallel.merge(tmp_path / "artifacts", tmp_path / "out" / "merged")
+    inputs = parallel.assemble_publish_inputs(tmp_path / "out")
+    assert sorted(j.source_fingerprint for j in inputs.jobs) == ["g", "i", "s"]
+    assert inputs.monitor["coverage"]["reference"] == 1  # measured locally, no network
+    assert inputs.monitor["shards"]["simplify-gap-fill"]["missing"] is True
+    assert any(f.startswith("simplify-gap-fill:") for f in inputs.failures)
+    assert inputs.hard_failures == []
+
+
+def test_publish_needs_the_merge_artifact(tmp_path: Path):
+    import pytest
+
+    with pytest.raises(RuntimeError, match="merge artifact is missing"):
+        parallel.assemble_publish_inputs(tmp_path)

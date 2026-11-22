@@ -12,12 +12,17 @@ GitHub Actions runs each step as its own job (see ``.github/workflows/cloud-jobs
                its own egress IP, so LinkedIn and Workday limits apply per shard.
 - ``collect linkedin-details`` runs after the LinkedIn shards and retries the JD of
                every LinkedIn job they returned without one (same waits and budget).
-- ``publish``   (``python -m cloud.run --from-artifacts DIR``) merges every shard,
-               runs SimplifyJobs gap filling, persists, publishes and writes the ops
-               report. A missing collector shard is a hard failure (red run); a
-               missing linkedin-details step is soft.
+- ``merge``     combines every collector artifact (best record per fingerprint) and
+               lists missing shards; runs even when collectors failed.
+- ``gap-fill``  (``simplify-gap-fill`` job) measures SimplifyJobs coverage, adds the
+               listings nobody collected and fetches their JDs.
+- ``publish``   (``python -m cloud.run --from-artifacts DIR``) dedupes and persists,
+               archives jobs older than four months, publishes the feed and writes
+               the ops report. It runs without the gap-fill artifact if that job
+               failed (soft failure). A missing collector shard is a hard failure.
 
-Usage: ``python -m cloud.parallel {plan,discover} OUT`` and
+Usage: ``python -m cloud.parallel {plan,discover} OUT``,
+``python -m cloud.parallel merge ARTIFACTS OUT``, ``python -m cloud.parallel gap-fill MERGED OUT`` and
 ``python -m cloud.parallel collect KIND SHARD --plan DIR --discover DIR OUT``.
 """
 
@@ -487,33 +492,136 @@ def gather_artifacts(root: Path) -> Collected:
     )
 
 
+def merge(root: Path, out: Path) -> dict[str, Any]:
+    """``merge`` job: combine every collector artifact under ``root`` into one."""
+    started = time.monotonic()
+    collected = gather_artifacts(root)
+    collected.shards["merge"] = {
+        "kind": "merge",
+        "jobs": len(collected.jobs),
+        "seconds": None,
+        "failures": 0,
+    }
+    write_jobs(out / "merged.jsonl.gz", collected.jobs)
+    write_json(out / "simplify.json", [_listing_to_dict(item) for item in collected.listings])
+    summary = {
+        "failures": collected.failures,
+        "hard_failures": collected.hard_failures,
+        "query_stats": collected.query_stats,
+        "plan": collected.plan,
+        "shards": collected.shards,
+    }
+    collected.shards["merge"]["seconds"] = round(time.monotonic() - started)
+    write_json(out / "merged.json", summary)
+    log(
+        f"Merged {len(collected.jobs)} records from {len(collected.shards) - 1} shards; "
+        f"{len(collected.failures)} failures ({len(collected.hard_failures)} hard)"
+    )
+    return summary
+
+
+def gap_fill(merged_dir: Path, out: Path, config_path: Path = DEFAULT_PLAN_PATH) -> dict[str, Any]:
+    """``simplify-gap-fill`` job: SimplifyJobs coverage, gap-fill jobs and their JDs."""
+    from cloud.campaign import simplify_gap_fill
+
+    started = time.monotonic()
+    _, defaults = _load_config(config_path)
+    jobs = read_jobs(merged_dir / "merged.jsonl.gz")
+    listings = [_listing_from_dict(item) for item in read_json(merged_dir / "simplify.json")]
+    stats: dict[str, int] = {}
+    fill, monitor = simplify_gap_fill(
+        jobs,
+        listings,
+        stats,
+        detail_budget_seconds=float(
+            (defaults.get("ats") or {}).get("simplify_detail_budget_seconds", 600)
+        ),
+    )
+    write_jobs(out / "gapfill.jsonl.gz", fill)
+    summary = {"monitor": monitor, "stats": stats, "seconds": round(time.monotonic() - started)}
+    write_json(out / "gapfill.json", summary)
+    return summary
+
+
+@dataclasses.dataclass
+class PublishInputs:
+    jobs: list[NormalizedJob]
+    failures: list[str]
+    hard_failures: list[str]
+    query_stats: dict[str, int]
+    monitor: dict[str, Any]
+    plan: dict[str, Any]
+
+
+def assemble_publish_inputs(root: Path) -> PublishInputs:
+    """Merged collector records + the gap-fill step's output when it succeeded.
+
+    Without the gap-fill artifact the run still publishes: coverage is measured
+    here (no network) and the missing step is a soft failure.
+    """
+    merged_path = next(root.rglob("merged.json"), None)
+    if merged_path is None:
+        raise RuntimeError("merge artifact is missing; nothing to publish")
+    summary = read_json(merged_path)
+    jobs = read_jobs(merged_path.with_name("merged.jsonl.gz"))
+    failures = list(summary.get("failures") or [])
+    query_stats = dict(summary.get("query_stats") or {})
+    shards = dict(summary.get("shards") or {})
+    gapfill_path = next(root.rglob("gapfill.json"), None)
+    if gapfill_path is not None:
+        gapfill = read_json(gapfill_path)
+        fill = read_jobs(gapfill_path.with_name("gapfill.jsonl.gz"))
+        monitor = dict(gapfill.get("monitor") or {})
+        query_stats.update(gapfill.get("stats") or {})
+        shards["simplify-gap-fill"] = {
+            "kind": "simplify-gap-fill",
+            "jobs": len(fill),
+            "seconds": gapfill.get("seconds"),
+            "failures": 0,
+        }
+    else:
+        from cloud.ops.monitor import build_source_monitor
+
+        fill = []
+        listings = [
+            _listing_from_dict(item) for item in read_json(merged_path.with_name("simplify.json"))
+        ]
+        monitor = build_source_monitor(jobs, listings)
+        failures.append("simplify-gap-fill: step produced no artifact (published without it)")
+        shards["simplify-gap-fill"] = {
+            "kind": "simplify-gap-fill",
+            "jobs": None,
+            "seconds": None,
+            "failures": 1,
+            "missing": True,
+        }
+    monitor["shards"] = dict(sorted(shards.items()))
+    return PublishInputs(
+        jobs=[*jobs, *fill],
+        failures=failures,
+        hard_failures=list(summary.get("hard_failures") or []),
+        query_stats=query_stats,
+        monitor=monitor,
+        plan=summary["plan"],
+    )
+
+
 async def run_from_artifacts(root: Path, batch_size: int, config_path: Path = DEFAULT_PLAN_PATH):
-    """Publish step: everything ``cloud.campaign.run`` does after collection."""
-    from cloud.campaign import SweepInfo, finalize_sources, persist_collection
+    """``publish`` job: dedupe + persist → archive → feed → ops report (see cloud.run)."""
+    from cloud.campaign import SweepInfo, persist_collection
     from wecanfindintern.config import Settings
     from wecanfindintern.db.pool import Database
 
     start_time = time.monotonic()
-    collected = gather_artifacts(root)
-    _, defaults = _load_config(config_path)
+    inputs = assemble_publish_inputs(root)
     log(
-        f"Merged {len(collected.jobs)} records from {len(collected.shards)} shards; "
-        f"{len(collected.failures)} failures"
+        f"Publishing {len(inputs.jobs)} records; {len(inputs.failures)} failures "
+        f"({len(inputs.hard_failures)} hard)"
     )
     database = Database(Settings.from_env())
     await database.open()
     try:
-        query_stats = dict(collected.query_stats)
-        jobs, monitor = finalize_sources(
-            collected.jobs,
-            collected.listings,
-            query_stats,
-            detail_budget_seconds=float(
-                (defaults.get("ats") or {}).get("simplify_detail_budget_seconds", 600)
-            ),
-        )
-        monitor["shards"] = collected.shards
-        plan_data = collected.plan
+        plan_data = inputs.plan
         return await persist_collection(
             database,
             config_path=config_path,
@@ -521,11 +629,11 @@ async def run_from_artifacts(root: Path, batch_size: int, config_path: Path = DE
             sweep=SweepInfo(
                 plan_data["sweep_number"], plan_data["sweep_mode"], plan_data["hours_old"]
             ),
-            normalized_jobs=jobs,
-            failures=collected.failures,
-            hard_failures=collected.hard_failures,
-            query_stats=query_stats,
-            monitor=monitor,
+            normalized_jobs=inputs.jobs,
+            failures=inputs.failures,
+            hard_failures=inputs.hard_failures,
+            query_stats=inputs.query_stats,
+            monitor=inputs.monitor,
             batch_size=batch_size,
             start_time=start_time,
         )
@@ -541,6 +649,12 @@ def main(argv: list[str]) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("plan").add_argument("out", type=Path)
     sub.add_parser("discover").add_argument("out", type=Path)
+    merge_parser = sub.add_parser("merge")
+    merge_parser.add_argument("artifacts", type=Path)
+    merge_parser.add_argument("out", type=Path)
+    gap_parser = sub.add_parser("gap-fill")
+    gap_parser.add_argument("merged", type=Path)
+    gap_parser.add_argument("out", type=Path)
     collect_parser = sub.add_parser("collect")
     collect_parser.add_argument(
         "kind", choices=["indeed", "linkedin", "linkedin-details", "boards", "workday"]
@@ -555,6 +669,10 @@ def main(argv: list[str]) -> int:
         plan(args.out)
     elif args.command == "discover":
         discover(args.out)
+    elif args.command == "merge":
+        merge(args.artifacts, args.out)
+    elif args.command == "gap-fill":
+        gap_fill(args.merged, args.out)
     else:
         collect(
             args.kind,
