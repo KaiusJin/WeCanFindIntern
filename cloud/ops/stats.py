@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from cloud.storage.maintenance import ARCHIVE_AFTER
+
 LIVE = "j.status IN (1, 2)"
 
 BREAKDOWNS = {
@@ -105,6 +107,21 @@ def collect_db_stats(db: Any, since: Any) -> dict[str, Any]:
         """,
     )
     database_bytes = int(_one(db, "SELECT pg_database_size(current_database())")[0])
+    archived_total = archived_now = 0
+    if _one(db, "SELECT to_regclass('jobs_archive') IS NOT NULL")[0]:
+        archived_total, archived_now = _one(
+            db,
+            "SELECT count(*), count(*) FILTER (WHERE archived_at >= %s) FROM jobs_archive",
+            (since,),
+        )
+    # Jobs that reach the four-month archive age within the next 7 days.
+    archive_next_week = int(
+        _one(
+            db,
+            f"SELECT count(*) FROM jobs j WHERE j.created_at < now() - interval "
+            f"'{ARCHIVE_AFTER}' + interval '7 days'",
+        )[0]
+    )
     keys = (
         "no_description",
         "no_posted_date",
@@ -124,6 +141,9 @@ def collect_db_stats(db: Any, since: Any) -> dict[str, Any]:
         "jobs_new_this_run": int(new_jobs),
         "jobs_updated_this_run": int(updated_jobs),
         "jobs_closed_this_run": int(closed_now),
+        "jobs_archived_total": int(archived_total),
+        "jobs_archived_this_run": int(archived_now),
+        "jobs_archive_next_7_days": archive_next_week,
         "sources": sources,
         "breakdowns": breakdowns,
         "quality": {key: int(value) for key, value in zip(keys, quality, strict=True)},

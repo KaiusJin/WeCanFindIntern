@@ -63,6 +63,7 @@ discover ─┬─ boards (GH/Lever/Ashby) ┼─ publish
 
 - Every collector shard writes `jobs.jsonl.gz` + `result.json` (stats, failures, seconds) as an artifact.
 - `publish` merges all shards (best record per fingerprint), fills LinkedIn descriptions from the database cache, then runs SimplifyJobs gap filling, persistence, maintenance, publishing and the ops report. The ops report lists every shard.
-- A shard that failed, timed out or was cancelled leaves no artifact. It is reported as a failure, the run is `partial`, and expiry is skipped, so no live job is closed because one shard did not run.
+- A shard that failed, timed out or was cancelled leaves no artifact. It is reported as a failure, the run is `partial`, and everything else is published.
+- Retention does not depend on what a run saw: jobs move to `jobs_archive` four months after they were first written (`cloud/storage/maintenance.py`).
 - Because each runner has its own egress IP, LinkedIn and Workday rate limits apply per shard instead of to the whole campaign.
 

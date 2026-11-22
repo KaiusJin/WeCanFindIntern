@@ -85,6 +85,7 @@ def history_row(report: dict[str, Any]) -> dict[str, Any]:
         "db_live": database.get("jobs_live"),
         "db_new": database.get("jobs_new_this_run"),
         "db_closed": database.get("jobs_closed_this_run"),
+        "db_archived": database.get("jobs_archived_this_run"),
         "db_bytes": database.get("database_bytes"),
         "feed_jobs": (report.get("feed") or {}).get("snapshot_jobs"),
         "recall": coverage.get("recall"),
@@ -131,7 +132,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Database: {database.get('jobs_live')} live jobs "
             f"({database.get('jobs_new_this_run')} new, "
             f"{database.get('jobs_updated_this_run')} updated, "
-            f"{database.get('jobs_closed_this_run')} closed this run); "
+            f"{database.get('jobs_archived_this_run')} archived this run, "
+            f"{database.get('jobs_archived_total')} in archive); "
             f"size {round((database.get('database_bytes') or 0) / 2**20)} MiB"
         )
     if report.get("error"):

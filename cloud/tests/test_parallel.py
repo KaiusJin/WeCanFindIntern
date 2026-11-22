@@ -179,17 +179,3 @@ def test_set_output_writes_github_output(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("GITHUB_OUTPUT", str(target))
     parallel.set_output("workday", [{"shard": "wd1"}])
     assert target.read_text() == 'workday=[{"shard":"wd1"}]\n'
-
-
-def test_expiry_tolerates_query_failures_but_not_missing_shards():
-    from types import SimpleNamespace
-
-    from cloud.run import should_expire
-
-    ok = {"indeed": {"jobs": 5}, "linkedin-swe": {"jobs": 2, "failures": 1}}
-    assert should_expire(SimpleNamespace(status="success", monitor={}))
-    assert should_expire(SimpleNamespace(status="partial", monitor={"shards": ok}))
-    missing = {**ok, "workday-wd1": {"jobs": None, "missing": True}}
-    assert not should_expire(SimpleNamespace(status="partial", monitor={"shards": missing}))
-    assert not should_expire(SimpleNamespace(status="partial", monitor={}))
-    assert not should_expire(SimpleNamespace(status="failed", monitor={"shards": ok}))

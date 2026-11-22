@@ -21,21 +21,6 @@ from cloud.storage.maintenance import acquire_campaign_lock, maintain
 CONFIG = DEFAULT_PLAN_PATH
 
 
-def should_expire(result) -> bool:
-    """Close jobs unseen for 14 days only when this run saw every source.
-
-    A single-process run must fully succeed. A parallel run tolerates query-level
-    failures (an occasional LinkedIn 429) but not a missing shard: a shard that
-    never ran leaves its jobs unrefreshed, so expiring would close live postings.
-    """
-    if result.status == "success":
-        return True
-    shards = (result.monitor or {}).get("shards")
-    if result.status != "partial" or not shards:
-        return False
-    return not any(shard.get("missing") for shard in shards.values())
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m cloud.run")
     parser.add_argument(
@@ -96,13 +81,14 @@ def main(argv=None):
         try:
             if checkpoint is not None:
                 checkpoint.clear()
-            maintain(db, expire=should_expire(result))
+            archived = maintain(db)
             manifest = publish(db, store)
         except Exception as error:
             report["status"] = "error"
             report["error"] = redact(f"publish: {type(error).__name__}: {error}")[:500]
             finish_report(report)
             raise
+        report["archived_jobs"] = archived
         report["feed"] = {
             "version": manifest["version"],
             "snapshot_jobs": manifest["snapshot"]["count"],
