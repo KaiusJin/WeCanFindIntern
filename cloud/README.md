@@ -55,11 +55,11 @@ discover ─┬─ boards (GH/Lever/Ashby) ────────────�
 |---|---|---|
 | `plan` | `python -m cloud.parallel plan work/plan` | Read-only `DATABASE_URL` for the sweep window and the LinkedIn IDs seen in the last 24 h (`linkedin_seen_window_seconds`) |
 | `discover` | `python -m cloud.parallel discover work/discover` | None. Registry + SimplifyJobs + Stapply → `boards.json`, `stapply.jsonl.gz`, `simplify.json` and the Workday matrix |
-| `indeed` | `collect indeed --plan …` | None |
-| `linkedin` × term | `collect linkedin <term-slug> --plan …` | None. Both countries for one search term. Cards whose ID was seen in the last 24 h are **discarded** (by ID only; content changes are ignored). Then JDs for the remaining cards |
-| `linkedin-details` | `collect linkedin-details --plan … --inputs …` | None. After all LinkedIn shards: retries the JD of every LinkedIn job a shard returned without one. Same waits; budget `linkedin_details_budget_seconds`. If this step is missing, the jobs are still published (soft failure) |
-| `boards` | `collect boards --plan … --discover …` | None. Budget `ats.boards_budget_seconds` |
-| `workday` × shard | `collect workday <shard> --plan … --discover …` | None. One shard per Workday pod; pods above 250 boards are split by a CRC32 of the board token, small pods share `misc`. Budget `ats.workday_shard_budget_seconds` |
+| `indeed` | `collect indeed --plan … --out out` | None |
+| `linkedin` × term | `collect linkedin <term-slug> --plan … --out out` | None. Both countries for one search term. Cards whose ID was seen in the last 24 h are **discarded** (by ID only; content changes are ignored). Then JDs for the remaining cards |
+| `linkedin-details` | `collect linkedin-details --plan … --inputs … --out out` | None. After all LinkedIn shards: retries the JD of every LinkedIn job a shard returned without one. Same waits; budget `linkedin_details_budget_seconds`. If this step is missing, the jobs are still published (soft failure) |
+| `boards` | `collect boards --plan … --discover … --out out` | None. Budget `ats.boards_budget_seconds` |
+| `workday` × shard | `collect workday <shard> --plan … --discover … --out out` | None. One shard per Workday pod; pods above 250 boards are split by a CRC32 of the board token, small pods share `misc`. Budget `ats.workday_shard_budget_seconds` |
 | `merge` | `python -m cloud.parallel merge artifacts merged` | None. Runs even when collectors failed: best record per fingerprint, missing shards listed (hard), soft failures kept |
 | `simplify-gap-fill` | `python -m cloud.parallel gap-fill merged gapfill` | None. SimplifyJobs coverage, gap-fill jobs and their JDs (`ats.simplify_detail_budget_seconds`) |
 | `publish` | `python -m cloud.run --from-artifacts artifacts` | `DATABASE_URL`, R2. Dedupe + persist → 4-month archive → R2 feed → ops report. Runs even if `simplify-gap-fill` failed (coverage is then measured locally, soft failure) |

@@ -169,7 +169,7 @@ jobs:
         with:
           name: plan
           path: work/plan
-      - run: python -m cloud.parallel collect indeed --plan work/plan out
+      - run: python -m cloud.parallel collect indeed --plan work/plan --out out
       - uses: actions/upload-artifact@v4
         with:
           name: out-indeed
@@ -204,7 +204,7 @@ jobs:
         with:
           name: plan
           path: work/plan
-      - run: python -m cloud.parallel collect linkedin ${{ matrix.shard }} --plan work/plan out
+      - run: python -m cloud.parallel collect linkedin ${{ matrix.shard }} --plan work/plan --out out
       - uses: actions/upload-artifact@v4
         with:
           name: out-linkedin-${{ matrix.shard }}
@@ -240,7 +240,7 @@ jobs:
         with:
           pattern: out-linkedin-*
           path: inputs
-      - run: mkdir -p inputs && python -m cloud.parallel collect linkedin-details --plan work/plan --inputs inputs out
+      - run: mkdir -p inputs && python -m cloud.parallel collect linkedin-details --plan work/plan --inputs inputs --out out
       - uses: actions/upload-artifact@v4
         with:
           name: out-linkedin-details
@@ -272,7 +272,7 @@ jobs:
         with:
           name: discover
           path: work/discover
-      - run: python -m cloud.parallel collect boards --plan work/plan --discover work/discover out
+      - run: python -m cloud.parallel collect boards --plan work/plan --discover work/discover --out out
       - uses: actions/upload-artifact@v4
         with:
           name: out-boards
@@ -310,7 +310,7 @@ jobs:
         with:
           name: discover
           path: work/discover
-      - run: python -m cloud.parallel collect workday ${{ matrix.shard }} --plan work/plan --discover work/discover out
+      - run: python -m cloud.parallel collect workday ${{ matrix.shard }} --plan work/plan --discover work/discover --out out
       - uses: actions/upload-artifact@v4
         with:
           name: out-workday-${{ matrix.shard }}
