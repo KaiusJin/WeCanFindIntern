@@ -10,7 +10,9 @@ from pathlib import Path
 
 import psycopg
 
-from scripts.cloud.publish import R2, publish
+from scripts.cloud.ops_report import publish_ops, redact, write_step_summary
+from scripts.cloud.ops_stats import collect_db_stats
+from scripts.cloud.publish import publish, r2_from_env
 from scripts.collection.run_collection_campaign import run
 from wecanfindintern.domain.normalized_job import NormalizedJob
 
@@ -83,20 +85,9 @@ def maintain(db, *, expire):
 
 
 def main():
-    import boto3
-
     # These are workflow-only credentials. Desktop code imports neither boto3 nor this module.
     url = os.environ["DATABASE_URL"]
-    store = R2(
-        boto3.client(
-            "s3",
-            endpoint_url=os.environ["R2_ENDPOINT_URL"],
-            region_name="auto",
-            aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
-            aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
-        ),
-        os.environ["R2_BUCKET"],
-    )
+    store = r2_from_env()
     with psycopg.connect(url, autocommit=True) as db:
         schema, locked = db.execute("""
             SELECT current_schema(), pg_try_advisory_lock(790341567)
@@ -106,7 +97,27 @@ def main():
                 "Expected the private job_feed schema and an exclusive campaign lock"
             )
         started = time.monotonic()
-        result = asyncio.run(run(CONFIG, 250, checkpoint=QueryCheckpoint(db, CONFIG)))
+        run_started_at = db.execute("SELECT now()").fetchone()[0]
+
+        def finish_report(report):
+            try:
+                report["database"] = collect_db_stats(db, run_started_at)
+            except Exception as error:  # monitoring must never fail the run
+                report["database_error"] = f"{type(error).__name__}: {error}"[:300]
+            write_step_summary(report)
+            publish_ops(store, report)
+
+        try:
+            result = asyncio.run(run(CONFIG, 250, checkpoint=QueryCheckpoint(db, CONFIG)))
+        except Exception as error:
+            report = {
+                "status": "error",
+                "duration_seconds": round(time.monotonic() - started, 1),
+                "error": redact(f"{type(error).__name__}: {error}")[:500],
+            }
+            finish_report(report)
+            raise
+        report = result.payload()
         stats = result.query_stats
         queries = stats["succeeded"] + stats["failed"] + stats["skipped"]
         print(
@@ -121,10 +132,22 @@ def main():
             flush=True,
         )
         if result.status == "failed":
+            finish_report(report)
             raise RuntimeError("Public job collection failed")
-        db.execute("DELETE FROM feed_checkpoint")
-        maintain(db, expire=result.status == "success")
-        publish(db, store)
+        try:
+            db.execute("DELETE FROM feed_checkpoint")
+            maintain(db, expire=result.status == "success")
+            manifest = publish(db, store)
+        except Exception as error:
+            report["status"] = "error"
+            report["error"] = redact(f"publish: {type(error).__name__}: {error}")[:500]
+            finish_report(report)
+            raise
+        report["feed"] = {
+            "version": manifest["version"],
+            "snapshot_jobs": manifest["snapshot"]["count"],
+        }
+        finish_report(report)
         if result.status == "partial":
             raise RuntimeError("Published available jobs; some provider queries failed")
 

@@ -93,6 +93,33 @@ class R2:
             CacheControl="no-store" if manifest else "public,max-age=31536000,immutable",
         )
 
+    def put_ops(self, key, body, content_type, *, content_encoding=None):
+        """Operator report objects: always revalidated, never cached."""
+        extra = {"ContentEncoding": content_encoding} if content_encoding else {}
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=body,
+            ContentType=content_type,
+            CacheControl="no-store",
+            **extra,
+        )
+
+    def keep_newest(self, prefix, keep):
+        """Delete all but the ``keep`` most recently written objects under ``prefix``."""
+        paginator = self.client.get_paginator("list_objects_v2")
+        objects = [
+            obj
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix)
+            for obj in page.get("Contents", [])
+        ]
+        objects.sort(key=lambda obj: obj["LastModified"], reverse=True)
+        expired = [{"Key": obj["Key"]} for obj in objects[keep:]]
+        for start in range(0, len(expired), 1000):
+            self.client.delete_objects(
+                Bucket=self.bucket, Delete={"Objects": expired[start : start + 1000], "Quiet": True}
+            )
+
     def prune(self, retained):
         cutoff = datetime.now(UTC) - timedelta(days=2)
         paginator = self.client.get_paginator("list_objects_v2")
@@ -171,3 +198,21 @@ def publish(db, store):
         flush=True,
     )
     return prior
+
+
+def r2_from_env():
+    """R2 store from the workflow's credentials (cloud-only; desktop never imports boto3)."""
+    import os
+
+    import boto3
+
+    return R2(
+        boto3.client(
+            "s3",
+            endpoint_url=os.environ["R2_ENDPOINT_URL"],
+            region_name="auto",
+            aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        ),
+        os.environ["R2_BUCKET"],
+    )
