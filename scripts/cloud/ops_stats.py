@@ -95,6 +95,16 @@ def collect_db_stats(db: Any, since: Any) -> dict[str, Any]:
         FROM jobs j WHERE {LIVE}
         """,
     )
+    sizes = _pairs(
+        db,
+        """
+        SELECT c.relname, pg_total_relation_size(c.oid) FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'p')
+        ORDER BY 2 DESC LIMIT 8
+        """,
+    )
+    database_bytes = int(_one(db, "SELECT pg_database_size(current_database())")[0])
     keys = (
         "no_description",
         "no_posted_date",
@@ -105,6 +115,8 @@ def collect_db_stats(db: Any, since: Any) -> dict[str, Any]:
     )
     return {
         "since": str(since),
+        "database_bytes": database_bytes,
+        "table_bytes": sizes,
         "jobs_total": int(total),
         "jobs_live": int(live),
         "jobs_closed": int(closed),

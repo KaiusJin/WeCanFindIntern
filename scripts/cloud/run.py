@@ -10,7 +10,7 @@ from pathlib import Path
 
 import psycopg
 
-from scripts.cloud.ops_report import publish_ops, write_step_summary
+from scripts.cloud.ops_report import publish_ops, redact, write_step_summary
 from scripts.cloud.ops_stats import collect_db_stats
 from scripts.cloud.publish import publish, r2_from_env
 from scripts.collection.run_collection_campaign import run
@@ -113,7 +113,7 @@ def main():
             report = {
                 "status": "error",
                 "duration_seconds": round(time.monotonic() - started, 1),
-                "error": f"{type(error).__name__}: {error}"[:500],
+                "error": redact(f"{type(error).__name__}: {error}")[:500],
             }
             finish_report(report)
             raise
@@ -134,9 +134,15 @@ def main():
         if result.status == "failed":
             finish_report(report)
             raise RuntimeError("Public job collection failed")
-        db.execute("DELETE FROM feed_checkpoint")
-        maintain(db, expire=result.status == "success")
-        manifest = publish(db, store)
+        try:
+            db.execute("DELETE FROM feed_checkpoint")
+            maintain(db, expire=result.status == "success")
+            manifest = publish(db, store)
+        except Exception as error:
+            report["status"] = "error"
+            report["error"] = redact(f"publish: {type(error).__name__}: {error}")[:500]
+            finish_report(report)
+            raise
         report["feed"] = {
             "version": manifest["version"],
             "snapshot_jobs": manifest["snapshot"]["count"],

@@ -66,6 +66,7 @@
     <div class="panel"><h3>Live jobs by opportunity type</h3><div id="typeChart"></div><div class="legend" id="typeLegend"></div></div>
     <div class="panel"><h3>SimplifyJobs coverage</h3><div id="recallChart"></div></div>
     <div class="panel"><h3>Run duration (minutes)</h3><div id="durationChart"></div></div>
+    <div class="panel"><h3>Database size (MiB, warn at 400)</h3><div id="sizeChart"></div></div>
   </div>
 
   <h2>Sources (last run)</h2>
@@ -78,7 +79,10 @@
   <div class="grid" id="breakdowns"></div>
 
   <h2>Data quality (live jobs)</h2>
-  <div class="panel"><table id="quality"></table></div>
+  <div class="grid">
+    <div class="panel"><table id="quality"></table></div>
+    <div class="panel"><h3>Largest tables</h3><table id="tables"></table></div>
+  </div>
 
   <h2>Coverage by platform (last run)</h2>
   <div class="panel"><table id="platforms"></table>
@@ -104,6 +108,9 @@ const logHref = (key) => key ? key.replace(/^ops\//, "") : null;
 const LABELS = { co_op: "co-op", new_grad: "new grad", job_category: "Title category", opportunity_type: "Opportunity type",
   country: "Country", work_mode: "Work mode", recruiting_term: "Recruiting term", subcategory_top: "Top subcategories",
   new_by_opportunity_type: "New this run by type" };
+const mib = (b) => b == null ? "–" : `${Math.round(b / 1048576).toLocaleString()} MiB`;
+// Supabase free tier: 500 MB per project. Warn well before it.
+const DB_WARN_BYTES = 400 * 1048576;
 const label = (k) => LABELS[k] ?? String(k).replaceAll("_", " ");
 
 function table(el, head, rows) {
@@ -181,6 +188,7 @@ async function load(name) {
     ["Updated this run", num(db.jobs_updated_this_run)],
     ["Closed this run", num(db.jobs_closed_this_run)],
     ["Feed jobs", num(latest.feed?.snapshot_jobs)],
+    ["Database size", db.database_bytes >= DB_WARN_BYTES ? `<span class="err">${mib(db.database_bytes)}</span>` : mib(db.database_bytes)],
     ["Simplify recall", pct(cov.recall)],
     ["Duration", latest.duration_seconds ? `${Math.round(latest.duration_seconds / 60)} min` : "–"],
     ["Failures", num((latest.failures || []).length)],
@@ -197,6 +205,8 @@ async function load(name) {
   multiSeries($("typeChart"), $("typeLegend"), runs, (r) => r.types);
   lineChart($("recallChart"), runs.map((r) => ({ at: r.at, values: { recall: r.recall } })),
     [{ key: "recall", color: colors[0] }], { max: 1, format: pct });
+  lineChart($("sizeChart"), runs.map((r) => ({ at: r.at, values: { size: r.db_bytes == null ? null : r.db_bytes / 1048576 } })),
+    [{ key: "size", color: colors[3] }]);
   lineChart($("durationChart"), runs.map((r) => ({ at: r.at, values: { min: r.duration_s == null ? null : r.duration_s / 60 } })),
     [{ key: "min", color: colors[2] }]);
 
@@ -219,6 +229,9 @@ async function load(name) {
     ["Category 'other'", quality.category_other], ["Opportunity type unknown", quality.type_unknown],
     ["Closed, awaiting deletion", db.jobs_closed],
   ].map(([k, v]) => [esc(k), num(v), live && v != null ? pct(v / live) : "–"]));
+
+  table($("tables"), [["Table"], ["Size", 1]],
+    Object.entries(db.table_bytes || {}).map(([name, bytes]) => [esc(name), mib(bytes)]));
 
   table($("platforms"), [["Platform"], ["Reference", 1], ["Covered", 1], ["Recall", 1]],
     Object.entries(cov.by_platform || {}).map(([name, p]) => [esc(name), num(p.reference), num(p.covered), pct(p.recall)]));

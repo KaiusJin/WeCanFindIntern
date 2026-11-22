@@ -167,6 +167,8 @@ class FakeDb:
         ("unnest(j.job_subcategories)", [("backend", 20)]),
         ("WHERE j.created_at >= %s GROUP BY", [("internship", 6), ("co_op", 1)]),
         ("length(j.description)", [(3, 4, 20, 1, 2, 5)]),
+        ("pg_total_relation_size", [("jobs", 50_000_000), ("job_sources", 9_000_000)]),
+        ("pg_database_size", [(80_000_000,)]),
         ("GROUP BY 1", [("x", 1)]),
     ]
 
@@ -205,3 +207,5 @@ def test_collect_db_stats_shapes_the_report():
     assert stats["breakdowns"]["new_by_opportunity_type"] == {"internship": 6, "co_op": 1}
     assert stats["breakdowns"]["subcategory_top"] == {"backend": 20}
     assert stats["quality"]["with_salary"] == 20
+    assert stats["database_bytes"] == 80_000_000
+    assert stats["table_bytes"] == {"jobs": 50_000_000, "job_sources": 9_000_000}

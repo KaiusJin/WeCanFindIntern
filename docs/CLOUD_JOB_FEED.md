@@ -76,6 +76,8 @@ The page shows:
   grad, ...), by title category, by top subcategories, by country, by
   recruiting term and by work mode. New jobs this run are also broken down by
   type.
+- **Database size.** Total size and the largest tables, with a trend. The
+  tile turns red at 400 MiB, ahead of the 500 MB Supabase free-tier limit.
 - **Data quality.** Multi-source jobs, salary coverage, missing or short
   descriptions, missing posted dates, missing countries, category `other`,
   unknown type, and jobs closed but not yet deleted.
