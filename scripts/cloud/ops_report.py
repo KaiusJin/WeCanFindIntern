@@ -4,7 +4,9 @@ Each run writes, next to the public feed:
 
 - ``ops/latest.json``: the full report of the last run (success or failure);
 - ``ops/history.json``: one compact row per run, newest first (capped);
-- ``ops/index.html``: a static dashboard that reads the two files above;
+- ``ops/runs/<run>-<attempt>.json``: the full report of every run (newest 500 kept);
+- ``ops/index.html``: a static dashboard over these files. It is deployed by its
+  own workflow (``upload-dashboard``) whenever the page changes, not per run;
 - ``ops/logs/<run>-<attempt>.log``: the run's console log (gzip-encoded,
   secrets redacted), uploaded by the workflow's final step.
 
@@ -12,7 +14,8 @@ The report holds counts, timings, coverage, provider errors and database
 aggregates, never credentials. The page is unlisted; put ``ops/*`` behind
 Cloudflare Access to restrict it to operators.
 
-CLI (workflow step, always runs): ``python -m scripts.cloud.ops_report upload-log run.log``
+CLI: ``upload-log run.log`` (collection workflow, always runs) and
+``upload-dashboard`` (ops-dashboard workflow).
 """
 
 from __future__ import annotations
@@ -40,7 +43,7 @@ def run_context(env: dict[str, str] | None = None) -> dict[str, Any]:
     env = dict(os.environ if env is None else env)
     run_id = env.get("GITHUB_RUN_ID")
     if not run_id:
-        return {"id": None, "url": None, "log_key": None}
+        return {"id": None, "url": None, "log_key": None, "report_key": None}
     attempt = env.get("GITHUB_RUN_ATTEMPT", "1")
     server = env.get("GITHUB_SERVER_URL", "https://github.com")
     repository = env.get("GITHUB_REPOSITORY", "")
@@ -51,6 +54,7 @@ def run_context(env: dict[str, str] | None = None) -> dict[str, Any]:
         "sha": (env.get("GITHUB_SHA") or "")[:12] or None,
         "url": f"{server}/{repository}/actions/runs/{run_id}" if repository else None,
         "log_key": f"ops/logs/{run_id}-{attempt}.log",
+        "report_key": f"ops/runs/{run_id}-{attempt}.json",
     }
 
 
@@ -95,6 +99,7 @@ def history_row(report: dict[str, Any]) -> dict[str, Any]:
         "error": report.get("error"),
         "run_url": run.get("url"),
         "log_key": run.get("log_key"),
+        "report_key": run.get("report_key"),
     }
 
 
@@ -209,21 +214,34 @@ def write_step_summary(report: dict[str, Any]) -> None:
 
 
 def publish_ops(store: Any, report: dict[str, Any]) -> None:
-    """Write latest/history/dashboard to R2. Never raises: monitoring must not fail a run."""
+    """Write this run's report (per-run file, latest, history). Never raises.
+
+    The dashboard page itself is deployed separately (``upload-dashboard``), so
+    it is reachable before the first run and does not change with each run.
+    """
     try:
-        report = {"generated_at": datetime.now(UTC).isoformat(), "run": run_context(), **report}
+        now = datetime.now(UTC)
+        run = {**run_context(), **(report.get("run") or {})}
+        if not run.get("report_key"):  # local or manual run outside GitHub Actions
+            run["report_key"] = f"ops/runs/local-{now.strftime('%Y%m%dT%H%M%SZ')}.json"
+        report = {"generated_at": now.isoformat(), **report, "run": run}
+        body = json.dumps(report, default=str).encode()
         raw = store.read("ops/history.json")
         history = json.loads(raw) if raw else []
         history = [history_row(report), *history][:HISTORY_LIMIT]
-        store.put_ops(
-            "ops/latest.json", json.dumps(report, default=str).encode(), "application/json"
-        )
+        store.put_ops(report["run"]["report_key"], body, "application/json")
+        store.put_ops("ops/latest.json", body, "application/json")
         store.put_ops(
             "ops/history.json", json.dumps(history, default=str).encode(), "application/json"
         )
-        store.put_ops("ops/index.html", DASHBOARD.read_bytes(), "text/html; charset=utf-8")
+        store.keep_newest("ops/runs/", HISTORY_LIMIT)
     except Exception as error:  # pragma: no cover - logged, never fatal
         print(f"ops report upload failed: {type(error).__name__}: {error}", flush=True)
+
+
+def upload_dashboard(store: Any) -> str:
+    store.put_ops("ops/index.html", DASHBOARD.read_bytes(), "text/html; charset=utf-8")
+    return "ops/index.html"
 
 
 def upload_log(store: Any, path: Path, *, env: dict[str, str] | None = None) -> str | None:
@@ -242,12 +260,22 @@ def upload_log(store: Any, path: Path, *, env: dict[str, str] | None = None) -> 
     return key
 
 
+USAGE = (
+    "usage: python -m scripts.cloud.ops_report upload-log <path>\n"
+    "       python -m scripts.cloud.ops_report upload-dashboard"
+)
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[0] != "upload-log":
-        print("usage: python -m scripts.cloud.ops_report upload-log <path>", file=sys.stderr)
-        return 2
     from scripts.cloud.publish import r2_from_env
 
+    if argv[:1] == ["upload-dashboard"] and len(argv) == 1:
+        # Deployment step: a failure here should fail the workflow.
+        print(f"dashboard uploaded: {upload_dashboard(r2_from_env())}", flush=True)
+        return 0
+    if argv[:1] != ["upload-log"] or len(argv) != 2:
+        print(USAGE, file=sys.stderr)
+        return 2
     try:
         key = upload_log(r2_from_env(), Path(argv[1]))
     except Exception as error:  # never fail the workflow because of the log copy

@@ -14,6 +14,7 @@ from scripts.cloud.ops_report import (
     redact,
     render_markdown,
     run_context,
+    upload_dashboard,
     upload_log,
 )
 from scripts.cloud.ops_stats import collect_db_stats
@@ -115,7 +116,29 @@ def test_publish_ops_prepends_history_and_caps_it():
     assert len(history) == HISTORY_LIMIT
     assert history[0]["status"] == "partial"
     assert json.loads(store.objects["ops/latest.json"])["status"] == "partial"
+    # Every run keeps its own full report; the page itself is deployed separately.
+    run_keys = [key for key in store.objects if key.startswith("ops/runs/")]
+    assert len(run_keys) == 1
+    assert json.loads(store.objects[run_keys[0]])["status"] == "partial"
+    assert history[0]["report_key"] == run_keys[0]
+    assert store.kept == ("ops/runs/", HISTORY_LIMIT)
+    assert "ops/index.html" not in store.objects
+
+
+def test_publish_ops_uses_github_run_key(monkeypatch):
+    for name, value in ENV.items():
+        monkeypatch.setenv(name, value)
+    store = FakeStore()
+    publish_ops(store, {"status": "success"})
+    assert "ops/runs/123-2.json" in store.objects
+    assert json.loads(store.objects["ops/history.json"])[0]["report_key"] == "ops/runs/123-2.json"
+
+
+def test_upload_dashboard_puts_the_page():
+    store = FakeStore()
+    assert upload_dashboard(store) == "ops/index.html"
     assert store.meta["ops/index.html"][0].startswith("text/html")
+    assert b"Collector Ops" in store.objects["ops/index.html"]
 
 
 def test_publish_ops_never_raises():
@@ -130,6 +153,7 @@ def test_run_context_from_github_env():
     context = run_context(ENV)
     assert context["url"] == "https://github.com/owner/repo/actions/runs/123"
     assert context["log_key"] == "ops/logs/123-2.log"
+    assert context["report_key"] == "ops/runs/123-2.json"
     assert run_context({})["log_key"] is None
 
 

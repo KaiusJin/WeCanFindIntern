@@ -49,20 +49,31 @@ Use the Actions log for collection duration, source job count, unavailable query
 
 ## Operator page
 
-Each run writes an operator report next to the feed. Open it at
-`<feed domain>/ops/index.html`. It is for operators only: the page is unlisted
-and marked `noindex`. To restrict it, protect the path `ops/*` with
-Cloudflare Access.
+The operator page is a permanent page at `<feed domain>/ops/index.html`. It is
+for operators only: it is unlisted and marked `noindex`. To restrict it,
+protect the path `ops/*` with Cloudflare Access.
+- The page (`scripts/cloud/ops_dashboard.html`) is deployed by the
+  **Ops dashboard** workflow whenever it changes on `main`, or by hand with
+  `workflow_dispatch`. It exists before the first collection run; until then
+  it says that no runs have been recorded.
+- Each collection run only adds data files.
 
 | Object | Content |
 |---|---|
-| `ops/latest.json` | Full report of the last run, success or failure |
-| `ops/history.json` | One compact row per run, newest first, 500 rows max |
-| `ops/index.html` | Static dashboard over the two files above (`scripts/cloud/ops_dashboard.html`) |
+| `ops/index.html` | The page itself (deployed by the Ops dashboard workflow) |
+| `ops/history.json` | One compact row per run, newest first, 500 rows max: trends and the run list |
+| `ops/runs/<run>-<attempt>.json` | Full report of every run, newest 500 kept |
+| `ops/latest.json` | Copy of the last run's full report |
 | `ops/logs/<run>-<attempt>.log` | The run's console log, gzip-encoded, newest 200 kept |
 
+A run picker (also *Newer* / *Older*, or a click on a row of the history
+table) selects which run the page details. The selection is kept in the URL
+(`#run=...`), so a link opens the same run. Trend charts always show all runs,
+with a dashed line at the selected run. Runs recorded before per-run reports
+existed show only their history summary.
+
 The page shows:
-- **Totals for the last run.** Live jobs in the database; jobs new, updated and
+- **Totals for the selected run.** Live jobs in the database; jobs new, updated and
   closed this run; feed size; SimplifyJobs recall; duration; failure count.
   It links to the GitHub Actions run and to the run log, which you can
   download.

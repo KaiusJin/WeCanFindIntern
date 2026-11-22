@@ -1,0 +1,41 @@
+name: Ops dashboard
+
+# Deploys the operator page (R2 ops/index.html) whenever it changes on main, so
+# the page exists independently of collection runs. Runs only write data
+# (ops/latest.json, ops/history.json, ops/runs/*, ops/logs/*).
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/cloud/ops_dashboard.html
+      - scripts/cloud/ops_report.py
+      - .github/workflows/ops-dashboard.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-dashboard
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'boto3>=1.36,<2'
+      - name: Upload ops/index.html
+        env:
+          PYTHONPATH: src
+          R2_ENDPOINT_URL: ${{ vars.R2_ENDPOINT_URL }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: python -m scripts.cloud.ops_report upload-dashboard
