@@ -36,19 +36,48 @@ runs:
         printf '%s\n' "$CSC_KEY" > ~/.ssh/csc_tunnel
         chmod 600 ~/.ssh/csc_tunnel
         printf '%s\n' "$CSC_KNOWN_HOSTS" > ~/.ssh/known_hosts
-        ssh -i ~/.ssh/csc_tunnel \
-          -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
-          -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
-          -f -N -D "127.0.0.1:${SOCKS_PORT}" "${CSC_USER}@${CSC_HOST}"
-        for _ in $(seq 1 20); do
-          if curl -fsS --max-time 10 --socks5-hostname "127.0.0.1:${SOCKS_PORT}" \
-              https://checkip.amazonaws.com >/tmp/egress_ip; then
-            break
-          fi
+        # ssh -f sends its stderr to /dev/null once it backgrounds, which hides
+        # "channel N: open failed: ..." -- so each attempt logs to a file (-E -v)
+        # that is printed when the attempt fails.
+        probe() {
+          curl -fsS --max-time 10 --socks5-hostname "127.0.0.1:${SOCKS_PORT}" \
+            https://checkip.amazonaws.com >/tmp/egress_ip 2>/tmp/probe_err
+        }
+        stop_tunnel() {
+          pkill -f "csc_tunnel.*127\.0\.0\.1:${SOCKS_PORT}" || true
           sleep 1
+        }
+        attempts=4
+        up=
+        for attempt in $(seq 1 "$attempts"); do
+          log="/tmp/csc_tunnel.${attempt}.log"
+          : >/tmp/egress_ip
+          if ssh -i ~/.ssh/csc_tunnel -E "$log" -v \
+              -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+              -o ConnectTimeout=20 -o ExitOnForwardFailure=yes \
+              -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
+              -f -N -D "127.0.0.1:${SOCKS_PORT}" "${CSC_USER}@${CSC_HOST}"; then
+            for _ in $(seq 1 10); do
+              if probe; then up=1; break; fi
+              sleep 1
+            done
+          fi
+          [ -n "$up" ] && break
+          echo "::warning::CSC tunnel attempt ${attempt}/${attempts} failed: $(tail -n1 /tmp/probe_err 2>/dev/null)"
+          echo "::group::ssh log, attempt ${attempt}"
+          if pgrep -f "csc_tunnel.*127\.0\.0\.1:${SOCKS_PORT}" >/dev/null; then
+            echo "(ssh still running)"
+          else
+            echo "(ssh not running)"
+          fi
+          grep -vE 'debug1: (Reading configuration|.*identity file|Local version|Remote protocol|compat_banner)' \
+            "$log" | tail -n 60 || true
+          echo "::endgroup::"
+          stop_tunnel
+          if [ "$attempt" -lt "$attempts" ]; then sleep $((attempt * 15)); fi
         done
-        test -s /tmp/egress_ip || { echo "::error::CSC tunnel did not come up"; exit 1; }
-        echo "Egress IP via CSC: $(cat /tmp/egress_ip)"
+        [ -n "$up" ] || { echo "::error::CSC tunnel did not come up after ${attempts} attempts"; exit 1; }
+        echo "Egress IP via CSC: $(cat /tmp/egress_ip) (attempt ${attempt})"
         # Exposed as CSC_PROXY only: steps opt in with HTTPS_PROXY=${{ env.CSC_PROXY }},
         # so actions such as upload-artifact never go through the tunnel.
         echo "CSC_PROXY=socks5h://127.0.0.1:${SOCKS_PORT}" >> "$GITHUB_ENV"
