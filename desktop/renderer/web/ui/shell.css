@@ -101,9 +101,6 @@ button, input, textarea, select { font-family: inherit; }
   grid-area: 2 / 1; height: auto; min-height: 0; min-width: 0;
 }
 .app-stage > main { height: 100%; min-height: 0; background: transparent; scroll-behavior: auto; }
-.hero.section-heading, #tab-agent > .hero { padding: clamp(19px, 3vh, 32px) 0 18px; }
-.hero h1, #tab-agent > .hero h1 { font-size: var(--title-size); font-weight: 650; letter-spacing: -.047em; line-height: 1.15; }
-.section-heading-copy .hero-copy, #tab-agent > .hero .hero-copy { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
 :where(.section-heading) h2 { letter-spacing: -.025em; }
 button { transition: color var(--ease), background-color var(--ease), border-color var(--ease), box-shadow var(--ease); }
 button:not(:disabled):active { filter: brightness(.95); }
@@ -114,11 +111,9 @@ button:disabled { cursor: default; }
 .primary-button:not(.agent-new-session-btn):hover:not(:disabled) { background: var(--action-hover); }
 .primary-button:disabled { opacity: .5; }
 .secondary-button { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
-.secondary-button:hover:not(:disabled) { background: var(--surface-2); }
-.career-input, .career-textarea, .career-select, .salary-input-box {
+.secondary-button:hover:not(:disabled) { background: var(--surface-2); }.career-input, .career-textarea, .salary-input-box {
   border-radius: var(--control-radius); background-color: var(--surface); border-color: var(--line-strong); color: var(--ink);
-}
-.career-input:focus, .career-textarea:focus, .career-select:focus {
+}.career-input:focus, .career-textarea:focus {
   border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 15%, transparent);
 }
 :where(input, textarea)::placeholder { color: var(--muted); }
@@ -152,12 +147,7 @@ dialog[open] { animation: pane-in var(--ease); }
 .preferences-tabs .lg-nav__label { font-size: 13px; }
 .preferences-tabs .lg-nav__icon { width: 18px; height: 18px; }
 .preferences-pane { padding: 0; }
-.preferences-pane .field-label { display: block; font-size: 13px; font-weight: 560; text-transform: none; letter-spacing: normal; line-height: 18px; margin: 18px 0 8px; }
-.preferences-pane .lg-input, .preferences-pane .career-select { width: 100%; box-sizing: border-box; }
-.preferences-pane .career-select {
-  height: 43px; border-radius: 22px; padding-inline: 16px 36px;
-  border: 1px solid var(--lg-edge); background-color: var(--lg-fill); box-shadow: var(--glass-shadow);
-}
+.preferences-pane .field-label { display: block; font-size: 13px; font-weight: 560; text-transform: none; letter-spacing: normal; line-height: 18px; margin: 18px 0 8px; }.preferences-pane .lg-input { width: 100%; box-sizing: border-box; }
 .preferences-pane .field-hint { margin-left: 8px; }
 .preferences-pane .settings-key-field {
   display: flex; align-items: center; min-height: 44px;

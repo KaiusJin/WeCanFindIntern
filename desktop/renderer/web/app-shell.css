@@ -66,39 +66,6 @@ body {
   min-width: 0;
 }
 
-.hero {
-  padding: 22px 0 16px;
-}
-
-.hero h1 {
-  font-size: clamp(26px, 2.4vw, 36px);
-  letter-spacing: -0.04em;
-  line-height: 1.1;
-  margin: 0;
-}
-
-.hero-copy {
-  font-size: 13.5px;
-  line-height: 1.45;
-  margin: 6px 0 0;
-  max-width: 760px;
-}
-
-.section-heading-row {
-  align-items: flex-end;
-  display: flex;
-  gap: 20px;
-  justify-content: space-between;
-}
-
-.section-heading-copy {
-  min-width: 0;
-}
-
-.section-heading-copy h1 {
-  margin: 0;
-}
-
 .primary-button {
   font-weight: 650;
 }
@@ -205,7 +172,6 @@ body {
   background: transparent;
   border: 0;
   color: var(--muted);
-  display: inline-flex;
   font-size: 21px;
   height: 32px;
   justify-content: center;
@@ -252,35 +218,14 @@ body {
   padding-right: 0;
 }
 
-.ww-workspace {
-  align-items: stretch;
-  display: grid;
-  flex: 1;
-  gap: 16px;
-  grid-template-columns: minmax(360px, 0.82fr) minmax(430px, 1.18fr);
-  min-height: 0;
-  padding: 0;
-}
-
 #tab-waterlooworks:not([hidden]) {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-}
-
-#ww-job-filters-sheet .career-input,
-#ww-job-filters-sheet .career-select {
+}#ww-job-filters-sheet .career-input {
   min-height: 42px;
-}
-
-#ww-jobs-card {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .ww-jobs-scroll-content {
@@ -451,10 +396,7 @@ body {
   justify-content: flex-end;
   min-width: 0;
   white-space: nowrap;
-}
-
-.career-input,
-.career-select,
+}.career-input,
 .career-textarea,
 .file-dropzone {
   border-color: var(--line);
@@ -491,9 +433,7 @@ body {
 #tab-agent:not([hidden]) {
   flex-direction: column;
   overflow: hidden;
-}
-
-.job-card, .career-card, .ww-jobs-card, .profile-editor-panel, .tracker-table-wrap, .agent-main {
+}.job-card, .career-card, .profile-editor-panel, .tracker-table-wrap, .agent-main {
   border-color: var(--line);
   border-radius: 11px;
   box-shadow: var(--shadow);
@@ -513,13 +453,6 @@ body {
     grid-template-columns: minmax(330px, 0.9fr) minmax(390px, 1.1fr);
   }
 
-  .ww-workspace {
-    grid-template-columns: minmax(330px, 0.9fr) minmax(390px, 1.1fr);
-  }
-
-  .career-workspace {
-    grid-template-columns: minmax(340px, 0.85fr) minmax(420px, 1.15fr);
-  }
 }
 
 .settings-dialog-header, .filter-sheet {
@@ -563,9 +496,7 @@ body {
 }
 
 .secondary-button {
-  background: var(--surface);
   border-color: var(--line);
-  color: var(--accent);
 }
 
 .secondary-button:hover {
@@ -589,10 +520,7 @@ input[type="radio"]:focus-visible {
 input[type="checkbox"],
 input[type="radio"] {
   accent-color: var(--accent);
-}
-
-.job-card.selected,
-.ww-job-card.selected {
+}.job-card.selected {
   background: var(--accent-soft);
   border-color: var(--accent);
   box-shadow: inset 3px 0 0 var(--accent);
@@ -607,11 +535,6 @@ input[type="radio"] {
 .tag {
   background: var(--surface-2);
   color: var(--muted);
-}
-
-.tag.accent {
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 
 .salary {

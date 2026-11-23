@@ -69,9 +69,7 @@
   text-align: left;
   pointer-events: none;
 }
-.career-workspace .dropzone-text { color: var(--ink); }
-.career-workspace .dropzone-icon,
-.report-empty-icon {
+.career-workspace .dropzone-text { color: var(--ink); }.career-workspace .dropzone-icon {
   display: inline-grid;
   place-items: center;
   width: 36px;
@@ -81,7 +79,6 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
-.career-workspace .remove-resume { margin-top: 6px; }
 
 [data-career-action] { display: contents; }
 [data-career-action] .lg-button[hidden] { display: none; }
@@ -126,10 +123,8 @@
 #interview-setup > summary,
 .cl-additional-section > summary { cursor: pointer; }
 #interview-setup[open] > summary { margin: 0 62px 20px 0; }
-.interview-reset { position: absolute; top: clamp(18px, 2vw, 28px); right: clamp(18px, 2vw, 28px); }
 
-#interview-history-card .history-head { margin-bottom: 16px; }
-.history-refresh, .history-delete { border-radius: var(--control-radius); color: var(--muted); }
+#interview-history-card .history-head { margin-bottom: 16px; }.history-delete { border-radius: var(--control-radius); color: var(--muted); }
 .interview-trend-summary { gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 .history-stat { text-align: left; }
 .history-stat strong { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; }

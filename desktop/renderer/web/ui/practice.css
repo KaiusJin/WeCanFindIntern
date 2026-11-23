@@ -97,12 +97,8 @@
 .diagnostic-upload .dropzone-icon .icon { width: 26px; height: 26px; }
 .diagnostic-upload .dropzone-text { color: var(--ink); font-size: 13px; line-height: 1.4; }
 .diagnostic-upload .file-dropzone:is(:hover, .dragover, :focus-within) { border-color: var(--accent); background: var(--accent-soft); }
-.diagnostic-upload .remove-resume { margin-top: 5px; }
 .source-hint { color: var(--muted); font-size: 12px; line-height: 1.6; }
 .source-hint { margin: 10px 0 0; }
-.practice-history-link, .practice-room .history-refresh {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-}
 .diagnostic-editor .lg-button { margin-top: 12px; }
 .diagnostic-report { max-width: 820px; margin: 18px auto 0; }
 .diagnostic-report > h2, .practice-report-title { margin: 0 0 19px; font-size: 21px; letter-spacing: -.035em; font-weight: 620; }
@@ -125,12 +121,6 @@
 
 /* A new session pairs the working brief with a question outline; live practice uses the full reading width. */
 .practice-studio { max-width: 1050px; }
-.practice-history-link, .practice-room .history-refresh {
-  background: transparent; border: 0; color: var(--muted); cursor: pointer; font: inherit; font-size: 13px;
-  padding: 6px 8px; border-radius: 8px; min-height: 36px;
-}
-.practice-history-link:hover, .practice-room .history-refresh:hover { color: var(--accent); background: var(--accent-soft); }
-.practice-history-link .icon, .practice-room .history-refresh .icon { width: 16px; height: 16px; }
 .studio-session { display: grid; grid-template-columns: minmax(0, 1.64fr) minmax(185px, .74fr); gap: clamp(26px, 4.6vw, 68px); align-items: start; }
 .studio-session:has(#interview-empty[hidden]) { display: block; max-width: 765px; margin-inline: auto; }
 .studio-desk { min-width: 0; }

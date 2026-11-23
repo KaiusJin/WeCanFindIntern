@@ -45,7 +45,6 @@
   gap: clamp(14px, 2vw, 32px);
 }
 #tab-tracker .pipeline-content:has(.applications-detail-pane.open) .applications-list-pane { display: flex; }
-#tab-tracker .tracker-search { border-radius: 16px; }
 #tab-tracker .applications-detail-pane {
   container: application-record / inline-size;
   min-height: 0;
@@ -194,7 +193,6 @@
   #tab-tracker .tracker-applied { grid-column: 3; grid-row: 2; }
   #tab-tracker .tracker-place, #tab-tracker .tracker-updated { display: none; }
   #tab-tracker .tracker-control-panel { gap: 7px; }
-  #tab-tracker .tracker-search { flex: 1 1 140px; }
   .tracker-pagination { justify-content: flex-start; }
 }
 @container pipeline (max-width: 850px) {

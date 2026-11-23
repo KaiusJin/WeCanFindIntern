@@ -1,39 +1,4 @@
 /* Search, comparison list and reading pane share the two job sources. */
-.discovery-search {
-  align-items: center;
-  grid-template-columns: minmax(150px, 1.6fr) minmax(106px, 1fr) auto auto auto;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-}
-
-.discovery-search :is(.search-input, .search-location) {
-  min-width: 0;
-  height: 38px;
-  padding-inline: 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--muted);
-}
-
-.discovery-search label:focus-within {
-  border-radius: var(--control-radius);
-  outline: 2px solid var(--focus);
-  outline-offset: -2px;
-}
-
-.discovery-search input {
-  height: 100%;
-  font: inherit;
-  font-size: 14px;
-}
-
-.discovery-search :is(.primary-button, .search-filter-button) {
-  min-height: 38px;
-  padding-inline: 15px;
-  white-space: nowrap;
-}
 
 .discovery-workspace {
   --list-width: 45%;
@@ -89,22 +54,12 @@
 }
 
 .discovery-workspace .results-meta .icon { width: 15px; height: 15px; }
-.discovery-workspace .results-meta .icon-button:hover { color: var(--accent); }
-
-.discovery-column-head, .discovery-workspace .job-card {
+.discovery-workspace .results-meta .icon-button:hover { color: var(--accent); }.discovery-workspace .job-card {
   display: grid;
   grid-template-columns: var(--row-columns);
   align-items: center;
   gap: 14px;
   padding-inline: var(--row-inset);
-}
-
-.discovery-column-head {
-  padding-block: 9px;
-  background: var(--surface-2);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
 }
 
 .discovery-workspace .results-scroll-content { scrollbar-gutter: auto; padding: 0; }
@@ -124,9 +79,6 @@
 
 .discovery-workspace .job-card:hover { background: color-mix(in srgb, var(--surface-2) 65%, var(--surface)); }
 .discovery-workspace .job-card.selected { background: var(--accent-soft); }
-.job-identity { display: flex; align-items: flex-start; gap: 13px; min-width: 0; }
-
-.job-identity h3 { margin: 0 0 3px; font-size: 15px; line-height: 1.35; }
 .job-title-button {
   border: 0;
   padding: 0;
@@ -140,22 +92,6 @@
 }
 
 .selected .job-title-button { color: var(--accent); }
-.job-identity .company-name { font-size: 13px; }
-.job-identity .job-tags { gap: 4px; margin-top: 7px; }
-.job-identity .tag {
-  padding: 2px 7px;
-  font-size: 10px;
-  line-height: 1.5;
-  color: var(--muted);
-  background: var(--surface-2);
-  border-radius: 6px;
-}
-
-.job-card .job-place, .job-card .job-pay { display: grid; gap: 3px; min-width: 0; }
-.job-place .job-location { margin: 0; color: var(--ink); font-size: 13px; }
-.job-subline { color: var(--muted); font-size: 11.5px; }
-.job-pay .salary { font-weight: 600; white-space: normal; color: var(--ink); font-size: 13px; }
-.job-pay .undisclosed { font-weight: 450; color: var(--muted); }
 .job-card > :is(.job-bookmark-btn, .ww-bookmark-btn), .job-ai-actions > button {
   border: 0;
   background: transparent;
@@ -231,17 +167,6 @@
   padding: 22px clamp(14px, 2vw, 32px) 32px;
   overflow-wrap: anywhere;
 }
-
-.reading-heading .eyebrow { color: var(--accent); text-transform: none; letter-spacing: 0; font-size: 12px; }
-.reading-heading h2 {
-  margin: 8px 0;
-  font-size: clamp(21px, 1.75vw, 29px);
-  line-height: 1.18;
-  letter-spacing: -.04em;
-}
-
-.reading-heading .detail-company { font-size: 15px; font-weight: 550; }
-.reading-heading .detail-location { font-size: 13px; margin: 4px 0 0; }
 .job-detail-content .job-ai-actions {
   position: sticky;
   top: 45px;
@@ -305,9 +230,6 @@
 }
 
 .job-tools-menu .btn-ai-action:hover { background: var(--accent-soft); color: var(--accent); }
-.job-detail-content .detail-grid { margin: 12px 0 21px; gap: 12px 20px; }
-.job-detail-content .detail-grid strong { color: var(--ink); font-size: 13px; font-weight: 530; }
-.reading-section-title { margin: 0 0 12px; font-size: 16px; letter-spacing: -.02em; }
 .job-detail-content .detail-description { color: var(--ink); line-height: 1.65; font-size: 14px; }
 .discovery-workspace .empty-state { margin: 0; padding: 36px 20px; background: transparent; border: 0; }
 .discovery-workspace .infinite-scroll-sentinel { min-height: 0; padding: 12px; }
@@ -446,7 +368,6 @@
 #tab-heatmap .heatmap-region:focus-visible { stroke: var(--ink); }
 
 @container job-results (max-width: 640px) {
-  .discovery-column-head { display: none; }
   .discovery-workspace .job-card {
     grid-template-columns: minmax(0, 1fr) 30px;
     grid-template-areas: "identity bookmark" "location location" "pay pay";
@@ -454,18 +375,8 @@
     padding-block: 14px;
     align-items: start;
   }
-  .job-identity { grid-area: identity; gap: 10px; }
   .job-card > button { grid-area: bookmark; }
-  .job-card .job-place, .job-card .job-pay { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; }
-  .job-place { grid-area: location; }
-  .job-pay { grid-area: pay; }
-  .job-pay .salary, .job-place .job-location { font-size: 12px; }
   .discovery-workspace .results-toolbar { gap: 4px; }
-}
-
-@media (max-width: 1080px) {
-  .discovery-search:not(.ww-searchbar) { grid-template-columns: minmax(106px, 1.35fr) minmax(80px, .9fr) auto auto auto; }
-
 }
 
 .workspace-form-popover[popover] {

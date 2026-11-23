@@ -94,8 +94,6 @@
   font-size: .79rem;
 }
 .pipeline-actions .icon, .profile-import-actions .icon { width: 15px; height: 15px; }
-.pipeline-export { color: var(--muted); text-decoration: none; font-size: .8rem; }
-.pipeline-export:hover { color: var(--accent); text-decoration: underline; }
 .applications-list-pane, .applications-list-pane .tracker-view-pane { flex: 1; }
 .applications-list-pane {
   gap: 12px;
@@ -114,19 +112,6 @@
   box-shadow: none;
 }
 #tab-tracker .tracker-head-actions { width: auto; }
-#tab-tracker .tracker-search {
-  width: auto;
-  flex: 0 1 255px;
-  min-width: 0;
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--muted);
-}
-#tab-tracker .tracker-search .icon { width: 15px; height: 15px; }
-#tab-tracker .tracker-search input { color: var(--ink); font: inherit; font-size: .88rem; }
-.tracker-search:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
 #tab-tracker .tracker-head-actions select, #tab-tracker .tracker-pagination select {
   border-radius: var(--control-radius);
   background-color: var(--surface);
@@ -238,16 +223,6 @@
 
 #tab-tracker .drawer-company { font-size: .85rem; }
 #tab-tracker .tracker-drawer-body { padding: 18px 18px 74px; scroll-padding-bottom: 74px; min-height: 0; overflow-y: auto; }
-.tracker-job-section summary {
-  border: 0;
-  color: var(--ink);
-  font-size: .96rem;
-  font-weight: 600;
-  margin: 0 0 12px;
-  padding: 0;
-}
-.tracker-job-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
-.tracker-job-section summary { cursor: pointer; }
 .tracker-detail-drawer .field-label { text-transform: none; letter-spacing: normal; }
 
 #tab-tracker .tracker-jd-copy {
@@ -285,7 +260,7 @@
   #tab-tracker .tracker-applied { grid-column: 4; grid-row: 1; }
   #tab-tracker .tracker-updated { grid-column: 3 / 5; grid-row: 2; font-size: .7rem; }
   #tab-tracker .tracker-updated::before { content: "Updated "; }
-  #tab-tracker .tracker-inline-date { width: 100%; max-width: 132px; padding-inline: 0; }
+  #tab-tracker .tracker-inline-date { width: 100%; max-width: 132px; }
 }
 
 @container pipeline (max-width: 1060px) {
