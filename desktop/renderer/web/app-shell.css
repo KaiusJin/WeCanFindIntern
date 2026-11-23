@@ -29,13 +29,9 @@
 }
 
 html,
-body {
-  height: 100%;
-}
 
-body {
-  overflow: hidden;
-}
+
+
 
 .app-shell {
   height: 100dvh;
@@ -64,10 +60,6 @@ body {
   margin: 0 auto;
   max-width: none;
   min-width: 0;
-}
-
-.primary-button {
-  font-weight: 650;
 }
 
 .posting-workspace {
@@ -393,12 +385,6 @@ body {
   padding: 20px;
 }
 
-.agent-workspace {
-  flex: 1;
-  min-height: 0;
-  padding: 0 0 18px;
-}
-
 #tab-agent:not([hidden]) {
   flex-direction: column;
   overflow: hidden;
@@ -430,48 +416,6 @@ body {
 
 .file-dropzone {
   background: var(--surface-2);
-}
-
-.primary-button {
-  background: var(--action);
-  color: var(--on-action);
-  box-shadow: var(--shadow);
-}
-
-.primary-button:hover {
-  background: var(--accent);
-  box-shadow: var(--shadow);
-}
-
-.primary-button:active {
-  background: var(--action);
-  transform: translateY(1px);
-}
-
-.primary-button.agent-send-button {
-  background: var(--action);
-  border-color: transparent;
-  box-shadow: var(--shadow);
-}
-
-.primary-button.agent-send-button:hover,
-.primary-button.agent-send-button:focus-visible {
-  background: var(--action-hover);
-  box-shadow: var(--shadow);
-}
-
-.primary-button.agent-send-button:active {
-  background: var(--action-hover);
-}
-
-.secondary-button {
-  border-color: var(--line);
-}
-
-.secondary-button:hover {
-  background: var(--accent-soft);
-  border-color: var(--line-strong);
-  color: var(--accent);
 }
 
 .text-button {

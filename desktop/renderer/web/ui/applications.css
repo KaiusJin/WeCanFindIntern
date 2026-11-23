@@ -3,7 +3,7 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding-top: clamp(21px, 3.5vh, 38px);
+  padding: clamp(21px, 3.5vh, 38px) var(--page-gutter) 0;
 }
 .pipeline-workspace > .pipeline-records { flex: 1; }
 #tab-tracker .pipeline-head { margin-bottom: 20px; }

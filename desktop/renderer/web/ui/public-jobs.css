@@ -4,7 +4,7 @@
   --reader-surface: var(--canvas);
   --index-wash: radial-gradient(ellipse 95% 190px at 8% 15px, color-mix(in srgb, var(--accent) 7%, transparent), transparent 82%),
     radial-gradient(ellipse 86% 230px at 94% 55px, color-mix(in srgb, var(--violet) 6%, transparent), transparent 84%);
-  --index-inset: clamp(18px, 2.1vw, 36px);
+  --index-inset: var(--page-gutter);
   --posting-serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
 }
 .posting-page .posting-workspace {

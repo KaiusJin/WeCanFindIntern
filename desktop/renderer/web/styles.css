@@ -1,21 +1,5 @@
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
 html:has(dialog[open]), body:has(dialog[open]) {
   overflow: hidden !important;
-}
-
-button, input, select {
-  font: inherit;
-}
-
-button {
-  cursor: pointer;
 }
 
 .nav-tab {
@@ -1413,30 +1397,6 @@ main {
   transform: translateY(-1px);
 }
 
-.primary-button {
-  align-items: center;
-  border: 0;
-  cursor: pointer;
-  display: inline-flex;
-  font-size: 14px;
-  justify-content: center;
-  padding: 10px 22px;
-  text-decoration: none;
-  transition: background 0.15s, transform 0.15s;
-}
-
-.secondary-button {
-  align-items: center;
-  cursor: pointer;
-  display: inline-flex;
-  font-size: 14px;
-  font-weight: 650;
-  justify-content: center;
-  padding: 9px 20px;
-  text-decoration: none;
-  transition: background 0.15s, border-color 0.15s, transform 0.15s;
-}
-
 /* Settings Modal Dialog */
 .settings-dialog {
   border: 1px solid var(--line);
@@ -1690,7 +1650,6 @@ main {
 .tracker-jd-copy { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; color: var(--muted); font-size: 13.5px; line-height: 1.65; max-height: 420px; overflow-y: auto; padding: 18px; }
 
 .tracker-link-row { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) auto auto; }
-.tracker-link-row .secondary-button { align-items: center; display: inline-flex; min-height: 42px; white-space: nowrap; }
 
 .job-content-field input:disabled, .job-content-field select:disabled { background: var(--surface-2); color: var(--muted); cursor: not-allowed; opacity: 1; }
 
@@ -1817,10 +1776,6 @@ main {
 /* --------------------------------------------------------------------------
    AI AGENT SECTION
    -------------------------------------------------------------------------- */
-.agent-workspace {
-  margin: 0 auto;
-}
-
 .agent-session-list {
   display: flex;
   flex-direction: column;
@@ -2303,33 +2258,7 @@ main {
   color: var(--danger);
 }
 
-/* Agent tab uses a compact introduction so the conversation remains primary. */
-
-/* --------------------------------------------------------------------------
-   PLAIN WIDE LAYOUT REFRESH
-   Keep the product dense and useful on desktop while preserving small-screen
-   gutters. These rules intentionally sit last so every section shares one
-   layout system instead of accumulating page-specific horizontal padding.
-   -------------------------------------------------------------------------- */
-:root {
-  --layout-max: 1720px;
-  --layout-gutter: clamp(20px, 3.2vw, 56px);
-}
-
-main {
-  max-width: var(--layout-max);
-  width: 100%;
-}
-
-main {
-  padding: 0 var(--layout-gutter) 36px;
-}
-
-.workspace {
-  gap: 24px;
-  grid-template-columns: 250px minmax(0, 1fr);
-}.profile-workspace,
-.agent-workspace {
+.profile-workspace {
   margin-left: 0;
   margin-right: 0;
   max-width: none;
@@ -2504,12 +2433,6 @@ main {
 .agent-attach-search {
   display: flex;
   gap: 9px;
-}
-
-.agent-attach-search .primary-button {
-  border-radius: 10px;
-  min-height: 46px;
-  padding: 0 20px;
 }
 
 .agent-current-job-option {

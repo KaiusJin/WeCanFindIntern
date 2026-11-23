@@ -1,11 +1,18 @@
+/* Base elements */
+* { box-sizing: border-box; }
 html { scrollbar-gutter: auto; }
 body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
   background: var(--canvas);
   color: var(--ink);
   font: 14px/1.5 var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
-button, input, textarea, select { font-family: inherit; }
+button, input, select { font: inherit; }
+textarea { font-family: inherit; }
+button { cursor: pointer; }
 .icon {
   display: inline-block;
   width: 18px;
@@ -106,12 +113,18 @@ button { transition: color var(--ease), background-color var(--ease), border-col
 button:not(:disabled):active { filter: brightness(.95); }
 button:disabled { cursor: default; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.secondary-button, .primary-button { border-radius: var(--control-radius); }
-.primary-button:not(.agent-new-session-btn) { background: var(--action); color: var(--on-action); font-weight: 600; }
-.primary-button:not(.agent-new-session-btn):hover:not(:disabled) { background: var(--action-hover); }
+/* Rendered by the job detail module for a single-source Apply link. */
+.primary-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 22px; border: 0; border-radius: var(--control-radius);
+  background: var(--action); color: var(--on-action); box-shadow: var(--shadow);
+  font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer;
+  transition: background .15s, transform .15s;
+}
+.primary-button:hover:not(:disabled) { background: var(--action-hover); }
+.primary-button:active { transform: translateY(1px); }
 .primary-button:disabled { opacity: .5; }
-.secondary-button { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
-.secondary-button:hover:not(:disabled) { background: var(--surface-2); }.career-input, .career-textarea, .salary-input-box {
+.career-input, .career-textarea, .salary-input-box {
   border-radius: var(--control-radius); background-color: var(--surface); border-color: var(--line-strong); color: var(--ink);
 }.career-input:focus, .career-textarea:focus {
   border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 15%, transparent);

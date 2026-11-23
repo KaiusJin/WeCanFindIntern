@@ -83,16 +83,6 @@
   overflow-wrap: anywhere;
 }
 .pipeline-actions { display: inline-flex; align-items: center; flex-wrap: wrap; }
-.pipeline-actions .primary-button, .profile-import-actions .secondary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 7px 12px;
-  border-radius: 10px;
-  font-size: .79rem;
-}
 .pipeline-actions .icon, .profile-import-actions .icon { width: 15px; height: 15px; }
 .applications-list-pane, .applications-list-pane .tracker-view-pane { flex: 1; }
 .applications-list-pane {
