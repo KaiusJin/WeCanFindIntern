@@ -9,12 +9,15 @@ from pathlib import Path
 from cloud.ops.report import (
     HISTORY_LIMIT,
     LOG_LIMIT,
+    assess,
     history_row,
     publish_ops,
     redact,
     render_markdown,
     run_context,
+    summarize_log,
     upload_dashboard,
+    upload_job_logs,
     upload_log,
 )
 from cloud.ops.stats import collect_db_stats
@@ -240,3 +243,132 @@ def test_collect_db_stats_shapes_the_report():
     assert stats["table_bytes"] == {"jobs": 50_000_000, "job_sources": 9_000_000}
     assert (stats["jobs_archived_total"], stats["jobs_archived_this_run"]) == (300, 40)
     assert stats["jobs_archive_next_7_days"] == 12
+
+
+# --------------------------------------------------------------------------- checks and job logs
+
+
+def _budget_report():
+    return {
+        "status": "success",
+        "feed": {"snapshot_jobs": 10},
+        "query_stats": {
+            "ats_boards": 1000,
+            "ats_boards_skipped_deadline": 400,
+            "simplify_detail_requested": 100,
+            "simplify_detail_found": 30,
+            "simplify_detail_missing_workday": 60,
+        },
+        "monitor": {
+            "shards": {
+                "workday-wd1": {
+                    "seconds": 5400,
+                    "budget_seconds": 5400,
+                    "stats": {"ats_boards": 500, "ats_boards_skipped_deadline": 400},
+                },
+                "indeed": {"seconds": 3, "budget_seconds": None, "stats": {}},
+            }
+        },
+    }
+
+
+def test_assess_flags_a_green_run_that_skipped_boards():
+    checks = assess(_budget_report())
+    assert checks[0]["level"] == "error"
+    assert "400 of 1,000 ATS boards (40%)" in checks[0]["message"]
+    assert checks[0]["detail"] == ["workday-wd1: 400/500 boards skipped after 5,400 s"]
+    messages = [c["message"] for c in checks]
+    assert "1 shards stopped at their time budget" in messages
+    assert any("30 of 100 gap-fill jobs" in m for m in messages)
+
+
+def test_assess_is_quiet_for_a_clean_run():
+    assert assess({"status": "success", "feed": {"snapshot_jobs": 1}}) == []
+    assert assess({"status": "success"})[0]["area"] == "feed"
+
+
+def test_publish_ops_stores_checks_and_counts_them():
+    store = FakeStore()
+    publish_ops(store, _budget_report())
+    latest = json.loads(store.objects["ops/latest.json"])
+    assert latest["checks"][0]["level"] == "error"
+    row = json.loads(store.objects["ops/history.json"])[0]
+    assert row["checks_error"] == 1 and row["checks_warn"] >= 2
+
+
+def test_summarize_log_counts_kinds_and_keeps_highlights():
+    text = (
+        "2026-11-22T20:00:00.0Z [2026-11-22 20:00:00] [INFO] start\n"
+        "2026-11-22T20:00:01.0Z [2026-11-22 20:00:01] [WARN] LinkedIn rate limited; retry\n"
+        "2026-11-22T20:00:02.0Z Traceback (most recent call last):\n"
+        "2026-11-22T20:00:03.0Z ValueError: boom\n"
+    )
+    summary = summarize_log(text)
+    assert (summary["lines"], summary["warnings"], summary["errors"]) == (4, 1, 2)
+    assert summary["rate_limits"] == 1
+    assert summary["highlights"][0] == "Traceback (most recent call last):"
+
+
+def test_upload_job_logs_indexes_finished_jobs(tmp_path: Path):
+    env = {**ENV, "GITHUB_TOKEN": "ghs_tokenvalue123"}
+    jobs = {
+        "total_count": 2,
+        "jobs": [
+            {
+                "id": 7,
+                "name": "workday wd1",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-11-22T20:00:00Z",
+                "completed_at": "2026-11-22T21:30:00Z",
+                "html_url": "https://github.com/owner/repo/actions/runs/123/job/7",
+                "steps": [{"name": "collect", "conclusion": "success"}],
+            },
+            {"id": 8, "name": "publish", "status": "in_progress"},
+        ],
+    }
+    calls = []
+
+    def fetch(url, token):
+        calls.append((url, token))
+        if url.endswith("/attempts/2/jobs?per_page=100&page=1"):
+            return json.dumps(jobs).encode()
+        assert url.endswith("/actions/jobs/7/logs")
+        return b"[WARN] ATS board failed\nkey supersecretvalue\n"
+
+    run_log = tmp_path / "run.log"
+    run_log.write_text("[INFO] published\n", encoding="utf-8")
+    store = FakeStore()
+    key = upload_job_logs(store, run_log, env=env, fetch=fetch)
+    assert key == "ops/logs/123-2/index.json"
+    index = json.loads(store.objects[key])
+    wd1, publish = index["jobs"]
+    assert wd1["seconds"] == 5400 and wd1["warnings"] == 1
+    assert wd1["key"] == "ops/logs/123-2/workday-wd1-7.log"
+    assert b"supersecretvalue" not in gzip.decompress(store.objects[wd1["key"]])
+    assert publish["name"] == "publish" and publish["key"] == "ops/logs/123-2.log"
+    assert all(token == "ghs_tokenvalue123" for _, token in calls)
+
+
+def test_upload_job_logs_survives_a_listing_error(tmp_path: Path):
+    def fetch(url, token):
+        raise OSError("api down")
+
+    store = FakeStore()
+    key = upload_job_logs(store, None, env={**ENV, "GITHUB_TOKEN": "x" * 8}, fetch=fetch)
+    assert json.loads(store.objects[key])["listing_error"] == "OSError: api down"
+
+
+def test_history_row_uses_end_to_end_run_time():
+    report = {
+        "completed_at": "2026-11-22T22:07:44+00:00",
+        "duration_seconds": 146.2,
+        "monitor": {"started_at": "2026-11-22T19:33:46+00:00"},
+    }
+    row = history_row(report)
+    assert row["duration_s"] == 9238 and row["publish_s"] == 146.2
+
+
+def test_summarize_log_ignores_runner_deprecation_notices():
+    text = "##[warning]Node.js 20 is deprecated. The following actions target Node.js 20\n"
+    assert summarize_log(text)["warnings"] == 0
