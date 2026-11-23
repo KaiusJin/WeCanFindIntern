@@ -11,7 +11,8 @@ name: Public job feed
 # Collector shards hold no database or R2 secrets. Each runs on its own egress
 # IP, so LinkedIn rate limits apply per shard. Workday throttles runner IPs, so
 # when the CSC_SSH_* secrets are set, the workday shards and simplify-gap-fill
-# tunnel through the CSC server (.github/actions/csc-tunnel), one shard per pod.
+# tunnel through the CSC server (.github/actions/csc-tunnel), one shard per pod,
+# at most three at a time (Workday also throttles the shared IP as a whole).
 # LinkedIn shards drop IDs seen in the last 24 h; linkedin-details retries the
 # JDs the shards could not fetch. A missing shard is a hard failure (red run); everything else is published.
 on:
@@ -298,6 +299,8 @@ jobs:
       WORKDAY_SINGLE_EGRESS: ${{ secrets.CSC_SSH_HOST != '' && '1' || '' }}
     strategy:
       fail-fast: false
+      # All shards share the CSC IP; six at once spent most of the run in 429 cooldowns.
+      max-parallel: 3
       matrix:
         include: ${{ fromJSON(needs.discover.outputs.workday) }}
     steps:
