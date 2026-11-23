@@ -1,0 +1,44 @@
+/* Activity timeline in an open application record. */
+.record-activity .tracker-timeline { position: relative; display: grid; gap: 0; margin-top: 12px; }
+
+.timeline-item { position: relative; display: flex; gap: 14px; }
+
+.timeline-spine { position: relative; display: flex; flex-direction: column; align-items: center; width: 16px; }
+
+.timeline-spine::after {
+  content: "";
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  left: 7px;
+  width: 1.5px;
+  background: var(--line);
+}
+
+.timeline-item:last-child .timeline-spine::after { display: none; }
+
+/* The marker takes its colour from the event's stage class, through --stage. */
+#tab-tracker .timeline-marker {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  border: 2.5px solid var(--surface);
+  border-radius: 50%;
+  background: var(--stage, var(--accent));
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.timeline-content { flex: 1; min-width: 0; padding-bottom: 14px; }
+
+.timeline-item:last-child .timeline-content { padding-bottom: 4px; }
+
+.record-activity .timeline-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; }
+
+.record-activity .timeline-title { color: var(--ink); font-size: 14px; font-weight: 600; line-height: 1.35; }
+
+#tab-tracker .timeline-time { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.timeline-content p { margin: 3px 0 0; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }

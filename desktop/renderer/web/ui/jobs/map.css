@@ -1,0 +1,196 @@
+/* =========================================================
+   JOB DISTRIBUTION HEATMAP
+   ========================================================= */
+.heatmap-block + .heatmap-block {
+  margin-top: 26px;
+}
+
+.heatmap-block-head {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.heatmap-block-head h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.heatmap-block-total {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.heatmap-legend-bar {
+  background: linear-gradient(to right, var(--accent-soft), var(--accent));
+  border-radius: 999px;
+  height: 10px;
+}
+
+.heatmap-legend-labels {
+  color: var(--muted);
+  display: flex;
+  font-size: 11.5px;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.heatmap-legend-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 12px 0 0;
+}
+
+.heatmap-top-row {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 24px minmax(0, 1fr) 76px 44px;
+  padding: 7px 0;
+}
+
+.heatmap-top-country {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.heatmap-top-name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heatmap-top-bar {
+  background: var(--surface-2);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.heatmap-top-bar span {
+  background: var(--accent);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+}
+
+.heatmap-top-count {
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.heatmap-map svg {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.heatmap-region {
+  cursor: pointer;
+  outline: none;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.heatmap-region-disabled {
+  cursor: default;
+}
+
+.heatmap-region:focus-visible {
+  outline: none;
+  stroke: var(--accent);
+  stroke-width: 2.2px;
+}
+
+.heatmap-tooltip {
+  background: var(--action);
+  border-radius: 8px;
+  color: var(--on-action);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 5;
+}
+
+#tab-heatmap {
+  --map-empty: var(--surface-2);
+  --map-low: var(--accent-soft);
+  --map-high: var(--action);
+}
+
+#tab-heatmap .heatmap-legend-bar { background: linear-gradient(to right, var(--map-low), var(--map-high)); }
+
+#tab-heatmap .heatmap-top-name { white-space: normal; }
+
+#tab-heatmap .heatmap-region:focus-visible { stroke: var(--ink); }
+
+.posting-page .results-toolbar h2, .atlas-index h2 {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.atlas-workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 30%) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas: "head maps" "index maps";
+  min-height: 100%;
+  background: var(--index-wash), var(--index-surface);
+}
+
+.atlas-heading { grid-area: head; display: grid; justify-content: start; align-content: start; justify-items: start; gap: 14px; padding: 27px var(--index-inset) 0; }
+
+.atlas-index { grid-area: index; padding: 26px var(--index-inset); }
+
+.atlas-index h2 { margin: 0 0 14px; }
+
+.atlas-index .heatmap-top-row { grid-template-columns: 21px minmax(0,1fr) minmax(16px,18%) 30px; gap: 8px; }
+
+.atlas-key { margin-top: 34px; }
+
+.atlas-maps { position: relative; grid-area: maps; display: grid; align-content: start; gap: 36px; padding: 30px clamp(22px,4vw,74px) 60px; background: var(--reader-surface); }
+
+.atlas-maps .heatmap-block { max-width: 800px; width: 100%; margin: 0 auto; }
+
+.atlas-maps .heatmap-block-head { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+
+.atlas-maps .heatmap-block-head h2 { font: 500 clamp(24px, 3vw, 38px)/1.1 var(--posting-serif); letter-spacing: -.045em; }
+
+.atlas-maps .heatmap-map svg { max-height: 42vh; }
+
+@media (max-width: 680px) {
+  .atlas-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr; grid-template-areas: "head" "maps" "index"; }
+
+  .atlas-heading { padding-bottom: 20px; }
+}
+
+.atlas-index .heatmap-top-row {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 11px;
+  color: var(--ink);
+  text-align: left;
+  background: transparent;
+}
+
+.atlas-index .heatmap-top-row:hover { background: var(--accent-soft); }
+
+.atlas-index .heatmap-top-list { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .posting-page, #tab-heatmap { --index-wash: none; }
+}

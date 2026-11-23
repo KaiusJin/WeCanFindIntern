@@ -1,3 +1,4 @@
+import { GlassButton } from "@zakisheriff/liquid-glass";
 import { CampusConnection } from "./CampusControls";
 import { PostingSearchControls } from "./PostingSearch";
 import { PublicViewControl } from "./DiscoveryControls";
@@ -28,17 +29,10 @@ function SyncStatus({ waterlooWorks = false }: BoardProps) {
   const prefix = waterlooWorks ? "ww-" : "";
   return (
     <div className="results-meta">
-      <button
-        id={prefix + "back-to-top"}
-        className="posting-to-top glass"
-        type="button"
-        aria-controls={prefix + "job-list"}
-        aria-label="Back to top of job list"
-        title="Back to top of job list"
-        hidden
-      >
+      <GlassButton id={prefix + "back-to-top"} className="posting-to-top" size="sm" type="button"
+        aria-controls={prefix + "job-list"} aria-label="Back to top of job list" title="Back to top of job list" hidden>
         <Icon name="chevron-right" /> Top
-      </button>
+      </GlassButton>
       {!waterlooWorks && (
         <>
           <span id="job-sync-status-text" className="job-sync-status-text" role="status" hidden />
@@ -54,15 +48,8 @@ function SyncStatus({ waterlooWorks = false }: BoardProps) {
       >
         {waterlooWorks ? "Not updated yet" : "Latest sync unavailable"}
       </span>
-      <button
-        id={prefix + "refresh"}
-        className="icon-button control-glass"
-        type="button"
-        title="Refresh jobs"
-        aria-label="Refresh jobs"
-      >
-        <Icon name="refresh" />
-      </button>
+      <GlassButton id={prefix + "refresh"} className="posting-refresh" size="sm" variant="clear" type="button"
+        title="Refresh jobs" aria-label="Refresh jobs" icon={<Icon name="refresh" />} />
     </div>
   );
 }
@@ -83,14 +70,9 @@ export function JobWorkspace({ waterlooWorks = false }: BoardProps) {
         >
           Loading…
         </span>
-        <button
-          id={prefix + "reset-job-search"}
-          className="text-button discovery-reset control-glass"
-          type="button"
-          hidden
-        >
+        <GlassButton id={prefix + "reset-job-search"} className="discovery-reset" size="sm" variant="clear" type="button" hidden>
           Clear search
-        </button>
+        </GlassButton>
       </div>
     </div>
   );
@@ -115,9 +97,9 @@ export function JobWorkspace({ waterlooWorks = false }: BoardProps) {
             </div>
             <h3>No matching jobs</h3>
             <p>Try removing a filter or using a broader search term.</p>
-            <button id={prefix + "jobs-empty-action"} className="secondary-button" type="button" hidden>
+            <GlassButton id={prefix + "jobs-empty-action"} size="sm" type="button" hidden>
               Clear filters
-            </button>
+            </GlassButton>
           </div>
           <div id={prefix + "infinite-scroll-sentinel"} className="infinite-scroll-sentinel">
             <div id={prefix + "loading-indicator"} className="loading-indicator" hidden>
@@ -149,14 +131,10 @@ export function JobWorkspace({ waterlooWorks = false }: BoardProps) {
         aria-hidden="true"
       >
         <div className="job-detail-pane-toolbar">
-          <button
-            id={"close-" + detailId}
-            className="job-detail-pane-close control-glass"
-            type="button"
-            aria-label="Close job details"
-          >
+          <GlassButton id={"close-" + detailId} className="job-detail-pane-close" size="sm" type="button"
+            aria-label="Close job details">
             <Icon name="chevron-right" /> Show full list
-          </button>
+          </GlassButton>
         </div>
         <div id={detailId} className="job-detail-content" />
       </aside>

@@ -200,7 +200,7 @@ def create_app() -> FastAPI:
         elif (
             path.startswith("/modules/")
             or path.startswith("/vendor/")
-            or path == "/styles.css"
+            or path.startswith("/ui/")
         ):
             # Static assets: short client cache; StaticFiles emits ETags, so
             # expired entries revalidate with a 304 instead of a full download.

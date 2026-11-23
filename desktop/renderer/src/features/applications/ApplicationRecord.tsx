@@ -1,6 +1,7 @@
-import { GlassButton, GlassCard, GlassInput, GlassMenu, GlassSegmented } from "@zakisheriff/liquid-glass";
+import { GlassButton, GlassCard, GlassInput, GlassSegmented } from "@zakisheriff/liquid-glass";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { handleGlassMenuKey, focusGlassMenuTrigger } from "../../components/glass-menu-keyboard";
+import { handleGlassMenuKey } from "../../components/glass-menu-keyboard";
+import { SelectMenu, type Choice } from "../../components/SelectMenu";
 import { Icon } from "../../layouts/AppChrome";
 
 type Mode = "drawer" | "custom";
@@ -8,7 +9,6 @@ const sections = [
   { label: "Details", icon: <Icon name="pen" /> },
   { label: "Activity", icon: <Icon name="history" /> },
 ];
-type Choice = { value: string; label: string };
 const stages = [{ value: "interested", label: "Interested" }];
 const sources = [{ value: "other", label: "Other" }];
 const workModes = [
@@ -21,31 +21,10 @@ const allWorkModes = [{ value: "", label: "Not specified" }, ...workModes, { val
 export function ApplicationChoice({ id, label, choices, initial = choices[0].value, stage = false, compact = false }: {
   id: string; label: string; choices: Choice[]; initial?: string; stage?: boolean; compact?: boolean;
 }) {
-  const select = useRef<HTMLSelectElement>(null);
-  const [options, setOptions] = useState(choices);
+  const wrapper = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState(initial);
-  const [locked, setLocked] = useState(false);
   useLayoutEffect(() => {
-    const field = select.current!;
-    const host = field.closest("#tracker-detail-drawer, #custom-job-form");
-    function read() {
-      setOptions(Array.from(field.options, option => ({ value: option.value, label: option.text })));
-      setValue(field.value);
-      setLocked(field.disabled);
-    }
-    field.addEventListener("application:fill", read);
-    field.addEventListener("change", read);
-    host?.addEventListener("application:fill", read);
-    host?.addEventListener("application:reset", read);
-    return () => {
-      field.removeEventListener("application:fill", read);
-      field.removeEventListener("change", read);
-      host?.removeEventListener("application:fill", read);
-      host?.removeEventListener("application:reset", read);
-    };
-  }, []);
-  useLayoutEffect(() => {
-    const host = select.current!.parentElement!;
+    const host = wrapper.current!;
     let surface: HTMLElement | null = null;
     function place() {
       if (!surface) return;
@@ -78,26 +57,14 @@ export function ApplicationChoice({ id, label, choices, initial = choices[0].val
     observer.observe(host, { childList: true, subtree: true });
     return () => { observer.disconnect(); stopPositioning(); };
   }, []);
-  const selected = options.find(option => option.value === value)?.label || value;
   return (
-    <div className={"record-field record-choice-field" + (compact ? " record-choice-compact" : "")}
+    <div ref={wrapper} className={"record-field record-choice-field" + (compact ? " record-choice-compact" : "")}
       data-stage={stage ? value : undefined} onKeyDown={handleGlassMenuKey}>
       {!compact && <span className="field-label">{label}</span>}
-      <select id={id} hidden ref={select} defaultValue={initial} aria-label={label}>
-        {choices.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-      {locked ? <GlassButton className="record-locked-choice" size="sm" disabled aria-label={label + ", " + selected}>{selected}</GlassButton>
-        : <GlassMenu className="record-choice-menu" size="sm" width={176} align="start"
-          aria-label={`Change ${label.toLowerCase()}, currently ${selected}`}
-          icon={<>{stage && <i aria-hidden="true" />}{selected}<Icon name="chevron-down" /></>}
-          items={options.filter(option => option.value !== "" || id !== "tracker-bulk-stage").map(option => ({
-            label: option.label, checked: option.value === value, onSelect: () => {
-              const field = select.current!;
-              field.value = option.value;
-              field.dispatchEvent(new Event("change", { bubbles: true }));
-              focusGlassMenuTrigger(field.parentElement);
-            },
-          }))} />}
+      <SelectMenu label={label} choices={choices} initial={initial} leading={stage && <i aria-hidden="true" />}
+        syncOn={["application:fill", "application:reset"]} syncHost="#tracker-detail-drawer, #custom-job-form"
+        className="record-choice-menu" lockedClassName="record-locked-choice"
+        hideChoice={option => option.value === "" && id === "tracker-bulk-stage"} onValue={setValue} selectProps={{ id }} />
     </div>
   );
 }

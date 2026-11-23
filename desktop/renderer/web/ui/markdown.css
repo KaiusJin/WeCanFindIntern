@@ -1,0 +1,112 @@
+/* Rendered job descriptions, in the job reader and in an application's saved posting. */
+.detail-description h1, .tracker-jd-copy h1,
+.detail-description .md-h1, .tracker-jd-copy .md-h1 {
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  margin: 18px 0 8px;
+}
+
+.detail-description h2, .tracker-jd-copy h2,
+.detail-description .md-h2, .tracker-jd-copy .md-h2 {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 16px 0 6px;
+}
+
+.detail-description h3, .tracker-jd-copy h3,
+.detail-description .md-h3, .tracker-jd-copy .md-h3 {
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 700;
+  margin: 14px 0 6px;
+}
+
+.detail-description h4, .tracker-jd-copy h4,
+.detail-description h5, .tracker-jd-copy h5,
+.detail-description h6, .tracker-jd-copy h6,
+.detail-description .md-h4, .tracker-jd-copy .md-h4,
+.detail-description .md-h5, .tracker-jd-copy .md-h5,
+.detail-description .md-h6, .tracker-jd-copy .md-h6 {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  margin: 12px 0 4px;
+}
+
+.detail-description p, .tracker-jd-copy p,
+.detail-description .md-p, .tracker-jd-copy .md-p {
+  margin: 0 0 10px;
+}
+
+.detail-description p:last-child, .tracker-jd-copy p:last-child,
+.detail-description .md-p:last-child, .tracker-jd-copy .md-p:last-child {
+  margin-bottom: 0;
+}
+
+.detail-description strong, .tracker-jd-copy strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.detail-description ul, .tracker-jd-copy ul,
+.detail-description .md-ul, .tracker-jd-copy .md-ul {
+  list-style-type: disc;
+  margin: 6px 0 12px 20px;
+  padding: 0;
+}
+
+.detail-description ol, .tracker-jd-copy ol,
+.detail-description .md-ol, .tracker-jd-copy .md-ol {
+  list-style-type: decimal;
+  margin: 6px 0 12px 20px;
+  padding: 0;
+}
+
+.detail-description li, .tracker-jd-copy li,
+.detail-description .md-li, .tracker-jd-copy .md-li {
+  line-height: 1.6;
+  margin-bottom: 5px;
+}
+
+.detail-description hr, .tracker-jd-copy hr,
+.detail-description .md-hr, .tracker-jd-copy .md-hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 16px 0;
+}
+
+.detail-description .md-inline-code, .tracker-jd-copy .md-inline-code {
+  background: var(--surface-2);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 1px 5px;
+}
+
+.detail-description .md-code-block, .tracker-jd-copy .md-code-block {
+  background: var(--ink);
+  border-radius: 8px;
+  color: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin: 10px 0;
+  overflow-x: auto;
+  padding: 10px 14px;
+}
+
+.detail-description .md-link, .tracker-jd-copy .md-link {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.detail-description .md-link:hover, .tracker-jd-copy .md-link:hover {
+  color: var(--mint-hover, var(--accent));
+}

@@ -1,0 +1,148 @@
+/* Settings Modal Dialog */
+.settings-dialog {
+  border: 1px solid var(--line);
+  box-sizing: border-box;
+  color: var(--ink);
+  max-height: 90vh;
+  max-width: 480px;
+  overflow-y: auto;
+  padding: 0;
+  position: relative;
+  width: calc(100vw - 32px);
+}
+
+.settings-dialog::backdrop {
+  background: rgba(22, 66, 91, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.settings-dialog-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  padding: 18px 22px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.settings-title-wrap {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.settings-icon-badge {
+  align-items: center;
+  border-radius: 10px;
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.settings-dialog-header h3 {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.settings-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+
+.settings-body {
+  padding: 22px;
+}
+
+.settings-dialog-footer {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  margin-top: 22px;
+  padding-top: 16px;
+}
+
+.settings-footer-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.settings-dialog { background: var(--surface); border-color: var(--line); border-radius: var(--radius); box-shadow: var(--popover-shadow); }
+
+.settings-dialog-header { border-bottom-color: var(--line); }
+
+.settings-dialog .field-label { color: var(--ink); font-weight: 590; text-transform: none; letter-spacing: normal; }
+
+.settings-dialog-footer { justify-content: flex-end; }
+
+.settings-icon-badge { color: var(--accent); background: var(--accent-soft); }
+
+.preferences-workspace { max-width: 980px; margin: auto; padding: clamp(24px, 5vh, 52px) 0 26px; }
+
+.preferences-heading { margin-bottom: 24px; }
+
+:is(.preferences-heading, .letter-heading, .practice-heading) h1 { font-weight: 500; }
+
+.preferences-heading h1 { margin: 0; font-size: clamp(32px, 3.6vw, 52px); line-height: 1.12; letter-spacing: -.045em; }
+
+.preferences-layout { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: clamp(20px, 2.2vw, 32px); align-items: start; }
+
+@media (max-width: 740px) {
+  .preferences-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+.preferences-layout > section {
+  border-radius: var(--radius); padding: clamp(18px, 2.3vw, 30px);
+  background: var(--surface); border: 1px solid var(--line);
+}
+
+.preferences-layout h2 { margin: 0 0 19px; font-size: 19px; line-height: 1.25; font-weight: 620; letter-spacing: -.035em; }
+
+.appearance-preferences .appearance.lg-track--segmented { width: 100%; --lg-item-w: 0px; display: grid; }
+
+.preferences-footer { display: flex; align-items: center; padding-top: 22px; }
+
+.preferences-tabs.lg-track {
+  display: grid; margin: 0 0 18px; --lg-item-h: 40px; --lg-item-w: 0px;
+}
+
+.preferences-tabs.lg-track.lg-track--tabbar .lg-track__item { flex-direction: row; gap: 8px; padding: 0 14px; }
+
+.preferences-tabs .lg-nav__label { font-size: 13px; }
+
+.preferences-tabs .lg-nav__icon { width: 18px; height: 18px; }
+
+.preferences-pane { padding: 0; }
+
+.preferences-pane .field-label { display: block; font-size: 13px; font-weight: 560; text-transform: none; letter-spacing: normal; line-height: 18px; margin: 18px 0 8px; }
+
+.preferences-pane .lg-input { width: 100%; box-sizing: border-box; }
+
+.preferences-pane .field-hint { margin-left: 8px; }
+
+.preferences-pane .lg-input__field:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* One button, two icons: the pressed state picks which one shows. */
+#toggle-key-visibility[aria-pressed="false"] .icon:last-child,
+#toggle-key-visibility[aria-pressed="true"] .icon:first-child { display: none; }
+
+.settings-dimensions { display: grid; grid-template-columns: 1fr 78px; align-items: center; gap: 0 14px; margin: 18px 0 9px; }
+
+.settings-dimensions .field-label { margin: 0 8px; }
+
+.settings-dimensions > input { width: 100%; box-sizing: border-box; padding: 4px 8px; color: var(--ink); border: 1px solid var(--line-strong);   font-variant-numeric: tabular-nums; }
+
+.settings-dimensions > .lg-slider { grid-column: 1 / -1; width: auto; margin-inline: 7px; }
+
+.preferences-footer { justify-content: flex-end; }
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .lg-glass, .glass, .settings-dialog-header, #toolbar-nav-host .nav-group:not(.direct-group) .nav-items {
+    background: var(--surface) !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  }
+}

@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { GlassButton, GlassCard, GlassInput, GlassMenu, GlassNav, GlassSlider } from "@zakisheriff/liquid-glass";
-import { focusGlassMenuTrigger, handleGlassMenuKey } from "../components/glass-menu-keyboard";
+import { GlassButton, GlassInput, GlassNav, GlassSlider } from "@zakisheriff/liquid-glass";
+import { handleGlassMenuKey } from "../components/glass-menu-keyboard";
+import { SelectMenu } from "../components/SelectMenu";
 import { AppearanceControl, Icon } from "../layouts/AppChrome";
 
 const tabs = [
@@ -10,30 +11,9 @@ const tabs = [
 ];
 
 function SettingsMenu({ id, label, initial, children }: { id: string; label: string; initial: string; children: ReactNode }) {
-  const select = useRef<HTMLSelectElement>(null);
-  const [value, setValue] = useState(initial);
-  const [options, setOptions] = useState<{ value: string; label: string }[]>([]);
-  useLayoutEffect(() => {
-    const field = select.current!;
-    setOptions(Array.from(field.options, o => ({ value: o.value, label: o.label })));
-    const sync = () => setValue(field.value);
-    field.addEventListener("settings:fill", sync);
-    return () => field.removeEventListener("settings:fill", sync);
-  }, []);
-  const current = options.find(item => item.value === value)?.label || label;
   return <div className="settings-picker" data-field-control="" onKeyDown={handleGlassMenuKey}>
     <span className="field-label">{label}</span>
-    <select ref={select} id={id} hidden defaultValue={initial}
-      onChange={event => setValue(event.currentTarget.value)}>{children}</select>
-    <GlassMenu size="sm" align="start" width={268} aria-label={label + " · " + current}
-      icon={<><span>{current}</span><Icon name="chevron-down" /></>}
-      items={options.map(item => ({ label: item.label, checked: item.value === value, onSelect: () => {
-        const field = select.current!;
-        field.value = item.value;
-        field.dispatchEvent(new Event("change", { bubbles: true }));
-        focusGlassMenuTrigger(field.parentElement);
-      } }))}
-    />
+    <SelectMenu label={label} initial={initial} syncOn={["settings:fill"]} width={268} selectProps={{ id }}>{children}</SelectMenu>
   </div>;
 }
 
@@ -150,19 +130,11 @@ export function SettingsContents() {
           <label className="field-label" htmlFor="setting-api-key" id="setting-key-label">
             Gemini API Key
           </label>
-          <GlassCard className="settings-key-field" radius="22px" padding="0" intensity={3}>
-            <input type="password" id="setting-api-key" placeholder="Enter your Gemini API key" autoComplete="off" />
-            <button
-              type="button"
-              id="toggle-key-visibility"
-              className="control-glass"
-              title="Show API key"
-              aria-label="Show API key"
-              aria-pressed="false"
-            >
-              <span aria-hidden="true">◉</span>
-            </button>
-          </GlassCard>
+          <GlassInput className="settings-key-field" type="password" id="setting-api-key" placeholder="Enter your Gemini API key"
+            autoComplete="off" trailing={
+              <GlassButton type="button" id="toggle-key-visibility" size="sm" variant="clear" title="Show API key"
+                aria-label="Show API key" aria-pressed="false" icon={<><Icon name="eye" /><Icon name="eye-off" /></>} />
+            } />
         </div>
         <div id="ollama-config-group" style={{ display: "none" }}>
           <label className="field-label" htmlFor="setting-ollama-model">

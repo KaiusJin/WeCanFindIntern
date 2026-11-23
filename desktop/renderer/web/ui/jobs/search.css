@@ -1,0 +1,86 @@
+/* Index heading and the sticky search bar above the job list. */
+.posting-index-head { padding: 26px var(--index-inset) 0; }
+
+.posting-view-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.posting-view-heading h1 {
+  color: var(--ink);
+  margin: 0;
+  font-size: clamp(21px, 2vw, 29px);
+  line-height: 1.2;
+  letter-spacing: -.045em;
+  font-weight: 620;
+}
+
+.posting-view-heading [data-public-jobs-view] { display: flex; flex: none; }
+
+.posting-view-segments.lg-track--segmented {
+  --lg-item-w: 64px;
+  --lg-item-h: 30px;
+  --lg-track-selection: var(--surface);
+  font-size: 11px;
+}
+
+.posting-view-segments .lg-track__item { padding-inline: 12px; gap: 5px; }
+
+.posting-view-segments .icon { width: 13px; height: 13px; }
+
+.posting-search {
+  position: sticky;
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: 36rem;
+  margin: 15px 12px 0;
+}
+
+.posting-search-controls { display: contents; }
+
+.posting-search:has(.posting-location) {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto;
+  max-width: 48rem;
+}
+
+.posting-location { min-width: 0; }
+
+@container job-results (max-width: 540px) {
+  .posting-search:has(.posting-location) { grid-template-columns: minmax(0, 1fr) auto; }
+
+  .posting-location { grid-row: 2; grid-column: 1 / -1; }
+}
+
+.posting-query { position: relative; flex: 1; min-width: 0; }
+
+.posting-search .lg-input__field input { color: var(--ink); font-size: 14px; }
+
+.posting-search .lg-input__field:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+.posting-query-submit {
+  position: absolute;
+  inset: 4px auto 4px 4px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+
+.posting-query-submit:hover { color: var(--accent); }
+
+.posting-filter-button.lg-button { padding-inline: 13px; gap: 6px; font-size: 13px; }
+
+.posting-filter-button[aria-expanded="true"] { color: var(--accent); }
+
+.posting-search .icon, .posting-search .lg-button__icon { width: 17px; height: 17px; }

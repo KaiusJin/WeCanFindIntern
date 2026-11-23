@@ -102,7 +102,7 @@ export function ProfileImportSheet() {
       <div id="profile-draft-review" className="profile-draft-review" role="group" aria-label="Import draft" hidden>
         <details>
           <summary>Import draft</summary>
-          <p id="profile-draft-summary" className="glass"></p>
+          <p id="profile-draft-summary"></p>
         </details>
         <GlassButton id="profile-apply-draft" size="sm" variant="tinted" tint="var(--accent)">Apply import</GlassButton>
         <GlassButton id="profile-discard-draft" size="sm">Discard</GlassButton>

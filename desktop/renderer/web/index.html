@@ -8,18 +8,36 @@
     <title>WeCanFindIntern</title>
     <link rel="icon" href="/ui/mark.svg" />
     <script src="/ui/appearance.js"></script>
-    <link rel="stylesheet" href="/styles.css" />
-    <link rel="stylesheet" href="/app-shell.css" />
     <link rel="stylesheet" href="/vendor/liquid-glass.css" />
     <link rel="stylesheet" href="/ui/tokens.css" />
+    <link rel="stylesheet" href="/ui/base.css" />
     <link rel="stylesheet" href="/ui/shell.css" />
-    <link rel="stylesheet" href="/ui/discovery.css" />
-    <link rel="stylesheet" href="/ui/public-jobs.css" />
-    <link rel="stylesheet" href="/ui/management.css" />
-    <link rel="stylesheet" href="/ui/applications.css" />
-    <link rel="stylesheet" href="/ui/career.css" />
-    <link rel="stylesheet" href="/ui/assistant.css" />
-    <link rel="stylesheet" href="/ui/practice.css" />
+    <link rel="stylesheet" href="/ui/markdown.css" />
+    <link rel="stylesheet" href="/ui/settings.css" />
+    <link rel="stylesheet" href="/ui/jobs/filters.css" />
+    <link rel="stylesheet" href="/ui/jobs/pay-range.css" />
+    <link rel="stylesheet" href="/ui/jobs/search.css" />
+    <link rel="stylesheet" href="/ui/jobs/list.css" />
+    <link rel="stylesheet" href="/ui/jobs/detail.css" />
+    <link rel="stylesheet" href="/ui/jobs/waterloo-works.css" />
+    <link rel="stylesheet" href="/ui/jobs/map.css" />
+    <link rel="stylesheet" href="/ui/applications/pipeline.css" />
+    <link rel="stylesheet" href="/ui/applications/table.css" />
+    <link rel="stylesheet" href="/ui/applications/record.css" />
+    <link rel="stylesheet" href="/ui/applications/timeline.css" />
+    <link rel="stylesheet" href="/ui/profile/profile.css" />
+    <link rel="stylesheet" href="/ui/profile/import.css" />
+    <link rel="stylesheet" href="/ui/career/career.css" />
+    <link rel="stylesheet" href="/ui/career/report.css" />
+    <link rel="stylesheet" href="/ui/career/cover-letter.css" />
+    <link rel="stylesheet" href="/ui/career/interview.css" />
+    <link rel="stylesheet" href="/ui/career/interview-history.css" />
+    <link rel="stylesheet" href="/ui/assistant/conversation.css" />
+    <link rel="stylesheet" href="/ui/assistant/history.css" />
+    <link rel="stylesheet" href="/ui/assistant/cards.css" />
+    <link rel="stylesheet" href="/ui/assistant/history.css" />
+    <link rel="stylesheet" href="/ui/assistant/cards.css" />
+    <link rel="stylesheet" href="/ui/assistant/panels.css" />
     <link rel="stylesheet" href="/ui/controls.css" />
     <link rel="stylesheet" href="/ui/sheets.css" />
     <link rel="stylesheet" href="/ui/feedback.css" />
@@ -222,7 +240,9 @@
                     <div>
                       <h2 id="results-title">Latest jobs</h2>
                       <span id="result-status" class="result-tally" role="status">Loading…</span>
-                      <button id="reset-job-search" class="text-button discovery-reset control-glass" type="button" hidden="">Clear search</button>
+                      <button type="button" class="lg-glass lg-button lg-button--sm lg-button--clear discovery-reset" data-liquid-glass="" data-shimmer="" id="reset-job-search" hidden="">
+                        <span class="lg-button__label">Clear search</span>
+                      </button>
                     </div>
                   </div>
                   <div id="job-list" class="job-list"></div>
@@ -232,7 +252,7 @@
                     </div>
                     <h3>No matching jobs</h3>
                     <p>Try removing a filter or using a broader search term.</p>
-                    <button id="jobs-empty-action" class="secondary-button" type="button" hidden="">Clear filters</button>
+                    <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-shimmer="" id="jobs-empty-action" hidden=""><span class="lg-button__label">Clear filters</span></button>
                   </div>
                   <div id="infinite-scroll-sentinel" class="infinite-scroll-sentinel">
                     <div id="loading-indicator" class="loading-indicator" hidden="">
@@ -243,30 +263,55 @@
                   </div>
                 </div>
                 <div class="results-meta">
-                  <button id="back-to-top" class="posting-to-top glass" type="button" aria-controls="job-list" aria-label="Back to top of job list" title="Back to top of job list" hidden="">
-                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
-                    Top
+                  <button
+                    type="button"
+                    class="lg-glass lg-button lg-button--sm lg-button--glass posting-to-top"
+                    data-liquid-glass=""
+                    data-shimmer=""
+                    id="back-to-top"
+                    aria-controls="job-list"
+                    aria-label="Back to top of job list"
+                    title="Back to top of job list"
+                    hidden=""
+                  >
+                    <span class="lg-button__label">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
+                      Top
+                    </span>
                   </button>
                   <span id="job-sync-status-text" class="job-sync-status-text" role="status" hidden=""></span>
                   <span id="job-sync-status-separator" class="meta-dot desktop-only-meta" aria-hidden="true">·</span>
                   <span id="last-updated-text" class="last-updated-text" title="Last automated job sync time">Latest sync unavailable</span>
-                  <button id="refresh" class="icon-button control-glass" type="button" title="Refresh jobs" aria-label="Refresh jobs">
-                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#refresh"></use></svg>
+                  <button type="button" class="lg-glass lg-button lg-button--sm lg-button--clear posting-refresh" data-liquid-glass="" data-icon-only="" data-shimmer="" id="refresh" title="Refresh jobs" aria-label="Refresh jobs">
+                    <span class="lg-button__icon">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#refresh"></use></svg>
+                    </span>
                   </button>
                 </div>
               </section>
               <div class="discovery-divider" role="separator" aria-label="Resize job list" aria-controls="public-job-detail-pane" aria-valuemin="26" aria-valuemax="55" aria-valuenow="34" aria-orientation="vertical" tabindex="0"></div>
               <aside id="public-job-detail-pane" class="job-detail-pane" aria-label="Selected public job" aria-hidden="true">
                 <div class="job-detail-pane-toolbar">
-                  <button id="close-public-job-detail" class="job-detail-pane-close control-glass" type="button" aria-label="Close job details">
-                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
-                    Show full list
+                  <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass job-detail-pane-close" data-liquid-glass="" data-shimmer="" id="close-public-job-detail" aria-label="Close job details">
+                    <span class="lg-button__label">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
+                      Show full list
+                    </span>
                   </button>
                 </div>
                 <div id="public-job-detail" class="job-detail-content"></div>
               </aside>
             </section>
-            <div popover="auto" role="dialog" data-workspace-popover="tab-jobs" id="job-filters-sheet" class="filters-panel filter-sheet glass" aria-label="Public job filters">
+            <div
+              class="lg-glass lg-glass--host lg-card lg-card--regular filters-panel filter-sheet"
+              data-liquid-glass=""
+              style="padding: 0; border-radius: 26px"
+              popover="auto"
+              role="dialog"
+              data-workspace-popover="tab-jobs"
+              id="job-filters-sheet"
+              aria-label="Public job filters"
+            >
               <div id="filter-controls" class="facet-panel">
                 <header class="facet-panel-heading">
                   <h2>Filter jobs</h2>
@@ -671,7 +716,9 @@
                     <div>
                       <h2 id="ww-results-title">Latest jobs</h2>
                       <span id="ww-jobs-total" class="result-tally" role="status">Loading…</span>
-                      <button id="ww-reset-job-search" class="text-button discovery-reset control-glass" type="button" hidden="">Clear search</button>
+                      <button type="button" class="lg-glass lg-button lg-button--sm lg-button--clear discovery-reset" data-liquid-glass="" data-shimmer="" id="ww-reset-job-search" hidden="">
+                        <span class="lg-button__label">Clear search</span>
+                      </button>
                     </div>
                   </div>
                   <div id="ww-job-list" class="job-list"></div>
@@ -681,7 +728,7 @@
                     </div>
                     <h3>No matching jobs</h3>
                     <p>Try removing a filter or using a broader search term.</p>
-                    <button id="ww-jobs-empty-action" class="secondary-button" type="button" hidden="">Clear filters</button>
+                    <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-shimmer="" id="ww-jobs-empty-action" hidden=""><span class="lg-button__label">Clear filters</span></button>
                   </div>
                   <div id="ww-infinite-scroll-sentinel" class="infinite-scroll-sentinel">
                     <div id="ww-loading-indicator" class="loading-indicator" hidden="">
@@ -692,28 +739,53 @@
                   </div>
                 </div>
                 <div class="results-meta">
-                  <button id="ww-back-to-top" class="posting-to-top glass" type="button" aria-controls="ww-job-list" aria-label="Back to top of job list" title="Back to top of job list" hidden="">
-                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
-                    Top
+                  <button
+                    type="button"
+                    class="lg-glass lg-button lg-button--sm lg-button--glass posting-to-top"
+                    data-liquid-glass=""
+                    data-shimmer=""
+                    id="ww-back-to-top"
+                    aria-controls="ww-job-list"
+                    aria-label="Back to top of job list"
+                    title="Back to top of job list"
+                    hidden=""
+                  >
+                    <span class="lg-button__label">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
+                      Top
+                    </span>
                   </button>
                   <span id="ww-jobs-updated-at" class="last-updated-text" title="Last WaterlooWorks job sync time">Not updated yet</span>
-                  <button id="ww-refresh" class="icon-button control-glass" type="button" title="Refresh jobs" aria-label="Refresh jobs">
-                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#refresh"></use></svg>
+                  <button type="button" class="lg-glass lg-button lg-button--sm lg-button--clear posting-refresh" data-liquid-glass="" data-icon-only="" data-shimmer="" id="ww-refresh" title="Refresh jobs" aria-label="Refresh jobs">
+                    <span class="lg-button__icon">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#refresh"></use></svg>
+                    </span>
                   </button>
                 </div>
               </section>
               <div class="discovery-divider" role="separator" aria-label="Resize job list" aria-controls="ww-job-detail-pane" aria-valuemin="26" aria-valuemax="55" aria-valuenow="34" aria-orientation="vertical" tabindex="0"></div>
               <aside id="ww-job-detail-pane" class="job-detail-pane" aria-label="Selected WaterlooWorks job" aria-hidden="true">
                 <div class="job-detail-pane-toolbar">
-                  <button id="close-ww-job-detail" class="job-detail-pane-close control-glass" type="button" aria-label="Close job details">
-                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
-                    Show full list
+                  <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass job-detail-pane-close" data-liquid-glass="" data-shimmer="" id="close-ww-job-detail" aria-label="Close job details">
+                    <span class="lg-button__label">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-right"></use></svg>
+                      Show full list
+                    </span>
                   </button>
                 </div>
                 <div id="ww-job-detail" class="job-detail-content"></div>
               </aside>
             </section>
-            <div popover="auto" role="dialog" data-workspace-popover="tab-waterlooworks" id="ww-job-filters-sheet" class="filters-panel filter-sheet glass" aria-label="WaterlooWorks job filters">
+            <div
+              class="lg-glass lg-glass--host lg-card lg-card--regular filters-panel filter-sheet"
+              data-liquid-glass=""
+              style="padding: 0; border-radius: 26px"
+              popover="auto"
+              role="dialog"
+              data-workspace-popover="tab-waterlooworks"
+              id="ww-job-filters-sheet"
+              aria-label="WaterlooWorks job filters"
+            >
               <div id="ww-filter-controls" class="facet-panel">
                 <header class="facet-panel-heading">
                   <h2>Filter jobs</h2>
@@ -881,7 +953,21 @@
                     <p class="settings-subtitle">Choose what to bring into WeCanFindIntern.</p>
                   </div>
                 </div>
-                <button id="ww-close-sync-dialog" popovertarget="ww-sync-dialog" popovertargetaction="hide" class="dialog-close control-glass" type="button" aria-label="Close">×</button>
+                <button
+                  type="button"
+                  class="lg-glass lg-button lg-button--sm lg-button--clear dialog-close"
+                  data-liquid-glass=""
+                  data-icon-only=""
+                  data-shimmer=""
+                  id="ww-close-sync-dialog"
+                  popovertarget="ww-sync-dialog"
+                  popovertargetaction="hide"
+                  aria-label="Close"
+                >
+                  <span class="lg-button__icon">
+                    <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#close"></use></svg>
+                  </span>
+                </button>
               </div>
               <div class="settings-body ww-sync-dialog-body">
                 <div class="ww-sync-choice">
@@ -1093,8 +1179,8 @@
                       </label>
                       <div class="tracker-head-actions" id="applications-sort-controls">
                         <div class="tracker-sort-control">
-                          <select id="tracker-sort" hidden="">
-                            <option value="updated:desc" selected="">Updated</option>
+                          <select id="tracker-sort" hidden="" aria-label="Sort applications">
+                            <option value="updated:desc">Updated</option>
                             <option value="applied:desc">Date applied</option>
                             <option value="company:asc">Company A–Z</option>
                           </select>
@@ -1105,12 +1191,12 @@
                               data-liquid-glass=""
                               data-icon-only=""
                               data-shimmer=""
-                              aria-label="Sort applications by Updated"
+                              aria-label="Sort applications: Updated"
                               aria-haspopup="menu"
                               aria-expanded="false"
                             >
                               <span class="lg-button__icon">
-                                Updated
+                                <span>Updated</span>
                                 <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                               </span>
                             </button>
@@ -1138,7 +1224,7 @@
                           <h3>No applications found</h3>
                           <p>Try a broader search or add an application.</p>
                         </div>
-                        <div id="tracker-bulk-bar" class="tracker-bulk-bar glass" hidden="">
+                        <div class="lg-glass lg-glass--host lg-card lg-card--regular tracker-bulk-bar" data-liquid-glass="" style="padding: 6px 8px 6px 16px; border-radius: 999px" id="tracker-bulk-bar" hidden="">
                           <strong>
                             <span id="tracker-selected-count">0</span>
                             selected
@@ -1154,12 +1240,12 @@
                                 data-liquid-glass=""
                                 data-icon-only=""
                                 data-shimmer=""
-                                aria-label="Change selected application stages, currently Move to…"
+                                aria-label="Selected application stages: Move to…"
                                 aria-haspopup="menu"
                                 aria-expanded="false"
                               >
                                 <span class="lg-button__icon">
-                                  Move to…
+                                  <span>Move to…</span>
                                   <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                                 </span>
                               </button>
@@ -1186,18 +1272,9 @@
                               <option value="100">100</option>
                             </select>
                             <span class="lg-menu-anchor record-choice-menu" data-align="start">
-                              <button
-                                type="button"
-                                class="lg-glass lg-button lg-button--sm lg-button--glass"
-                                data-liquid-glass=""
-                                data-icon-only=""
-                                data-shimmer=""
-                                aria-label="Change rows per page, currently 50"
-                                aria-haspopup="menu"
-                                aria-expanded="false"
-                              >
+                              <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-icon-only="" data-shimmer="" aria-label="Rows per page: 50" aria-haspopup="menu" aria-expanded="false">
                                 <span class="lg-button__icon">
-                                  50
+                                  <span>50</span>
                                   <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                                 </span>
                               </button>
@@ -1259,13 +1336,13 @@
                                   data-liquid-glass=""
                                   data-icon-only=""
                                   data-shimmer=""
-                                  aria-label="Change stage, currently Interested"
+                                  aria-label="Stage: Interested"
                                   aria-haspopup="menu"
                                   aria-expanded="false"
                                 >
                                   <span class="lg-button__icon">
                                     <i aria-hidden="true"></i>
-                                    Interested
+                                    <span>Interested</span>
                                     <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                                   </span>
                                 </button>
@@ -1319,12 +1396,12 @@
                                   data-liquid-glass=""
                                   data-icon-only=""
                                   data-shimmer=""
-                                  aria-label="Change work mode, currently Not specified"
+                                  aria-label="Work mode: Not specified"
                                   aria-haspopup="menu"
                                   aria-expanded="false"
                                 >
                                   <span class="lg-button__icon">
-                                    Not specified
+                                    <span>Not specified</span>
                                     <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                                   </span>
                                 </button>
@@ -1345,18 +1422,9 @@
                                 <option value="other" selected="">Other</option>
                               </select>
                               <span class="lg-menu-anchor record-choice-menu" data-align="start">
-                                <button
-                                  type="button"
-                                  class="lg-glass lg-button lg-button--sm lg-button--glass"
-                                  data-liquid-glass=""
-                                  data-icon-only=""
-                                  data-shimmer=""
-                                  aria-label="Change source, currently Other"
-                                  aria-haspopup="menu"
-                                  aria-expanded="false"
-                                >
+                                <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-icon-only="" data-shimmer="" aria-label="Source: Other" aria-haspopup="menu" aria-expanded="false">
                                   <span class="lg-button__icon">
-                                    Other
+                                    <span>Other</span>
                                     <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                                   </span>
                                 </button>
@@ -1979,7 +2047,7 @@
                           <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#history"></use></svg>
                           <span>History</span>
                         </summary>
-                        <div class="conversation-history-menu glass">
+                        <div class="lg-glass lg-glass--host lg-card lg-card--regular conversation-history-menu" data-liquid-glass="" style="padding: 10px; border-radius: 20px">
                           <h2>Recent conversations</h2>
                           <div id="agent-session-list" class="agent-session-list" aria-label="Conversations"><p class="conversation-list-status" role="status">Loading conversations…</p></div>
                         </div>
@@ -2017,20 +2085,26 @@
                       </span>
                       <h2>What are you working on?</h2>
                       <div class="agent-suggestion-list">
-                        <button type="button" class="glass" data-agent-prompt="Recommend internships that match my profile">
-                          <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#target"></use></svg>
-                          <span>Match my profile</span>
-                          <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#arrow-up-right"></use></svg>
+                        <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-shimmer="" data-agent-prompt="Recommend internships that match my profile">
+                          <span class="lg-button__label">
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#target"></use></svg>
+                            <span>Match my profile</span>
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#arrow-up-right"></use></svg>
+                          </span>
                         </button>
-                        <button type="button" class="glass" data-agent-prompt="Show me the jobs currently in my Tracker">
-                          <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#board"></use></svg>
-                          <span>Review applications</span>
-                          <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#arrow-up-right"></use></svg>
+                        <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-shimmer="" data-agent-prompt="Show me the jobs currently in my Tracker">
+                          <span class="lg-button__label">
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#board"></use></svg>
+                            <span>Review applications</span>
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#arrow-up-right"></use></svg>
+                          </span>
                         </button>
-                        <button type="button" class="glass" data-agent-prompt="Find software engineering internships in Toronto">
-                          <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#pin"></use></svg>
-                          <span>Find Toronto internships</span>
-                          <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#arrow-up-right"></use></svg>
+                        <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-shimmer="" data-agent-prompt="Find software engineering internships in Toronto">
+                          <span class="lg-button__label">
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#pin"></use></svg>
+                            <span>Find Toronto internships</span>
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#arrow-up-right"></use></svg>
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -2071,8 +2145,10 @@
                 <aside id="agent-job-detail-pane" class="assistant-side-panel assistant-job-reader" aria-label="Job details" hidden="">
                   <header class="assistant-panel-header">
                     <h2>Job details</h2>
-                    <button id="close-agent-job-detail" class="glass" type="button" aria-label="Close job details">
-                      <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#close"></use></svg>
+                    <button type="button" class="lg-glass lg-button lg-button--sm lg-button--clear" data-liquid-glass="" data-icon-only="" data-shimmer="" id="close-agent-job-detail" aria-label="Close job details">
+                      <span class="lg-button__icon">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#close"></use></svg>
+                      </span>
                     </button>
                   </header>
                   <div id="agent-job-detail" class="job-detail-content"></div>
@@ -2174,7 +2250,7 @@
                     <div id="profile-draft-review" class="profile-draft-review" role="group" aria-label="Import draft" hidden="">
                       <details>
                         <summary>Import draft</summary>
-                        <p id="profile-draft-summary" class="glass"></p>
+                        <p id="profile-draft-summary"></p>
                       </details>
                       <button type="button" class="lg-glass lg-button lg-button--sm lg-button--tinted" data-liquid-glass="" data-shimmer="" style="--lg-tint: var(--accent)" id="profile-apply-draft">
                         <span class="lg-button__label">Apply import</span>
@@ -2308,7 +2384,7 @@
                     <div class="preferences-pane" role="tabpanel" aria-label="AI model">
                       <div class="settings-picker" data-field-control="">
                         <span class="field-label">AI model</span>
-                        <select id="setting-selected-model" hidden="">
+                        <select id="setting-selected-model" hidden="" aria-label="AI model">
                           <optgroup label="Google Gemini">
                             <option value="Gemini:gemini-3.7-flash" selected="">Gemini 3.7 Flash</option>
                             <option value="Gemini:gemini-3.6-flash">Gemini 3.6 Flash</option>
@@ -2339,9 +2415,18 @@
                           <optgroup label="Ollama (Local)"><option value="Ollama:">Ollama (Local) — custom</option></optgroup>
                         </select>
                         <span class="lg-menu-anchor" data-align="start">
-                          <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-icon-only="" data-shimmer="" aria-label="AI model · AI model" aria-haspopup="menu" aria-expanded="false">
+                          <button
+                            type="button"
+                            class="lg-glass lg-button lg-button--sm lg-button--glass"
+                            data-liquid-glass=""
+                            data-icon-only=""
+                            data-shimmer=""
+                            aria-label="AI model: Gemini:gemini-3.7-flash"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
+                          >
                             <span class="lg-button__icon">
-                              <span>AI model</span>
+                              <span>Gemini:gemini-3.7-flash</span>
                               <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                             </span>
                           </button>
@@ -2349,10 +2434,28 @@
                       </div>
                       <div id="setting-api-key-group">
                         <label class="field-label" for="setting-api-key" id="setting-key-label">Gemini API Key</label>
-                        <div class="lg-glass lg-glass--host lg-card lg-card--regular settings-key-field" data-liquid-glass="" style="padding: 0; border-radius: 22px">
-                          <input type="password" id="setting-api-key" placeholder="Enter your Gemini API key" autocomplete="off" />
-                          <button type="button" id="toggle-key-visibility" class="control-glass" title="Show API key" aria-label="Show API key" aria-pressed="false"><span aria-hidden="true">◉</span></button>
-                        </div>
+                        <label class="lg-input settings-key-field" data-liquid-glass="">
+                          <div class="lg-glass lg-input__field">
+                            <input type="password" id="setting-api-key" placeholder="Enter your Gemini API key" autocomplete="off" value="" />
+                            <span class="lg-input__icon lg-input__trailing">
+                              <button
+                                type="button"
+                                class="lg-glass lg-button lg-button--sm lg-button--clear"
+                                data-liquid-glass=""
+                                data-icon-only=""
+                                data-shimmer=""
+                                id="toggle-key-visibility"
+                                title="Show API key"
+                                aria-label="Show API key"
+                                aria-pressed="false"
+                              >
+                                <span class="lg-button__icon">
+                                  <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#eye"></use></svg><svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#eye-off"></use></svg>
+                                </span>
+                              </button>
+                            </span>
+                          </div>
+                        </label>
                       </div>
                       <div id="ollama-config-group" style="display: none">
                         <label class="field-label" for="setting-ollama-model">Ollama model</label>
@@ -2369,7 +2472,7 @@
                     <div class="preferences-pane" role="tabpanel" aria-label="Embeddings" hidden="">
                       <div class="settings-picker" data-field-control="">
                         <span class="field-label">Embedding provider</span>
-                        <select id="setting-embedding-provider" hidden="">
+                        <select id="setting-embedding-provider" hidden="" aria-label="Embedding provider">
                           <option value="Ollama" selected="">Ollama (Local)</option>
                           <option value="Gemini">Google Gemini</option>
                           <option value="OpenAI">OpenAI</option>
@@ -2381,12 +2484,12 @@
                             data-liquid-glass=""
                             data-icon-only=""
                             data-shimmer=""
-                            aria-label="Embedding provider · Embedding provider"
+                            aria-label="Embedding provider: Ollama"
                             aria-haspopup="menu"
                             aria-expanded="false"
                           >
                             <span class="lg-button__icon">
-                              <span>Embedding provider</span>
+                              <span>Ollama</span>
                               <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                             </span>
                           </button>
@@ -2505,18 +2608,9 @@
                   <option value="onsite">In-person</option>
                 </select>
                 <span class="lg-menu-anchor record-choice-menu" data-align="start">
-                  <button
-                    type="button"
-                    class="lg-glass lg-button lg-button--sm lg-button--glass"
-                    data-liquid-glass=""
-                    data-icon-only=""
-                    data-shimmer=""
-                    aria-label="Change work mode, currently Hybrid"
-                    aria-haspopup="menu"
-                    aria-expanded="false"
-                  >
+                  <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-icon-only="" data-shimmer="" aria-label="Work mode: Hybrid" aria-haspopup="menu" aria-expanded="false">
                     <span class="lg-button__icon">
-                      Hybrid
+                      <span>Hybrid</span>
                       <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                     </span>
                   </button>
@@ -2533,19 +2627,10 @@
                   <option value="interested" selected="">Interested</option>
                 </select>
                 <span class="lg-menu-anchor record-choice-menu" data-align="start">
-                  <button
-                    type="button"
-                    class="lg-glass lg-button lg-button--sm lg-button--glass"
-                    data-liquid-glass=""
-                    data-icon-only=""
-                    data-shimmer=""
-                    aria-label="Change stage, currently Interested"
-                    aria-haspopup="menu"
-                    aria-expanded="false"
-                  >
+                  <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-icon-only="" data-shimmer="" aria-label="Stage: Interested" aria-haspopup="menu" aria-expanded="false">
                     <span class="lg-button__icon">
                       <i aria-hidden="true"></i>
-                      Interested
+                      <span>Interested</span>
                       <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                     </span>
                   </button>
@@ -2570,9 +2655,9 @@
                   <option value="other" selected="">Other</option>
                 </select>
                 <span class="lg-menu-anchor record-choice-menu" data-align="start">
-                  <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-icon-only="" data-shimmer="" aria-label="Change source, currently Other" aria-haspopup="menu" aria-expanded="false">
+                  <button type="button" class="lg-glass lg-button lg-button--sm lg-button--glass" data-liquid-glass="" data-icon-only="" data-shimmer="" aria-label="Source: Other" aria-haspopup="menu" aria-expanded="false">
                     <span class="lg-button__icon">
-                      Other
+                      <span>Other</span>
                       <svg class="icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#chevron-down"></use></svg>
                     </span>
                   </button>

@@ -1,0 +1,314 @@
+html:has(dialog[open]), body:has(dialog[open]) {
+  overflow: hidden !important;
+}
+
+.subfield-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.muted-copy { color: var(--muted); font-size: 12px; }
+
+.eyebrow {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  margin: 0 0 12px;
+  text-transform: uppercase;
+}
+
+.field-label {
+  color: var(--muted);
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: 14px 0 5px;
+  text-transform: uppercase;
+}
+
+.tag {
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
+.spinner {
+  animation: spin 0.7s linear infinite;
+  border: 2px solid var(--accent-soft);
+  border-radius: 50%;
+  border-top-color: var(--accent);
+  flex: 0 0 16px;
+  height: 16px;
+  width: 16px;
+}
+
+.loading-state {
+  align-items: center;
+  color: var(--ink);
+  display: flex;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 10px;
+  height: calc(100% - 65px);
+  justify-content: center;
+  min-height: 220px;
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.loading-state .spinner {
+  border-width: 2.5px;
+  flex-basis: 20px;
+  height: 20px;
+  width: 20px;
+}
+
+.loading-state > span {
+  white-space: nowrap;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Empty State & Error */
+.empty-state {
+  color: var(--muted);
+  padding: 80px 20px;
+  text-align: center;
+}
+
+.empty-icon {
+  color: var(--line-strong);
+  font-size: 42px;
+}
+
+.empty-state h3 {
+  color: var(--ink);
+  margin: 8px 0;
+}
+
+.error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.field-group {
+  margin-bottom: 18px;
+}
+
+.career-textarea {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-sizing: border-box;
+  font: 14px/1.6 var(--font-sans);
+  padding: 12px 14px;
+  resize: vertical;
+  width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.career-textarea:focus {
+  outline: 0;
+}
+
+.career-input {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-sizing: border-box;
+  font-size: 13px;
+  height: 40px;
+  padding: 0 12px;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+
+.career-input:focus {
+  outline: 0;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin: 6px 0 0;
+}
+
+/* The hidden attribute must always win over component display rules
+   (e.g. .recording-timer sets display:inline-flex and would otherwise stay
+   visible while hidden). */
+[hidden] {
+  display: none !important;
+}
+
+.career-card, .agent-main, .agent-recommendation-card {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+* {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.career-input,
+.career-textarea,
+.file-dropzone {
+  border-color: var(--line);
+  border-radius: 8px;
+}
+
+.career-card, .agent-main {
+  border-color: var(--line);
+  border-radius: 11px;
+  box-shadow: var(--shadow);
+}
+
+button:focus-visible,
+a:focus-visible,
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+.tag {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+/* Base elements */
+* { box-sizing: border-box; }
+
+html { scrollbar-gutter: auto; }
+
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--canvas);
+  color: var(--ink);
+  font: 14px/1.5 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select { font: inherit; }
+
+textarea { font-family: inherit; }
+
+button { cursor: pointer; }
+
+.icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.glass, .settings-dialog-header {
+  background: var(--surface);
+  box-shadow: var(--glass-shadow);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass, .settings-dialog-header {
+    background-color: var(--glass);
+    background-image: linear-gradient(155deg, color-mix(in srgb, var(--glass-edge) 40%, transparent), transparent 30%, transparent 78%, color-mix(in srgb, var(--glass-edge) 18%, transparent));
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(115%);
+    backdrop-filter: blur(var(--blur)) saturate(115%);
+  }
+}
+
+button { transition: color var(--ease), background-color var(--ease), border-color var(--ease), box-shadow var(--ease); }
+
+button:not(:disabled):active { filter: brightness(.95); }
+
+button:disabled { cursor: default; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Rendered by the job detail module for a single-source Apply link. */
+.primary-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 22px; border: 0; border-radius: var(--control-radius);
+  background: var(--action); color: var(--on-action); box-shadow: var(--shadow);
+  font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer;
+  transition: background .15s, transform .15s;
+}
+
+.primary-button:hover:not(:disabled) { background: var(--action-hover); }
+
+.primary-button:active { transform: translateY(1px); }
+
+.primary-button:disabled { opacity: .5; }
+
+.career-input, .career-textarea, .salary-input-box {
+  border-radius: var(--control-radius); background-color: var(--surface); border-color: var(--line-strong); color: var(--ink);
+}
+
+.career-input:focus, .career-textarea:focus {
+  border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 15%, transparent);
+}
+
+:where(input, textarea)::placeholder { color: var(--muted); }
+
+dialog::backdrop { background: rgb(18 24 30 / 28%); }
+
+dialog[open] { animation: pane-in var(--ease); }
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :root, :root[data-theme] { --glass: var(--surface); --blur: 0px; }
+
+  dialog::backdrop {
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  }
+
+  .lg-glass::before, .lg-glass::after { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { stylesSource } from "./stylesheets.mjs";
 
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
-const shellSource = await readFile(new URL("../app-shell.css", import.meta.url), "utf8");
-const publicJobsStyle = await readFile(new URL("../ui/public-jobs.css", import.meta.url), "utf8");
-const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 const navigationSource = await readFile(new URL("../modules/navigation.js", import.meta.url), "utf8");
-const managementSource = await readFile(new URL("../ui/management.css", import.meta.url), "utf8");
 const profileSource = await readFile(new URL("../modules/profile.js", import.meta.url), "utf8");
 const settingsSource = await readFile(new URL("../modules/settings.js", import.meta.url), "utf8");
 const trackerSource = await readFile(new URL("../modules/tracker.js", import.meta.url), "utf8");
@@ -88,12 +85,12 @@ test("leaving the AI Agent closes only its open dialogs", () => {
 });
 
 test("desktop workspaces keep the index and reader independently scrollable", () => {
-  assert.match(shellSource, /#tab-jobs:not\(\[hidden\]\)/);
-  assert.match(shellSource, /#tab-waterlooworks:not\(\[hidden\]\)/);
-  assert.match(managementSource, /#tab-tracker:not\(\[hidden\]\)/);
-  assert.match(shellSource, /#tab-profile:not\(\[hidden\]\)/);
-  assert.match(publicJobsStyle, /\.posting-workspace:has\(> \.job-detail-pane\.open\)/);
-  assert.match(shellSource, /\.results-scroll-content/);
+  assert.match(stylesSource, /#tab-jobs:not\(\[hidden\]\)/);
+  assert.match(stylesSource, /#tab-waterlooworks:not\(\[hidden\]\)/);
+  assert.match(stylesSource, /#tab-tracker:not\(\[hidden\]\)/);
+  assert.match(stylesSource, /#tab-profile:not\(\[hidden\]\)/);
+  assert.match(stylesSource, /\.posting-workspace:has\(> \.job-detail-pane\.open\)/);
+  assert.match(stylesSource, /\.results-scroll-content/);
 });
 
 test("Applications keeps stage and date edits reachable in the compact list and detail view", () => {
@@ -103,17 +100,17 @@ test("Applications keeps stage and date edits reachable in the compact list and 
   assert.match(trackerSource, /class="tracker-role-cell" type="button" aria-controls="tracker-detail-drawer"/);
   assert.match(trackerSource, /class="tracker-inline-date"/);
   assert.match(trackerSource, /class="tracker-inline-stage stage-/);
-  assert.match(managementSource, /@container application-list/);
+  assert.match(stylesSource, /@container application-list/);
 });
 
 test("focus rings are limited to keyboard navigation targets", () => {
-  assert.match(shellSource, /button:focus-visible,\s*a:focus-visible,/);
-  assert.match(shellSource, /input\[type="checkbox"\]:focus-visible,\s*input\[type="radio"\]:focus-visible/);
+  assert.match(stylesSource, /button:focus-visible,\s*a:focus-visible,/);
+  assert.match(stylesSource, /input\[type="checkbox"\]:focus-visible,\s*input\[type="radio"\]:focus-visible/);
   assert.doesNotMatch(
-    shellSource,
+    stylesSource,
     /button:focus-visible,\s*a:focus-visible,\s*input:focus-visible,\s*select:focus-visible,\s*textarea:focus-visible/,
   );
-  assert.match(stylesSource, /\.tracker-inline-date:focus\s*\{[\s\S]*?outline:\s*0;/);
+  assert.match(stylesSource, /\.tracker-inline-date:(?:focus|is\(:hover, :focus\))\s*\{[^}]*outline:\s*0;/);
 });
 
 test("Profile exposes explicit resume imports without JSON export", () => {

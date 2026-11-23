@@ -2,6 +2,8 @@ import { GlassButton, GlassInput } from "@zakisheriff/liquid-glass";
 import { useId, useLayoutEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { Icon } from "../../layouts/AppChrome";
+import { handleGlassMenuKey } from "../../components/glass-menu-keyboard";
+import { SelectMenu } from "../../components/SelectMenu";
 
 type Field = [name: string, label: string, type?: string];
 type Entry = Record<string, string | string[] | null>;
@@ -21,12 +23,11 @@ function EntryField({ field: [name, label, type = "text"], entry }: { field: Fie
   if (type === "language-level") {
     const levels = ["Beginner", "Intermediate", "Advanced", "Fluent", "Native"];
     if (value && !levels.includes(value)) levels.push(value);
-    return <label className="profile-native-field"><span>{label}</span>
-      <select className="career-input glass" {...attrs} value={value} onChange={event => setValue(event.currentTarget.value)}>
-        <option value="">Select proficiency</option>
-        {levels.map(level => <option key={level}>{level}</option>)}
-      </select>
-    </label>;
+    return <div className="profile-native-field" onKeyDown={handleGlassMenuKey}><span>{label}</span>
+      <SelectMenu label={label} initial={value} width={200}
+        choices={[{ value: "", label: "Select proficiency" }, ...levels.map(level => ({ value: level, label: level }))]}
+        selectProps={{ "data-profile-field": name, "data-profile-type": type }} />
+    </div>;
   }
   if (type === "textarea" || type === "lines") {
     return <label className="profile-native-field profile-item-wide"><span>{label}</span>
