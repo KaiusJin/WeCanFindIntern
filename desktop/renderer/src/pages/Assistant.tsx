@@ -31,11 +31,11 @@ export function Assistant() {
                 <h2>What are you working on?</h2>
                 <div className="agent-suggestion-list">
                   {suggestions.map(([icon, label, prompt]) => (
-                    <button type="button" className="glass" key={icon} data-agent-prompt={prompt}>
+                    <GlassButton type="button" size="sm" key={icon} data-agent-prompt={prompt}>
                       <Icon name={icon} />
                       <span>{label}</span>
                       <Icon name="arrow-up-right" />
-                    </button>
+                    </GlassButton>
                   ))}
                 </div>
               </div>
@@ -54,9 +54,8 @@ export function Assistant() {
           <aside id="agent-job-detail-pane" className="assistant-side-panel assistant-job-reader" aria-label="Job details" hidden>
             <header className="assistant-panel-header">
               <h2>Job details</h2>
-              <button id="close-agent-job-detail" className="glass" type="button" aria-label="Close job details">
-                <Icon name="close" />
-              </button>
+              <GlassButton id="close-agent-job-detail" type="button" size="sm" variant="clear" aria-label="Close job details"
+                icon={<Icon name="close" />} />
             </header>
             <div id="agent-job-detail" className="job-detail-content" />
           </aside>
@@ -76,7 +75,7 @@ export function AssistantToolbar() {
           <Icon name="history" />
           <span>History</span>
         </summary>
-        <div className="conversation-history-menu glass">
+        <GlassCard className="conversation-history-menu" padding="10px" radius="20px">
           <h2>Recent conversations</h2>
           <div
             id="agent-session-list"
@@ -87,7 +86,7 @@ export function AssistantToolbar() {
               Loading conversations…
             </p>
           </div>
-        </div>
+        </GlassCard>
       </details>
       <GlassButton id="agent-memory-trigger" size="sm" icon={<Icon name="layers" />}
         title="Career Memory" aria-label="Career Memory" aria-expanded="false" aria-controls="agent-memory-dialog">

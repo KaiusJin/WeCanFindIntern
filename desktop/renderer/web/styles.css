@@ -531,19 +531,6 @@ main {
   font-weight: 700;
 }
 
-.icon-button {
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  font-size: 20px;
-  padding: 0;
-  cursor: pointer;
-}
-
-.icon-button:hover {
-  color: var(--accent);
-}
-
 .job-list {
   display: grid;
   gap: 12px;
@@ -684,17 +671,9 @@ main {
 /* Unified application message dialog */
 
 .dialog-close {
-  background: var(--surface-2);
-  border: 0;
-  border-radius: 50%;
-  color: var(--muted);
-  font-size: 24px;
-  height: 34px;
-  line-height: 1;
   position: absolute;
   right: 18px;
   top: 18px;
-  width: 34px;
 }
 
 .detail-location {
@@ -1519,12 +1498,6 @@ main {
   padding: 22px;
 }
 
-.eye-svg {
-  display: inline-block;
-  stroke: var(--muted);
-  transition: stroke 0.15s;
-}
-
 .field-hint {
   color: var(--muted);
   font-size: 11.5px;
@@ -1611,10 +1584,6 @@ main {
   padding: 7px 28px 7px 10px;
 }
 
-.tracker-bulk-bar[hidden] {
-  display: none !important;
-}
-
 .tracker-table-wrap {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1685,15 +1654,11 @@ main {
 
 .tracker-bulk-bar {
   align-items: center;
-  background: var(--action);
-  box-shadow: 0 4px 16px rgba(22, 66, 91, 0.15);
   display: flex;
   gap: 10px;
-  margin-bottom: 12px;
 }
 
 .tracker-bulk-bar strong {
-  color: var(--surface-2);
   font-size: 13px;
   font-weight: 650;
   margin-right: 4px;

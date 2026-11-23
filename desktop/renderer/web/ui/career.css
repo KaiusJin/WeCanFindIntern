@@ -81,7 +81,6 @@
 }
 
 [data-career-action] { display: contents; }
-[data-career-action] .lg-button[hidden] { display: none; }
 [data-career-action] .lg-button:disabled { cursor: default; }
 [data-career-action] .lg-button .icon { width: 16px; height: 16px; }
 .candidate-source-segments.lg-track--segmented {

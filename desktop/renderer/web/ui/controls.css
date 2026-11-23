@@ -4,6 +4,12 @@
   --control-edge: color-mix(in srgb, var(--line) 65%, var(--glass-edge));
   --control-depth: inset 0 1px 0 var(--glass-edge), 0 2px 6px color-mix(in srgb, var(--ink) 8%, transparent);
 }
+/* The library sets display on glass controls, which would override the hidden attribute. */
+.lg-glass[hidden] { display: none; }
+/* A button in a text field's trailing slot, such as show/hide password. */
+.lg-input__trailing:has(> .lg-button) { width: auto; height: auto; margin-right: -6px; }
+.lg-input__trailing > .lg-button { --lg-h: 32px; }
+
 button.control-glass, input.control-glass, select.control-glass, a.control-glass {
   border: 1px solid var(--control-edge); border-radius: 999px; color: var(--ink);
   background: linear-gradient(150deg, var(--glass-edge), transparent 45%), var(--control-fill);

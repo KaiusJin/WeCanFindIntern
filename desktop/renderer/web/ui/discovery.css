@@ -40,21 +40,9 @@
 
 .discovery-workspace .results-toolbar h2 { font-size: 19px; letter-spacing: -.035em; }
 .result-tally, .discovery-reset { color: var(--muted); font-size: 12px; }
-.discovery-reset { color: var(--accent); padding: 5px 10px; line-height: 1.25; }
-.discovery-reset[hidden] { display: none; }
 .discovery-workspace .results-meta { flex-wrap: wrap; gap: 5px; letter-spacing: 0; }
-.discovery-workspace .results-meta .icon-button {
-  display: grid;
-  place-items: center;
-  min-width: 30px;
-  min-height: 30px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  color: var(--muted);
-}
-
 .discovery-workspace .results-meta .icon { width: 15px; height: 15px; }
-.discovery-workspace .results-meta .icon-button:hover { color: var(--accent); }.discovery-workspace .job-card {
+.discovery-workspace .job-card {
   display: grid;
   grid-template-columns: var(--row-columns);
   align-items: center;
@@ -148,19 +136,7 @@
   background: transparent;
 }
 
-.discovery-workspace .job-detail-pane-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: auto;
-  min-height: 32px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font: 550 12px/1.25 var(--lg-font);
-}
 .discovery-workspace .job-detail-pane-close .icon { width: 13px; height: 13px; transform: rotate(180deg); }
-.discovery-workspace .job-detail-pane-close:hover { background: var(--surface-2); }
 .discovery-workspace .job-detail-content {
   margin-inline: auto;
   max-width: 78ch;
@@ -246,8 +222,8 @@
   margin: 0;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--glass-edge);
-  border-radius: 26px;
+  border: 0;
+  z-index: 120;
   color: var(--ink);
   transform: none;
   box-shadow: var(--popover-shadow);

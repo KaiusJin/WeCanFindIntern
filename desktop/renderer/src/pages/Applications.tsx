@@ -1,4 +1,4 @@
-import { GlassButton, GlassInput } from "@zakisheriff/liquid-glass";
+import { GlassButton, GlassCard, GlassInput } from "@zakisheriff/liquid-glass";
 import { useLayoutEffect, useRef, useState } from "react";
 import { ApplicationsSort } from "../features/applications/ApplicationsSort";
 import { ApplicationActions, ApplicationChoice, ApplicationForm, ApplicationRecord } from "../features/applications/ApplicationRecord";
@@ -98,7 +98,7 @@ export function ApplicationsContents() {
                     <h3>No applications found</h3>
                     <p>Try a broader search or add an application.</p>
                   </div>
-                  <div id="tracker-bulk-bar" className="tracker-bulk-bar glass" hidden>
+                  <GlassCard id="tracker-bulk-bar" className="tracker-bulk-bar" padding="6px 8px 6px 16px" radius="999px" hidden>
                     <strong>
                       <span id="tracker-selected-count">0</span> selected
                     </strong>
@@ -106,7 +106,7 @@ export function ApplicationsContents() {
                       choices={[{ value: "", label: "Move to…" }]} compact />
                     <GlassButton id="tracker-bulk-delete" size="sm" variant="tinted" destructive>Delete</GlassButton>
                     <GlassButton id="tracker-clear-selection" size="sm">Clear</GlassButton>
-                  </div>
+                  </GlassCard>
                 </div>
                 <div className="tracker-pagination">
                   <span id="tracker-page-summary" role="status"></span>

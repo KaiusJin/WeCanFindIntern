@@ -12,6 +12,8 @@
   <symbol id="chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   <symbol id="chevron-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
   <symbol id="building" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7h6m0 14V3h8v18M8 11v1m0 3v1m6-9h2m-2 4h2m-2 4h2"/></symbol>
+  <symbol id="eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="eye-off" viewBox="0 0 24 24"><path d="M17.9 17.9A10 10 0 0 1 12 19c-6.4 0-10-7-10-7a18 18 0 0 1 5-5.9M9.9 5.2A9 9 0 0 1 12 5c6.4 0 10 7 10 7a18 18 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M3 3l18 18"/></symbol>
   <symbol id="close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
   <symbol id="trash" viewBox="0 0 24 24"><path d="M3.5 7h17M8.5 7V5.25A1.25 1.25 0 0 1 9.75 4h4.5a1.25 1.25 0 0 1 1.25 1.25V7M6 7l1 13h10l1-13M10 11v5M14 11v5"/></symbol>
   <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6.5V12l3.5 2"/></symbol>

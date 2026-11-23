@@ -1,3 +1,4 @@
+import { setGlassQuality } from "@zakisheriff/liquid-glass";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { AppearanceControl, WindowToolbarControls } from "./layouts/AppChrome";
@@ -13,6 +14,12 @@ import { AssistantDialogContents } from "./pages/AssistantDialogs";
 import { mountDiscoveryControls } from "./features/discovery/mountDiscoveryControls";
 import { mountCareerControls } from "./features/career/CareerControls";
 import { FeedbackSheets } from "./components/FeedbackSheet";
+
+// Rest glass at its cheapest when the system asks for less transparency.
+const lessTransparency = matchMedia("(prefers-reduced-transparency: reduce)");
+const syncGlassQuality = () => setGlassQuality(lessTransparency.matches ? "low" : "auto");
+syncGlassQuality();
+lessTransparency.addEventListener("change", syncGlassQuality);
 
 // The existing DOM controllers bind listeners to these controls during main.js
 // initialization. Mount the controls before that module runs.

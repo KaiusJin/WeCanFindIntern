@@ -1,5 +1,6 @@
 import { CampusSyncActions } from "../features/discovery/CampusControls";
 import { JobFilters } from "../features/discovery/JobFilters";
+import { GlassButton } from "@zakisheriff/liquid-glass";
 import { Icon } from "../layouts/AppChrome";
 import { WaterlooSyncChoice } from "../features/discovery/DiscoveryControls";
 import { JobWorkspace } from "../features/discovery/JobBoard";
@@ -26,15 +27,8 @@ function SyncDialog() {
             </p>
           </div>
         </div>
-        <button
-          id="ww-close-sync-dialog"
-          popoverTarget="ww-sync-dialog" popoverTargetAction="hide"
-          className="dialog-close control-glass"
-          type="button"
-          aria-label="Close"
-        >
-          ×
-        </button>
+        <GlassButton id="ww-close-sync-dialog" popoverTarget="ww-sync-dialog" popoverTargetAction="hide"
+          className="dialog-close" type="button" size="sm" variant="clear" aria-label="Close" icon={<Icon name="close" />} />
       </div>
 
       <div className="settings-body ww-sync-dialog-body">

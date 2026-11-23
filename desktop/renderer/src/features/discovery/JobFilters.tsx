@@ -1,4 +1,4 @@
-import { GlassButton, GlassInput, GlassMenu, GlassSegmented, GlassSwitch } from "@zakisheriff/liquid-glass";
+import { GlassButton, GlassCard, GlassInput, GlassMenu, GlassSegmented, GlassSwitch } from "@zakisheriff/liquid-glass";
 import { useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { handleGlassMenuKey, focusGlassMenuTrigger } from "../../components/glass-menu-keyboard";
@@ -241,12 +241,12 @@ export function FilterControls({ waterlooWorks = false }: Board) {
 export function JobFilters({ waterlooWorks = false }: Board) {
   const prefix = waterlooWorks ? "ww-" : "";
   return (
-    <div popover="auto" role="dialog" data-workspace-popover={waterlooWorks ? "tab-waterlooworks" : "tab-jobs"}
-      id={prefix + "job-filters-sheet"} className="filters-panel filter-sheet glass"
+    <GlassCard popover="auto" role="dialog" data-workspace-popover={waterlooWorks ? "tab-waterlooworks" : "tab-jobs"}
+      id={prefix + "job-filters-sheet"} className="filters-panel filter-sheet" padding="0" radius="26px"
       aria-label={waterlooWorks ? "WaterlooWorks job filters" : "Public job filters"}>
       <div id={prefix + "filter-controls"} className="facet-panel">
         <FilterControls waterlooWorks={waterlooWorks} />
       </div>
-    </div>
+    </GlassCard>
   );
 }

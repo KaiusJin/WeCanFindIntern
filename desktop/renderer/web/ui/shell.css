@@ -149,16 +149,10 @@ dialog[open] { animation: pane-in var(--ease); }
 .preferences-pane { padding: 0; }
 .preferences-pane .field-label { display: block; font-size: 13px; font-weight: 560; text-transform: none; letter-spacing: normal; line-height: 18px; margin: 18px 0 8px; }.preferences-pane .lg-input { width: 100%; box-sizing: border-box; }
 .preferences-pane .field-hint { margin-left: 8px; }
-.preferences-pane .settings-key-field {
-  display: flex; align-items: center; min-height: 44px;
-}
-.preferences-pane .settings-key-field input {
-  flex: 1; min-width: 0; padding: 8px 16px; border: 0; background: transparent;
-  color: var(--ink); font-size: 14px;
-}
-.settings-key-field input:focus-visible { outline: 0; }
-.preferences-pane :is(.settings-key-field,.lg-input__field):focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
-.settings-key-field button { display: grid; place-items: center; background: transparent; border: 0; margin-right: 6px; width: 32px; height: 32px; border-radius: 50%; color: var(--muted); }
+.preferences-pane .lg-input__field:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* One button, two icons: the pressed state picks which one shows. */
+#toggle-key-visibility[aria-pressed="false"] .icon:last-child,
+#toggle-key-visibility[aria-pressed="true"] .icon:first-child { display: none; }
 .settings-dimensions { display: grid; grid-template-columns: 1fr 78px; align-items: center; gap: 0 14px; margin: 18px 0 9px; }
 .settings-dimensions .field-label { margin: 0 8px; }
 .settings-dimensions > input { width: 100%; box-sizing: border-box; padding: 4px 8px; color: var(--ink); border: 1px solid var(--line-strong);   font-variant-numeric: tabular-nums; }

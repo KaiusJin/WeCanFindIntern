@@ -50,8 +50,6 @@
   width: 295px;
   top: calc(100% + 6px);
   right: 0;
-  padding: 15px 8px 8px;
-  border-radius: 20px;
 }
 .conversation-history-menu h2, .conversation-list-status { font-size: 12px; font-weight: 530; margin: 0 8px 8px; color: var(--muted); }
 .conversation-list-status { margin-block: 12px; font-weight: 400; }
@@ -77,12 +75,7 @@
 .assistant-mark .icon { height: 32px; width: 32px; }
 .agent-welcome h2 { font: 400 clamp(31px, 4.2vw, 57px)/1.06 var(--font-sans); letter-spacing: -.055em; color: var(--ink); margin: 0 0 18px; }
 .agent-suggestion-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
-.agent-suggestion-list button {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 6px 11px;
-  border: 0; border-radius: 999px;
-  color: var(--ink); font-size: 12px;
-}
-.agent-suggestion-list button:hover { color: var(--accent); }
+.agent-suggestion-list .lg-button { --lg-h: 32px; gap: 6px; font-size: 12px; }
 .agent-suggestion-list .icon { width: 15px; height: 15px; color: var(--accent); }
 .agent-suggestion-list .icon:last-child { width: 10px; height: 10px; color: var(--muted); }
 .agent-main:has(.agent-welcome) { justify-content: center; }
@@ -157,7 +150,6 @@
 .assistant-panel-actions { display: flex; justify-content: flex-end; }
 .assistant-job-reader .job-detail-content { overflow: auto; min-height: 0; overscroll-behavior: contain; }
 .assistant-job-reader .detail-description { max-height: none; overflow: visible; }
-.assistant-job-reader .assistant-panel-header button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; color: var(--ink); }
 .agent-approval-actions button.glass { min-height: 34px; padding: 6px 14px; border: 0; border-radius: 999px; color: var(--ink); }
 .agent-approval-actions [data-agent-approve] { color: var(--accent); }
 :is(.agent-attach-result-action, .agent-memory-delete, .agent-session-delete, .agent-job-card-tools button).glass {
