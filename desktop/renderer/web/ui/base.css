@@ -163,7 +163,7 @@ html:has(dialog[open]), body:has(dialog[open]) {
   display: none !important;
 }
 
-.career-card, .profile-editor-panel, .tracker-table-wrap, .agent-main, .agent-recommendation-card {
+.career-card, .profile-editor-panel, .agent-main, .agent-recommendation-card {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
@@ -208,7 +208,7 @@ html:has(dialog[open]), body:has(dialog[open]) {
   border-radius: 8px;
 }
 
-.career-card, .profile-editor-panel, .tracker-table-wrap, .agent-main {
+.career-card, .profile-editor-panel, .agent-main {
   border-color: var(--line);
   border-radius: 11px;
   box-shadow: var(--shadow);

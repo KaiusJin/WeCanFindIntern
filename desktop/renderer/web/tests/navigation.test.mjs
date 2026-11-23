@@ -110,7 +110,7 @@ test("focus rings are limited to keyboard navigation targets", () => {
     stylesSource,
     /button:focus-visible,\s*a:focus-visible,\s*input:focus-visible,\s*select:focus-visible,\s*textarea:focus-visible/,
   );
-  assert.match(stylesSource, /\.tracker-inline-date:focus\s*\{[\s\S]*?outline:\s*0;/);
+  assert.match(stylesSource, /\.tracker-inline-date:(?:focus|is\(:hover, :focus\))\s*\{[^}]*outline:\s*0;/);
 });
 
 test("Profile exposes explicit resume imports without JSON export", () => {
