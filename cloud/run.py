@@ -12,7 +12,7 @@ import psycopg
 
 from cloud.campaign import run
 from cloud.config import DEFAULT_PLAN_PATH
-from cloud.ops.report import publish_ops, redact, write_step_summary
+from cloud.ops.report import assess, publish_ops, redact, write_step_summary
 from cloud.ops.stats import collect_db_stats
 from cloud.publish.feed import publish, r2_from_env
 from cloud.storage.checkpoint import QueryCheckpoint
@@ -62,6 +62,7 @@ def main(argv=None):
                 report["database"] = collect_db_stats(db, run_started_at)
             except Exception as error:  # monitoring must never fail the run
                 report["database_error"] = f"{type(error).__name__}: {error}"[:300]
+            report["checks"] = assess(report)
             write_step_summary(report)
             publish_ops(store, report)
 

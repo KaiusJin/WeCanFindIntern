@@ -135,6 +135,8 @@ def collect_ats_jobs(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
     rotation_seed: int | None = None,
+    progress: Callable[[str], None] | None = None,
+    progress_every: float = 60.0,
 ) -> AtsCollection:
     """Fetch boards with one worker pool per API host.
 
@@ -142,7 +144,8 @@ def collect_ats_jobs(
     ``concurrency`` workers, so a throttled host only slows itself. The board
     order is rotated per run (``rotation_seed``, default: the current hour) so
     boards cut off by the deadline are reached first on a later run. A board
-    that fails is reported, never fatal.
+    that fails is reported, never fatal. ``progress`` receives a status line at
+    most every ``progress_every`` seconds, so a long shard is visible in its log.
     """
     scope = dataclasses.replace(scope or Scope(), deadline=deadline, clock=clock)
     if session_factory is None:
@@ -169,10 +172,35 @@ def collect_ats_jobs(
     result = AtsCollection(jobs=[])
     seen: dict[str, NormalizedJob] = {}
     lock = threading.Lock()
+    totals = {key: len(queue) for key, queue in queues.items()}
+    done: Counter[str] = Counter()
+    started = last_progress = clock()
+
+    def report_progress() -> None:
+        nonlocal last_progress
+        if progress is None or clock() - last_progress < progress_every:
+            return
+        last_progress = clock()
+        stats = result.stats
+        behind = sorted(
+            (key for key in totals if done[key] < totals[key]),
+            key=lambda key: done[key] - totals[key],
+        )
+        hosts = ", ".join(f"{key.split(':')[-1]} {done[key]}/{totals[key]}" for key in behind[:4])
+        progress(
+            f"ATS progress {(last_progress - started) / 60:.0f} min: "
+            f"{sum(done.values())}/{sum(totals.values())} boards "
+            f"(ok={stats['boards_ok']}, missing={stats['boards_missing']}, "
+            f"failed={stats['boards_failed']}, "
+            f"skipped_deadline={stats['boards_skipped_deadline']}), "
+            f"{len(seen)} jobs, {stats['rate_limited']} 429 cooldowns"
+            + (f"; unfinished hosts: {hosts}" if hosts else "")
+        )
 
     def record(board: Board, outcome: BoardResult | None, error: Exception | None) -> None:
         label = f"{board.provider}:{board.token}"
         with lock:
+            done[host_key(board)] += 1
             if isinstance(error, _DeadlineReached):
                 result.stats["boards_skipped_deadline"] += 1
             elif error is not None:
@@ -190,6 +218,7 @@ def collect_ats_jobs(
                 for job in outcome.jobs:
                     seen[job.source_fingerprint] = job
                     result.stats[f"{board.provider}_jobs_kept"] += 1
+            report_progress()
 
     def worker(key: str, queue: deque[Board]) -> None:
         get = _http_getter(

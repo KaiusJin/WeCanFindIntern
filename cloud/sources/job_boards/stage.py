@@ -99,9 +99,18 @@ async def discover_boards(
 
 
 async def poll_boards(
-    boards: list[Board], scope: AtsScope, *, concurrency: int, budget_seconds: float
+    boards: list[Board],
+    scope: AtsScope,
+    *,
+    concurrency: int,
+    budget_seconds: float,
+    failures: list[str] | None = None,
 ) -> tuple[list[NormalizedJob], dict[str, int]]:
-    """Poll the given boards until the budget runs out; failures are counted, not raised."""
+    """Poll the given boards until the budget runs out; failures are counted, not raised.
+
+    Failed boards and the boards left unpolled at the deadline are appended to
+    ``failures`` (soft failures on the ops page) when a list is given.
+    """
     started = time.monotonic()
     collection = await asyncio.to_thread(
         collect_ats_jobs,
@@ -109,6 +118,7 @@ async def poll_boards(
         scope=scope,
         concurrency=concurrency,
         deadline=started + budget_seconds,
+        progress=log,
     )
     stats = {f"ats_{key}": int(value) for key, value in collection.stats.items()}
     stats["ats_boards"] = len(boards)
@@ -120,8 +130,17 @@ async def poll_boards(
         f"failed={stats.get('ats_boards_failed', 0)}, "
         f"skipped_deadline={stats.get('ats_boards_skipped_deadline', 0)})"
     )
-    for failure in collection.failed_boards[:20]:
+    for failure in collection.failed_boards[:50]:
         log(f"ATS board failed: {failure}", "WARN")
+    skipped = stats.get("ats_boards_skipped_deadline", 0)
+    if skipped:
+        log(f"ATS budget of {budget_seconds:.0f}s ran out: {skipped} boards never polled", "WARN")
+    if failures is not None:
+        failures.extend(f"ATS board failed: {failure}" for failure in collection.failed_boards)
+        if skipped:
+            failures.append(
+                f"ATS budget ran out: {skipped}/{len(boards)} boards never polled this run"
+            )
     return collection.jobs, stats
 
 

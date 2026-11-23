@@ -422,6 +422,10 @@ jobs:
     if: ${{ always() && needs.merge.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      # Read the other jobs' logs of this run for the ops page.
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -456,13 +460,15 @@ jobs:
         # bash (not the default sh) gives pipefail, so a failed run still fails the step.
         shell: bash
         run: python -u -m cloud.run --from-artifacts artifacts 2>&1 | tee run.log
-      - name: Upload run log for the ops page
+      - name: Upload run and job logs for the ops page
         if: ${{ always() }}
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
           R2_ENDPOINT_URL: ${{ vars.R2_ENDPOINT_URL }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         # DATABASE_URL is only listed so its value is redacted from the uploaded log.
-        run: test -f run.log && python -m cloud.ops.report upload-log run.log || true
+        # Uploads run.log (if any) plus every finished job's log and an index.
+        run: python -m cloud.ops.report upload-log run.log || true

@@ -400,6 +400,7 @@ def collect(
                 scope,
                 concurrency=int(settings["concurrency"]),
                 budget_seconds=budget,
+                failures=failures,
             )
         )
     else:
@@ -412,6 +413,8 @@ def collect(
         "kind": kind,
         "jobs": len(jobs),
         "seconds": round(time.monotonic() - started),
+        # Indeed has no deadline; every other shard stops polling at its budget.
+        "budget_seconds": None if kind == "indeed" else round(budget),
         "stats": {key: int(value) for key, value in stats.items()},
         "failures": failures,
     }
@@ -472,7 +475,12 @@ def gather_artifacts(root: Path) -> Collected:
             "kind": result["kind"],
             "jobs": result["jobs"],
             "seconds": result["seconds"],
+            "budget_seconds": result.get("budget_seconds"),
             "failures": len(result.get("failures") or []),
+            # The shard's own counters and failure messages; query_stats only
+            # keeps the sums and ``failures`` the full list.
+            "stats": result.get("stats") or {},
+            "failure_samples": [str(f)[:300] for f in (result.get("failures") or [])[:25]],
         }
     listings: list[SimplifyListing] = []
     if discover_data is not None:
@@ -483,9 +491,14 @@ def gather_artifacts(root: Path) -> Collected:
         ]
         shards["discover"] = {
             "kind": "discover",
-            "jobs": None,
+            "jobs": len(listings),
             "seconds": discover_data.get("seconds"),
             "failures": 0,
+            "stats": {
+                k: v
+                for k, v in (discover_data.get("stats") or {}).items()
+                if not k.startswith("stapply_kept_")
+            },
         }
     else:
         failures.append("discover: artifact missing (SimplifyJobs/Stapply/boards skipped)")
@@ -608,6 +621,7 @@ def assemble_publish_inputs(root: Path) -> PublishInputs:
             "jobs": len(fill),
             "seconds": gapfill.get("seconds"),
             "failures": 0,
+            "stats": gapfill.get("stats") or {},
         }
     else:
         from cloud.ops.monitor import build_source_monitor
@@ -626,6 +640,8 @@ def assemble_publish_inputs(root: Path) -> PublishInputs:
             "missing": True,
         }
     monitor["shards"] = dict(sorted(shards.items()))
+    # When the plan job started: the run's end-to-end duration on the ops page.
+    monitor["started_at"] = (summary.get("plan") or {}).get("created_at")
     return PublishInputs(
         jobs=[*jobs, *fill],
         failures=failures,

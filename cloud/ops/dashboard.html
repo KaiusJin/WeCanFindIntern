@@ -7,161 +7,564 @@
 <title>Collector Ops</title>
 <style>
   :root {
-    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e4e4df; --bar: #dfe8fb;
-    --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030; --accent: #2f6fdb;
+    --bg: #f6f6f3; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e4e4df; --soft: #eef2fb;
+    --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030; --accent: #2f6fdb; --info: #64748b;
+    --ok-bg: #e8f5ee; --warn-bg: #fdf3e1; --bad-bg: #fdecec;
     --series: #2f6fdb, #1f8a4c, #b7791f, #8b5cf6, #c53030, #0e9aa7, #d946ef, #64748b, #ea580c;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #141413; --panel: #1d1d1b; --ink: #ecece8; --muted: #9b9b94; --line: #2f2f2c; --bar: #24324d;
-      --ok: #48bb78; --warn: #ecc94b; --bad: #fc8181; --accent: #7aa7ff;
+      --bg: #141413; --panel: #1d1d1b; --ink: #ecece8; --muted: #9b9b94; --line: #2f2f2c; --soft: #24324d;
+      --ok: #48bb78; --warn: #ecc94b; --bad: #fc8181; --accent: #7aa7ff; --info: #94a3b8;
+      --ok-bg: #16301f; --warn-bg: #3a2f12; --bad-bg: #3d1a1a;
       --series: #7aa7ff, #48bb78, #ecc94b, #a78bfa, #fc8181, #2dd4bf, #f0abfc, #94a3b8, #fb923c;
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
          font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 1160px; margin: 0 auto; padding: 24px 16px 48px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
   a { color: var(--accent); }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  h2 { font-size: 15px; margin: 28px 0 10px; }
-  nav { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 13px; }
-  .muted { color: var(--muted); }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 16px; }
-  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 24px 0 10px; }
+  .muted { color: var(--muted); } .err { color: var(--bad); } .warn { color: var(--warn); } .okc { color: var(--ok); }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+  .runbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+  select, button, input { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+                          border-radius: 8px; padding: 5px 9px; max-width: 100%; }
+  button { cursor: pointer; } button:disabled { opacity: .4; cursor: default; }
+  .banner { margin-top: 14px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+            display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
+  .banner .big { font-size: 16px; font-weight: 600; }
+  .banner.error { background: var(--bad-bg); border-color: transparent; }
+  .banner.warn { background: var(--warn-bg); border-color: transparent; }
+  .banner.ok { background: var(--ok-bg); border-color: transparent; }
+  .links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+  .tabs { display: flex; gap: 2px; margin-top: 16px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px;
+                 color: var(--muted); white-space: nowrap; }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .tabs .count { font-size: 11px; padding: 0 6px; border-radius: 9px; margin-left: 4px; background: var(--line); color: var(--ink); }
+  .tabs .count.error { background: var(--bad); color: #fff; } .tabs .count.warn { background: var(--warn); color: #fff; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
   .tile .label { color: var(--muted); font-size: 12px; }
-  .tile .value { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+  .tile .value { font-size: 21px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tile .delta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; min-width: 0; }
   .panel h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 500; }
+  .panel + .panel { margin-top: 12px; } .grid .panel + .panel { margin-top: 0; }
   table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; position: sticky; top: 0; background: var(--panel); }
   td.num, th.num { text-align: right; }
+  td.wrap { white-space: normal; min-width: 220px; }
+  tr.sub td { background: var(--bg); }
+  tr.click { cursor: pointer; } tr.click:hover td { background: var(--soft); }
+  tr.selected td { background: var(--soft); }
   .bars td.bar { width: 55%; }
-  .bars .fill { height: 10px; border-radius: 3px; background: var(--accent); min-width: 2px; }
-  .status { font-weight: 600; }
-  .status.success { color: var(--ok); } .status.partial { color: var(--warn); }
-  .status.failed, .status.error { color: var(--bad); }
+  .fill { height: 10px; border-radius: 3px; background: var(--accent); min-width: 2px; }
+  .meter { position: relative; height: 8px; width: 90px; border-radius: 4px; background: var(--line); display: inline-block; vertical-align: middle; margin-left: 6px; }
+  .meter i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
+  .meter.full i { background: var(--warn); }
+  .pill { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--line); }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .pill.error { background: var(--bad-bg); color: var(--bad); } .pill.info { color: var(--info); }
+  .checks { list-style: none; margin: 0; padding: 0; }
+  .checks li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .checks li:last-child { border-bottom: 0; }
+  .checks .detail { margin: 4px 0 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  details { margin-top: 6px; } summary { cursor: pointer; color: var(--muted); }
+  ul.plain { margin: 6px 0 0; padding-left: 18px; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .flow .step { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  .flow .step b { font-variant-numeric: tabular-nums; }
+  .flow .arrow { color: var(--muted); }
+  td.wrap summary { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   svg { display: block; width: 100%; height: auto; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 12px; color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-  details { margin-top: 8px; } summary { cursor: pointer; color: var(--muted); }
-  ul.plain { margin: 6px 0 0; padding-left: 18px; }
-  .err { color: var(--bad); }
-  .runbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
-  .runbar select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
-                   border-radius: 8px; padding: 6px 8px; max-width: 100%; }
-  .runbar button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
-                   border-radius: 8px; padding: 6px 10px; cursor: pointer; }
-  .runbar button:disabled { opacity: .4; cursor: default; }
-  #history tbody tr { cursor: pointer; }
-  #history tbody tr:hover { background: var(--bg); }
-  #history tbody tr.selected { background: var(--bar); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  pre.log { margin: 0; max-height: 70vh; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+            background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; }
+  pre.log .e { color: var(--bad); } pre.log .w { color: var(--warn); } pre.log .r { color: var(--accent); }
+  pre.log .ts { color: var(--muted); }
   .empty { margin-top: 24px; padding: 28px 18px; text-align: center; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Collector Ops</h1>
-  <div class="muted" id="subtitle">Loading…</div>
-  <div class="panel empty muted" id="empty" hidden>
-    No collection runs recorded yet. This page fills in after the first run of the
-    “Public job feed” workflow.
-  </div>
-  <div id="content" hidden>
-    <div class="runbar">
-      <button id="newer" title="Newer run">‹ Newer</button>
+  <header>
+    <h1>Collector Ops</h1>
+    <div class="runbar" id="runbar" hidden>
+      <button id="newer" title="Newer run">‹</button>
       <select id="runSelect" aria-label="Run"></select>
-      <button id="older" title="Older run">Older ›</button>
-      <span class="muted" id="runNote"></span>
+      <button id="older" title="Older run">›</button>
     </div>
-    <nav id="links"></nav>
-    <div class="tiles" id="tiles"></div>
+  </header>
+  <div class="muted" id="loading">Loading…</div>
+  <div class="panel empty muted" id="empty" hidden>
+    No collection runs recorded yet. This page fills in after the first run of the “Public job feed” workflow.
+  </div>
 
-    <h2>Trends (all runs; dashed line = selected run)</h2>
-    <div class="grid">
-      <div class="panel"><h3>Live jobs in database</h3><div id="liveChart"></div></div>
-      <div class="panel"><h3>New and archived jobs per run</h3><div id="newChart"></div></div>
-      <div class="panel"><h3>Jobs collected per collector</h3><div id="sourceChart"></div><div class="legend" id="sourceLegend"></div></div>
-      <div class="panel"><h3>Live jobs by opportunity type</h3><div id="typeChart"></div><div class="legend" id="typeLegend"></div></div>
-      <div class="panel"><h3>SimplifyJobs coverage</h3><div id="recallChart"></div></div>
-      <div class="panel"><h3>Run duration (minutes)</h3><div id="durationChart"></div></div>
-      <div class="panel"><h3>Database size (MiB, warn at 400)</h3><div id="sizeChart"></div></div>
-    </div>
+  <div id="content" hidden>
+    <div class="banner" id="banner"></div>
+    <nav class="tabs" id="tabs"></nav>
 
-    <div id="details">
-      <h2>Sources (selected run)</h2>
-      <div class="grid">
-        <div class="panel"><h3>Collectors this run</h3><table id="collectors"></table></div>
-        <div class="panel"><h3>Database by source</h3><table id="dbSources"></table></div>
-        <div class="panel"><h3>Parallel shards (GitHub Actions jobs)</h3><table id="shards"></table></div>
+    <!-- Overview -->
+    <section data-tab="overview">
+      <h2>This run</h2>
+      <div class="tiles" id="tiles"></div>
+      <h2>Checks</h2>
+      <div class="panel"><ul class="checks" id="checks"></ul></div>
+      <h2>Publish pipeline</h2>
+      <div class="panel"><div class="flow" id="flow"></div></div>
+      <h2>Sources</h2>
+      <div class="panel"><h3>Jobs, run time, 429s and failures per source (all its shards combined; click for details)</h3><table id="sourceSummary"></table></div>
+      <div class="panel"><h3>Enrichment and timing</h3><table id="enrich"></table></div>
+    </section>
+
+    <!-- Sources -->
+    <section data-tab="sources" hidden>
+      <h2>Every step of the run</h2>
+      <div class="panel">
+        <div class="toolbar">
+          <select id="shardKind" aria-label="Source"><option value="">All sources</option></select>
+          <label class="muted"><input type="checkbox" id="shardProblems"> Only steps with problems</label>
+          <span class="muted" id="shardNote"></span>
+        </div>
+        <table id="shards"></table>
       </div>
+      <div class="grid" style="margin-top:12px">
+        <div class="panel"><h3>Jobs by collector (before / after SimplifyJobs gap fill)</h3><table id="collectors"></table></div>
+        <div class="panel"><h3>Database by source</h3><table id="dbSources"></table></div>
+      </div>
+      <div class="grid" style="margin-top:12px">
+        <div class="panel"><h3>ATS boards by provider</h3><table id="providers"></table></div>
+        <div class="panel"><h3>Discovery (SimplifyJobs, Stapply)</h3><table id="discovery"></table></div>
+      </div>
+      <h2>Failure messages</h2>
+      <div class="panel"><ul class="plain" id="failures"></ul></div>
+    </section>
 
-      <h2>Database breakdown (live jobs after the selected run)</h2>
+    <!-- Data -->
+    <section data-tab="data" hidden>
+      <h2>Live jobs after this run</h2>
       <div class="grid" id="breakdowns"></div>
-
-      <h2>Data quality (live jobs after the selected run)</h2>
+      <h2>Data quality</h2>
       <div class="grid">
         <div class="panel"><table id="quality"></table></div>
         <div class="panel"><h3>Largest tables</h3><table id="tables"></table></div>
       </div>
+    </section>
 
-      <h2>Coverage by platform (selected run)</h2>
-      <div class="panel"><table id="platforms"></table>
-        <details><summary>Missed listings sample</summary><ul class="plain" id="misses"></ul></details>
+    <!-- Coverage -->
+    <section data-tab="coverage" hidden>
+      <h2>SimplifyJobs coverage (before gap fill)</h2>
+      <div class="grid">
+        <div class="panel"><h3>By platform</h3><table id="platforms"></table></div>
+        <div class="panel"><h3>Gap-fill descriptions by platform</h3><table id="gapfill"></table></div>
       </div>
+      <div class="panel" style="margin-top:12px"><h3>Missed listings sample</h3><ul class="plain" id="misses"></ul></div>
+    </section>
 
-      <h2>Health (selected run)</h2>
-      <div class="panel"><table id="health"></table>
-        <details><summary>Failures</summary><ul class="plain" id="failures"></ul></details>
+    <!-- Logs -->
+    <section data-tab="logs" hidden>
+      <h2>Job logs</h2>
+      <div class="panel">
+        <div class="toolbar">
+          <input id="jobFilter" placeholder="Filter jobs…" aria-label="Filter jobs">
+          <span class="muted" id="logsNote"></span>
+        </div>
+        <table id="jobs"></table>
       </div>
-    </div>
+      <div class="panel" id="viewer" hidden>
+        <div class="toolbar">
+          <strong id="viewerTitle"></strong>
+          <select id="logLevel" aria-label="Lines">
+            <option value="all">All lines</option>
+            <option value="problems">Warnings and errors</option>
+            <option value="errors">Errors only</option>
+            <option value="rate">Rate limits (429)</option>
+          </select>
+          <input id="logSearch" placeholder="Search…" aria-label="Search log">
+          <span class="muted" id="viewerNote"></span>
+          <a id="viewerDownload" download>Download</a>
+        </div>
+        <pre class="log" id="logText"></pre>
+      </div>
+    </section>
 
-    <h2>Run history (click a row to inspect it)</h2>
-    <div class="panel"><table id="history"></table></div>
+    <!-- Trends -->
+    <section data-tab="trends" hidden>
+      <h2>Trends (dashed line = selected run)</h2>
+      <div class="grid">
+        <div class="panel"><h3>Jobs in database (live, total) and feed</h3><div id="liveChart"></div><div class="legend" id="liveLegend"></div></div>
+        <div class="panel"><h3>New and archived jobs per run</h3><div id="newChart"></div><div class="legend" id="newLegend"></div></div>
+        <div class="panel"><h3>Jobs collected per collector</h3><div id="sourceChart"></div><div class="legend" id="sourceLegend"></div></div>
+        <div class="panel"><h3>ATS boards never polled, and 429 cooldowns</h3><div id="skipChart"></div><div class="legend" id="skipLegend"></div></div>
+        <div class="panel"><h3>SimplifyJobs coverage</h3><div id="recallChart"></div></div>
+        <div class="panel"><h3>Run duration (minutes)</h3><div id="durationChart"></div></div>
+        <div class="panel"><h3>Live jobs by opportunity type</h3><div id="typeChart"></div><div class="legend" id="typeLegend"></div></div>
+        <div class="panel"><h3>Database size (MiB, warn at 400)</h3><div id="sizeChart"></div></div>
+      </div>
+      <h2>Run history (click a row to inspect it)</h2>
+      <div class="panel"><table id="history"></table></div>
+    </section>
   </div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const pct = (v) => v == null ? "–" : `${(v * 100).toFixed(0)}%`;
+const pct = (v) => v == null || !isFinite(v) ? "–" : `${(v * 100).toFixed(0)}%`;
 const num = (v) => v == null ? "–" : Number(v).toLocaleString();
 const when = (s) => s ? new Date(s).toLocaleString() : "–";
+const dur = (s) => s == null ? "–" : s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`;
+const mib = (b) => b == null ? "–" : `${Math.round(b / 1048576).toLocaleString()} MiB`;
 const palette = () => getComputedStyle(document.documentElement).getPropertyValue("--series").split(",").map((s) => s.trim());
-// Report, log and run keys are bucket paths ("ops/..."); this page lives in ops/.
-const rel = (key) => key ? key.replace(/^ops\//, "") : null;
+const rel = (key) => key ? key.replace(/^ops\//, "") : null;  // keys are bucket paths; this page lives in ops/
+const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const sum = (...xs) => xs.reduce((a, b) => a + (Number(b) || 0), 0);
+const DB_WARN_BYTES = 400 * 1048576;  // Supabase free tier: 500 MB per project
 const LABELS = { co_op: "co-op", new_grad: "new grad", job_category: "Title category", opportunity_type: "Opportunity type",
   country: "Country", work_mode: "Work mode", recruiting_term: "Recruiting term", subcategory_top: "Top subcategories",
   new_by_opportunity_type: "New this run by type" };
-const mib = (b) => b == null ? "–" : `${Math.round(b / 1048576).toLocaleString()} MiB`;
-// Supabase free tier: 500 MB per project. Warn well before it.
-const DB_WARN_BYTES = 400 * 1048576;
 const label = (k) => LABELS[k] ?? String(k).replaceAll("_", " ");
+const SOURCE_ORDER = ["discover", "indeed", "linkedin", "linkedin-details", "boards", "workday", "merge", "simplify-gap-fill"];
+const SOURCE_NAMES = { discover: "Discover (SimplifyJobs + Stapply)", indeed: "Indeed", linkedin: "LinkedIn", "linkedin-details": "LinkedIn JD retry",
+  boards: "Greenhouse / Lever / Ashby", workday: "Workday", merge: "Merge", "simplify-gap-fill": "SimplifyJobs gap fill" };
 
-let runHistory = [];
-let selected = 0;
-const reports = new Map();
+let runHistory = [], selected = 0, tab = "overview", current = null;
+const cache = new Map();
 
-function table(el, head, rows) {
-  el.innerHTML = `<thead><tr>${head.map(([h, n]) => `<th class="${n ? "num" : ""}">${esc(h)}</th>`).join("")}</tr></thead>` +
-    `<tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td class="${head[i][1] ? "num" : ""}">${c}</td>`).join("")}</tr>`).join("")}</tbody>`;
+async function load(name, asText = false) {
+  const res = await fetch(`${name}${name.includes("?") ? "&" : "?"}t=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) { const e = new Error(`${name}: HTTP ${res.status}`); e.status = res.status; throw e; }
+  return asText ? res.text() : res.json();
 }
+function cached(key, asText = false) {
+  if (!cache.has(key)) cache.set(key, load(key, asText).catch(() => null));
+  return cache.get(key);
+}
+
+function table(el, head, rows, { rowAttrs = () => "" } = {}) {
+  if (!rows.length) { el.innerHTML = `<tbody><tr><td class="muted">No data for this run.</td></tr></tbody>`; return; }
+  el.innerHTML = `<thead><tr>${head.map(([h, n]) => `<th class="${n === 1 ? "num" : ""}">${esc(h)}</th>`).join("")}</tr></thead>` +
+    `<tbody>${rows.map((r, i) => `<tr ${rowAttrs(i)}>${r.map((c, j) => `<td class="${head[j]?.[1] === 1 ? "num" : head[j]?.[1] === "wrap" ? "wrap" : ""}">${c ?? "–"}</td>`).join("")}</tr>`).join("")}</tbody>`;
+}
+const pill = (level, text) => `<span class="pill ${level}">${esc(text)}</span>`;
 
 function bars(title, counts) {
   const entries = Object.entries(counts || {});
   if (!entries.length) return "";
-  const max = Math.max(...entries.map(([, v]) => v), 1);
-  const total = entries.reduce((s, [, v]) => s + v, 0);
+  const max = Math.max(...entries.map(([, v]) => v), 1), total = sum(...entries.map(([, v]) => v));
   const rows = entries.map(([k, v]) => `<tr><td>${esc(label(k))}</td><td class="bar"><div class="fill" style="width:${(100 * v / max).toFixed(1)}%"></div></td>` +
     `<td class="num">${num(v)}</td><td class="num muted">${pct(v / total)}</td></tr>`).join("");
   return `<div class="panel"><h3>${esc(label(title))}</h3><table class="bars">${rows}</table></div>`;
 }
 
+// ------------------------------------------------------------------ shard metrics
+
+function shardInfo(name, s) {
+  const st = s.stats || {};
+  const kind = s.kind || name.split("-")[0];
+  const waits = sum(st.ats_rate_limited, st.linkedin_rate_limit_waits, st.linkedin_detail_rate_limit_waits,
+    st.linkedin_retry_detail_rate_limit_waits, st.indeed_rate_limit_waits);
+  const skipped = sum(st.ats_boards_skipped_deadline, st.linkedin_unfinished, st.linkedin_detail_unfinished,
+    st.linkedin_retry_detail_unfinished, st.skipped);
+  const failedPages = sum(st.ats_boards_failed, st.failed, st.linkedin_detail_failed, st.linkedin_retry_detail_failed,
+    st.simplify_detail_requested != null ? st.simplify_detail_requested - (st.simplify_detail_found || 0) : 0);
+  const work = [];
+  if (st.ats_boards != null) {
+    work.push(`boards ${num(st.ats_boards_ok)}/${num(st.ats_boards)} ok`);
+    if (st.ats_boards_skipped_deadline) work.push(`<span class="err">${num(st.ats_boards_skipped_deadline)} never polled</span>`);
+    if (st.ats_boards_failed) work.push(`<span class="warn">${num(st.ats_boards_failed)} failed</span>`);
+    if (st.ats_boards_missing) work.push(`${num(st.ats_boards_missing)} gone`);
+    if (st.ats_boards_truncated) work.push(`${num(st.ats_boards_truncated)} truncated`);
+    const listed = sum(...Object.entries(st).filter(([k]) => /^ats_.*_postings_listed$/.test(k)).map(([, v]) => v));
+    if (listed) work.push(`${num(listed)} postings scanned`);
+  }
+  if (st.succeeded != null || st.failed != null) {
+    work.push(`queries ${num(st.succeeded)} ok` + (st.failed ? ` · <span class="warn">${num(st.failed)} failed</span>` : "") +
+      (st.skipped ? ` · ${num(st.skipped)} skipped` : "") + (st.retried ? ` · ${num(st.retried)} retried` : ""));
+  }
+  if (st.linkedin_discarded_seen) work.push(`${num(st.linkedin_discarded_seen)} already seen (24 h)`);
+  const jd = (p) => st[`${p}_fetched`] != null ? `JD ${num(st[`${p}_fetched`])} fetched` +
+    (st[`${p}_failed`] ? ` · <span class="warn">${num(st[`${p}_failed`])} failed</span>` : "") +
+    (st[`${p}_unfinished`] ? ` · <span class="warn">${num(st[`${p}_unfinished`])} unfinished</span>` : "") : null;
+  [jd("linkedin_detail"), st.linkedin_retry_pending != null ? `retry ${num(st.linkedin_retry_pending)} pending` : null,
+   jd("linkedin_retry_detail")].filter(Boolean).forEach((x) => work.push(x));
+  if (st.simplify_detail_requested != null) work.push(`JD ${num(st.simplify_detail_found)}/${num(st.simplify_detail_requested)} found`);
+  if (kind === "discover") {
+    if (st.simplify_active_in_scope != null) work.push(`${num(st.simplify_active_in_scope)} Simplify listings`);
+    if (st.stapply_jobs_kept != null) work.push(`${num(st.stapply_jobs_kept)} Stapply jobs`);
+    if (st.stapply_failed) work.push('<span class="err">Stapply unavailable</span>');
+    if (st.simplify_failed) work.push('<span class="err">SimplifyJobs unavailable</span>');
+  }
+  const atBudget = s.budget_seconds && s.seconds >= 0.97 * s.budget_seconds;
+  let level = "ok", status = "ok";
+  if (s.missing) { level = "error"; status = "no artifact"; }
+  else if (st.ats_boards_skipped_deadline || st.linkedin_unfinished) { level = "error"; status = "cut off"; }
+  else if (atBudget) { level = "warn"; status = "at budget"; }
+  else if (s.failures || failedPages) { level = "warn"; status = "failures"; }
+  return { name, kind, s, st, waits, skipped, failedPages, work, atBudget, level, status };
+}
+
+function shardRows(shards) {
+  return Object.entries(shards || {}).map(([n, s]) => shardInfo(n, s))
+    .sort((a, b) => (SOURCE_ORDER.indexOf(a.kind) - SOURCE_ORDER.indexOf(b.kind)) || a.name.localeCompare(b.name));
+}
+
+// ------------------------------------------------------------------ overview
+
+function delta(now, prev, invert = false) {
+  if (now == null || prev == null) return "";
+  const d = now - prev;
+  if (!d) return `<div class="delta">±0 vs previous</div>`;
+  const good = invert ? d < 0 : d > 0;
+  return `<div class="delta ${good ? "okc" : ""}">${d > 0 ? "+" : ""}${num(d)} vs previous</div>`;
+}
+
+function renderBanner(r, row) {
+  const checks = r.checks || [];
+  const errors = checks.filter((c) => c.level === "error").length, warns = checks.filter((c) => c.level === "warn").length;
+  const failed = ["failed", "error"].includes(row.status);
+  const level = failed || errors ? "error" : warns ? "warn" : "ok";
+  const headline = failed ? "Run failed" : errors ? `Published, but ${errors} problem${errors > 1 ? "s need" : " needs"} attention`
+    : warns ? `Published with ${warns} warning${warns > 1 ? "s" : ""}` : "Healthy run";
+  const run = r.run || { url: row.run_url, log_key: row.log_key };
+  const q = r.query_stats || {};
+  $("banner").className = `banner ${level}`;
+  $("banner").innerHTML = `<span class="big">${esc(headline)}</span>` +
+    `<span class="muted">finished ${esc(when(row.at))} · GitHub status <b>${esc(row.status)}</b> · ran ${dur(row.duration_s ?? r.duration_seconds)}` +
+    (row.publish_s && row.publish_s !== row.duration_s ? ` (publish ${dur(row.publish_s)})` : "") +
+    (q.sweep_number ? ` · sweep #${num(q.sweep_number)} (${q.full_sweep ? "full" : `last ${q.recent_hours} h`})` : "") + `</span>` +
+    (r.error || row.error ? `<span class="err">${esc(r.error || row.error)}</span>` : "") +
+    `<span class="links">${[
+      run.url && `<a href="${esc(run.url)}" rel="noreferrer">GitHub run</a>`,
+      run.report_key && `<a href="${esc(rel(run.report_key))}">report JSON</a>`,
+      `<a href="history.json">history.json</a>`,
+    ].filter(Boolean).join("")}</span>`;
+}
+
+function renderOverview(r, row, prev) {
+  const db = r.database || {}, ds = r.database_stats || {}, cov = (r.monitor || {}).coverage || {};
+  const prevDb = prev || {};
+  const size = db.database_bytes ?? row.db_bytes;
+  const tiles = [
+    ["Live jobs in table", db.jobs_live ?? row.db_live, delta(db.jobs_live ?? row.db_live, prevDb.db_live)],
+    ["All rows in jobs table", db.jobs_total, `<div class="delta">${num(db.jobs_closed)} closed</div>`],
+    ["New this run", db.jobs_new_this_run ?? row.db_new ?? row.created, delta(db.jobs_new_this_run ?? row.db_new, prevDb.db_new)],
+    ["Updated this run", db.jobs_updated_this_run, ""],
+    ["Archived this run", db.jobs_archived_this_run ?? row.db_archived, `<div class="delta">${num(db.jobs_archived_total)} in archive · ${num(db.jobs_archive_next_7_days)} due in 7 d</div>`],
+    ["Feed jobs", r.feed?.snapshot_jobs ?? row.feed_jobs, r.feed?.version != null ? `<div class="delta">feed v${num(r.feed.version)}</div>` : ""],
+    ["Records collected", r.unique_jobs_collected ?? row.jobs, delta(r.unique_jobs_collected ?? row.jobs, prevDb.jobs)],
+    ["SimplifyJobs recall", null, delta(null, null), pct(cov.recall ?? row.recall)],
+    ["Database size", null, "", size >= DB_WARN_BYTES ? `<span class="err">${mib(size)}</span>` : mib(size)],
+  ];
+  $("tiles").innerHTML = tiles.map(([l, v, d, shown]) =>
+    `<div class="tile"><div class="label">${l}</div><div class="value">${shown ?? num(v)}</div>${d || ""}</div>`).join("");
+
+  const checks = r.checks || [];
+  $("checks").innerHTML = checks.length ? checks.map((c) =>
+    `<li>${pill(c.level, c.level)} ${esc(c.message)}` +
+    (c.detail?.length ? `<details${c.level === "error" ? " open" : ""}><summary>${c.detail.length} details</summary><ul class="detail">${c.detail.slice(0, 50).map((d) => `<li>${esc(d)}</li>`).join("")}</ul></details>` : "") +
+    `</li>`).join("") : `<li>${r.checks ? pill("ok", "ok") + " No problems found." : '<span class="muted">This run predates automatic checks.</span>'}</li>`;
+
+  const step = (k, v, extra = "") => `<div class="step">${k}<br><b>${num(v)}</b>${extra}</div>`;
+  const arrow = '<span class="arrow">→</span>';
+  $("flow").innerHTML = [
+    step("Records collected", r.unique_jobs_collected),
+    arrow,
+    step("Created", ds.created), step("Merged into existing", ds.merged), step("Updated", ds.updated), step("Unchanged", ds.unchanged),
+    arrow,
+    step("Live in table", db.jobs_live, `<br><span class="muted">${num(db.jobs_multi_source)} from 2+ sources</span>`),
+    arrow,
+    step("Archived (>4 months)", r.archived_jobs ?? db.jobs_archived_this_run),
+    arrow,
+    step("Published to feed", r.feed?.snapshot_jobs),
+  ].join("");
+
+  // per source summary
+  const groups = new Map();
+  for (const info of shardRows((r.monitor || {}).shards)) {
+    const g = groups.get(info.kind) || { kind: info.kind, shards: 0, jobs: 0, longest: 0, compute: 0, waits: 0, failed: 0, skipped: 0, level: "ok", missing: 0 };
+    g.shards++; g.jobs += info.s.jobs || 0; g.longest = Math.max(g.longest, info.s.seconds || 0); g.compute += info.s.seconds || 0;
+    g.waits += info.waits; g.failed += info.failedPages + (info.s.failures || 0) * (info.st.ats_boards == null && info.st.failed == null ? 1 : 0);
+    g.skipped += info.skipped; g.missing += info.s.missing ? 1 : 0;
+    if (info.level === "error" || (info.level === "warn" && g.level === "ok")) g.level = info.level;
+    groups.set(info.kind, g);
+  }
+  const gs = [...groups.values()].sort((a, b) => SOURCE_ORDER.indexOf(a.kind) - SOURCE_ORDER.indexOf(b.kind));
+  table($("sourceSummary"), [["Source"], ["Steps", 1], ["Jobs", 1], ["Run time (longest step)", 1], ["Compute (all steps)", 1], ["429 waits", 1], ["Failed", 1], ["Not done", 1], ["Status"]],
+    gs.map((g) => [`<a href="#" data-kind="${esc(g.kind)}">${esc(SOURCE_NAMES[g.kind] || g.kind)}</a>`, num(g.shards), num(g.jobs), dur(g.longest), dur(g.compute),
+      num(g.waits), g.failed ? `<span class="warn">${num(g.failed)}</span>` : "0", g.skipped ? `<span class="err">${num(g.skipped)}</span>` : "0",
+      g.missing ? pill("error", `${g.missing} missing`) : pill(g.level, g.level === "error" ? "cut off" : g.level === "warn" ? "check" : "ok")]));
+  $("sourceSummary").querySelectorAll("a[data-kind]").forEach((a) => a.addEventListener("click", (e) => {
+    e.preventDefault(); $("shardKind").value = a.dataset.kind; setTab("sources");
+  }));
+  if (!gs.length) $("sourceSummary").innerHTML = '<tbody><tr><td class="muted">This run predates per-step statistics; see the Sources tab.</td></tr></tbody>';
+
+  const sal = r.salary_stats || {}, term = r.recruiting_term_stats || {}, dd = r.dedupe_seconds || {}, q = r.query_stats || {};
+  const rows = [
+    ["Salary: from source / regex / none / failed", [sal.structured, sal.regex, sal.not_found, sal.failed].map(num).join(" / ")],
+    ["Recruiting term: regex / none / cached / failed", [term.regex, term.not_found, term.cached, term.failed].map(num).join(" / ")],
+    ["Simplify / Stapply download, ATS polling (s, summed over shards)", [q.simplify_seconds, q.stapply_seconds, q.ats_seconds].map(num).join(" / ")],
+    ...Object.entries(dd).map(([k, v]) => [`Dedupe: ${label(k)}`, `${Number(v).toFixed(1)} s`]),
+  ];
+  table($("enrich"), [["Step"], ["Value", 1]], rows.map(([a, b]) => [esc(a), b]));
+}
+
+// ------------------------------------------------------------------ sources
+
+function renderSources(r) {
+  const monitor = r.monitor || {}, db = r.database || {}, q = r.query_stats || {};
+  const rows = shardRows(monitor.shards);
+  const kinds = [...new Set(rows.map((x) => x.kind))];
+  const keep = $("shardKind").value;
+  $("shardKind").innerHTML = `<option value="">All sources (${rows.length} steps)</option>` +
+    kinds.map((k) => `<option value="${esc(k)}">${esc(SOURCE_NAMES[k] || k)} (${rows.filter((x) => x.kind === k).length})</option>`).join("");
+  $("shardKind").value = kinds.includes(keep) ? keep : "";
+  const logs = current?.logs;
+  const logFor = (name) => (logs?.jobs || []).find((j) => slug(j.name) === slug(name));
+  const shown = rows.filter((x) => (!$("shardKind").value || x.kind === $("shardKind").value) && (!$("shardProblems").checked || x.level !== "ok"));
+  $("shardNote").textContent = rows.length ? `${rows.filter((x) => x.level !== "ok").length} of ${rows.length} steps need a look` : "This run predates per-step statistics.";
+  table($("shards"), [["Step"], ["Status"], ["Jobs", 1], ["Run time", 1], ["429 waits", 1], ["Work done", "wrap"], ["Failures"], ["Log"]],
+    shown.map((x) => {
+      const share = x.s.budget_seconds ? Math.min(1, (x.s.seconds || 0) / x.s.budget_seconds) : null;
+      const time = `${dur(x.s.seconds)}` + (share != null ? `<span class="meter ${x.atBudget ? "full" : ""}" title="${num(x.s.seconds)} of ${num(x.s.budget_seconds)} s budget"><i style="width:${(share * 100).toFixed(0)}%"></i></span>` : "");
+      const samples = x.s.failure_samples || [];
+      const failures = x.s.failures ? (samples.length
+        ? `<details><summary>${num(x.s.failures)}</summary><ul class="plain">${samples.map((f) => `<li>${esc(f)}</li>`).join("")}</ul></details>`
+        : `<span class="warn">${num(x.s.failures)}</span>`) : "0";
+      const log = logFor(x.name);
+      return [esc(x.name), pill(x.level, x.status), num(x.s.jobs), time, num(x.waits), x.work.join(" · ") || "–", failures,
+        log?.key ? `<a href="#" data-log="${esc(log.key)}">view</a>` + (log.errors ? ` <span class="err">${num(log.errors)} err</span>` : "") : log?.url ? `<a href="${esc(log.url)}" rel="noreferrer">GitHub</a>` : "–"];
+    }));
+  $("shards").querySelectorAll("a[data-log]").forEach((a) => a.addEventListener("click", (e) => {
+    e.preventDefault(); setTab("logs"); openLog((logs.jobs || []).find((j) => j.key === a.dataset.log));
+  }));
+
+  const collectors = Object.entries(monitor.sources || {}).sort((a, b) => (b[1].final_jobs ?? b[1].jobs ?? 0) - (a[1].final_jobs ?? a[1].jobs ?? 0));
+  table($("collectors"), [["Collector"], ["Collected", 1], ["After gap fill", 1], ["Simplify covered", 1], ["Recall", 1]],
+    collectors.map(([name, s]) => [esc(name), num(s.jobs), num(s.final_jobs), num(s.simplify_covered), pct(s.simplify_recall)]));
+  table($("dbSources"), [["Source"], ["Live jobs", 1], ["Seen this run", 1], ["New this run", 1]],
+    Object.entries(db.sources || {}).map(([name, s]) => [esc(name), num(s.live_jobs), num(s.seen_this_run), num(s.new_this_run)]));
+
+  const providers = [...new Set(Object.keys(q).map((k) => (k.match(/^ats_(.+)_postings_listed$/) || [])[1]).filter(Boolean))];
+  table($("providers"), [["Provider"], ["Postings scanned", 1], ["Kept (in scope)", 1], ["Kept share", 1]],
+    providers.map((p) => [esc(p), num(q[`ats_${p}_postings_listed`]), num(q[`ats_${p}_jobs_kept`]), pct(q[`ats_${p}_jobs_kept`] / q[`ats_${p}_postings_listed`])]));
+  const stapply = Object.entries(q).filter(([k]) => k.startsWith("stapply_kept_")).sort((a, b) => b[1] - a[1]);
+  const disc = [
+    ["SimplifyJobs rows / in scope", q.simplify_failed ? '<span class="err">unavailable</span>' : `${num(q.simplify_internships_rows)} / ${num(q.simplify_active_in_scope)}`],
+    ["SimplifyJobs out of scope (title / location)", `${num(q.simplify_out_of_scope_title)} / ${num(q.simplify_out_of_scope_location)}`],
+    ["Stapply rows / kept / rejected title", q.stapply_failed ? '<span class="err">unavailable</span>' : `${num(q.stapply_rows)} / ${num(q.stapply_jobs_kept)} / ${num(q.stapply_rejected_title)}`],
+    ["Boards discovered (Simplify / Stapply)", `${num(q.simplify_boards_discovered)} / ${num(q.stapply_boards_discovered)}`],
+    ["New boards added (Simplify / Stapply)", `${num(q.ats_boards_from_simplify)} / ${num(q.ats_boards_from_stapply)}`],
+    ["ATS boards polled / hosts", `${num(q.ats_boards)} / ${num(q.ats_hosts)}`],
+  ];
+  $("discovery").innerHTML = "";
+  table($("discovery"), [["Item"], ["Value", 1]], disc.map(([a, b]) => [esc(a), b]));
+  if (stapply.length) $("discovery").insertAdjacentHTML("beforeend",
+    `<tbody><tr><td colspan="2"><details><summary>Stapply jobs kept by platform (${stapply.length})</summary><table>${stapply.map(([k, v]) => `<tr><td>${esc(k.replace("stapply_kept_", ""))}</td><td class="num">${num(v)}</td></tr>`).join("")}</table></details></td></tr></tbody>`);
+
+  const failures = r.failures || [];
+  $("failures").innerHTML = failures.length ? failures.slice(0, 300).map((f) => `<li>${esc(f)}</li>`).join("") +
+    (failures.length > 300 ? `<li class="muted">… ${num(failures.length - 300)} more in report JSON</li>` : "") : "<li class='muted'>None recorded.</li>";
+}
+
+// ------------------------------------------------------------------ data + coverage
+
+function renderData(r) {
+  const db = r.database || {};
+  const order = ["opportunity_type", "new_by_opportunity_type", "job_category", "subcategory_top", "country", "recruiting_term", "work_mode"];
+  $("breakdowns").innerHTML = order.map((k) => bars(k, (db.breakdowns || {})[k])).join("") ||
+    `<div class="panel muted">${r.database_error ? `Database statistics failed: ${esc(r.database_error)}` : "No database statistics in this report."}</div>`;
+  const quality = db.quality || {}, live = db.jobs_live || 0;
+  table($("quality"), [["Check (live jobs)"], ["Jobs", 1], ["Share", 1]], [
+    ["From two or more sources", db.jobs_multi_source], ["With salary", quality.with_salary],
+    ["Description missing or short", quality.no_description], ["No posted date", quality.no_posted_date],
+    ["No country", quality.no_country], ["Category 'other'", quality.category_other], ["Opportunity type unknown", quality.type_unknown],
+  ].map(([k, v]) => [esc(k), num(v), live && v != null ? pct(v / live) : "–"]));
+  table($("tables"), [["Table"], ["Size", 1]], Object.entries(db.table_bytes || {}).map(([n, b]) => [esc(n), mib(b)]));
+}
+
+function renderCoverage(r) {
+  const cov = (r.monitor || {}).coverage || {}, q = r.query_stats || {};
+  table($("platforms"), [["Platform"], ["SimplifyJobs", 1], ["We had", 1], ["Recall", 1]],
+    Object.entries(cov.by_platform || {}).map(([n, p]) => [esc(n), num(p.reference), num(p.covered), p.recall < 0.5 ? `<span class="err">${pct(p.recall)}</span>` : pct(p.recall)]));
+  const plats = [...new Set(Object.keys(q).map((k) => (k.match(/^simplify_detail_(?:found|missing)_(.+)$/) || [])[1]).filter(Boolean))];
+  table($("gapfill"), [["Platform"], ["JD found", 1], ["JD missing", 1], ["Found", 1]],
+    [...plats.map((p) => [esc(p), num(q[`simplify_detail_found_${p}`] || 0), num(q[`simplify_detail_missing_${p}`] || 0),
+      pct((q[`simplify_detail_found_${p}`] || 0) / sum(q[`simplify_detail_found_${p}`], q[`simplify_detail_missing_${p}`]))]),
+     ...(q.simplify_detail_requested ? [["<b>All gap-fill jobs</b>", num(q.simplify_detail_found), num(q.simplify_detail_requested - (q.simplify_detail_found || 0)), pct(q.simplify_detail_found / q.simplify_detail_requested)]] : [])]);
+  $("misses").innerHTML = (cov.missed_sample || []).map((m) =>
+    `<li>${esc(m.company)}: <a href="${esc(m.url)}" rel="noreferrer">${esc(m.title)}</a> <span class="muted">(${esc(m.platform)})</span></li>`).join("") || "<li class='muted'>None</li>";
+}
+
+// ------------------------------------------------------------------ logs
+
+function renderLogs() {
+  const logs = current?.logs, row = current?.row;
+  const jobs = (logs?.jobs || []).filter((j) => !$("jobFilter").value || j.name.toLowerCase().includes($("jobFilter").value.toLowerCase()));
+  if (!logs) {
+    $("logsNote").innerHTML = row?.log_key ? "Per-job logs were not stored for this run; only the publish log." : "No logs stored for this run.";
+    table($("jobs"), [["Job"], ["Log"]], row?.log_key ? [["publish", `<a href="#" data-key="${esc(row.log_key)}">view</a>`]] : []);
+  } else {
+    $("logsNote").innerHTML = `${num(logs.jobs.length)} jobs` + (logs.listing_error ? ` · <span class="err">job list unavailable: ${esc(logs.listing_error)}</span>` : "");
+    const level = (j) => j.log_error ? "error" : ["failure", "cancelled", "timed_out"].includes(j.conclusion) ? "error" : j.errors ? "warn" : "ok";
+    table($("jobs"), [["Job"], ["Result"], ["Run time", 1], ["Lines", 1], ["Warnings", 1], ["Errors", 1], ["429 lines", 1], ["Last notable lines", "wrap"]],
+      jobs.map((j) => [esc(j.name), pill(level(j), j.conclusion || "?") + (j.failed_steps?.length ? ` <span class="muted">${esc(j.failed_steps.join(", "))}</span>` : ""),
+        dur(j.seconds), num(j.lines), num(j.warnings), j.errors ? `<span class="err">${num(j.errors)}</span>` : "0", num(j.rate_limits),
+        j.log_error ? `<span class="err">${esc(j.log_error)}</span>` : (j.highlights || []).length
+          ? `<details><summary>${esc((j.highlights[j.highlights.length - 1] || "").slice(0, 90))}</summary><pre class="log">${(j.highlights || []).map(esc).join("\n")}</pre></details>` : "–"]),
+      { rowAttrs: (i) => jobs[i].key ? `class="click" data-i="${i}"` : "" });
+    $("jobs").querySelectorAll("tr[data-i]").forEach((tr) => tr.addEventListener("click", (e) => {
+      if (!e.target.closest("details,a")) openLog(jobs[Number(tr.dataset.i)]);
+    }));
+  }
+  $("jobs").querySelectorAll("a[data-key]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); openLog({ name: "publish", key: a.dataset.key }); }));
+}
+
+let logState = null;
+async function openLog(job) {
+  if (!job?.key) return;
+  $("viewer").hidden = false;
+  $("viewerTitle").textContent = job.name;
+  $("viewerDownload").href = rel(job.key);
+  $("logText").textContent = "Loading…";
+  $("viewer").scrollIntoView({ behavior: "smooth", block: "start" });
+  const text = await cached(rel(job.key), true);
+  logState = { lines: text == null ? null : text.split("\n") };
+  drawLog();
+}
+function drawLog() {
+  if (!logState) return;
+  if (!logState.lines) { $("logText").innerHTML = '<span class="e">Could not load this log.</span>'; return; }
+  const mode = $("logLevel").value, needle = $("logSearch").value.toLowerCase();
+  const isErr = (l) => /\[(ERROR|CRITICAL)\]|##\[error\]|Traceback|\b\w+(Error|Exception): /.test(l);
+  const noise = /Node\.js \d+ (is|actions are) deprecated|is deprecated and will be/i;
+  const isWarn = (l) => /\[WARN(ING)?\]|##\[warning\]|::warning/.test(l) && !noise.test(l);
+  const isRate = (l) => /\b429\b|rate.?limit/i.test(l);
+  const keep = logState.lines.filter((l) => (mode === "all" || (mode === "errors" ? isErr(l) : mode === "rate" ? isRate(l) : isErr(l) || isWarn(l)))
+    && (!needle || l.toLowerCase().includes(needle)));
+  const LIMIT = 5000, shown = keep.slice(-LIMIT);
+  $("viewerNote").textContent = `${num(keep.length)} of ${num(logState.lines.length)} lines` + (keep.length > LIMIT ? ` (last ${num(LIMIT)} shown)` : "");
+  $("logText").innerHTML = shown.map((l) => {
+    const m = l.match(/^(\d{4}-\d\d-\d\dT[\d:.]+Z )(.*)$/);
+    const body = m ? m[2] : l, cls = isErr(l) ? "e" : isWarn(l) ? "w" : isRate(l) ? "r" : "";
+    return `<span class="${cls}">${m ? `<span class="ts">${esc(m[1].slice(11, 19))} </span>` : ""}${esc(body)}</span>`;
+  }).join("\n") || '<span class="muted">No matching lines.</span>';
+  $("logText").scrollTop = $("logText").scrollHeight;
+}
+
+// ------------------------------------------------------------------ trends
+
 function lineChart(el, points, series, { max = null, format = (v) => num(Math.round(v)), mark = null } = {}) {
   if (points.length < 2) { el.innerHTML = '<div class="muted">Needs at least two runs.</div>'; return; }
-  const W = 1000, H = 300, L = 60, R = 12, T = 12, B = 28;
+  const W = 1000, H = 300, L = 70, R = 12, T = 12, B = 28;
   const values = points.flatMap((p) => series.map((s) => p.values[s.key])).filter((v) => v != null);
   const top = max ?? Math.max(1, ...values);
   const x = (i) => L + (i / (points.length - 1)) * (W - L - R);
@@ -183,143 +586,79 @@ function lineChart(el, points, series, { max = null, format = (v) => num(Math.ro
   });
   el.innerHTML = svg + "</svg>";
 }
-
-function multiSeries(chartEl, legendEl, runs, pick, mark) {
-  const keys = [...new Set(runs.flatMap((r) => Object.keys(pick(r) || {})))].sort();
+function chart(chartEl, legendEl, runs, pick, mark, opts = {}) {
+  const keys = opts.keys || [...new Set(runs.flatMap((r) => Object.keys(pick(r) || {})))].sort();
   const colors = palette();
   const series = keys.map((key, i) => ({ key, color: colors[i % colors.length] }));
-  lineChart(chartEl, runs.map((r) => ({ at: r.at, values: pick(r) || {} })), series, { mark });
-  legendEl.innerHTML = series.map((s) => `<span><i style="background:${s.color}"></i>${esc(label(s.key))}</span>`).join("");
-}
-
-async function load(name) {
-  const res = await fetch(`${name}?t=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) { const error = new Error(`${name}: HTTP ${res.status}`); error.status = res.status; throw error; }
-  return res.json();
-}
-
-async function reportFor(index) {
-  const row = runHistory[index];
-  const key = row.report_key ? rel(row.report_key) : index === 0 ? "latest.json" : null;
-  if (!key) return null;  // rows written before per-run reports existed
-  if (!reports.has(key)) reports.set(key, load(key).catch(() => null));
-  return reports.get(key);
+  lineChart(chartEl, runs.map((r) => ({ at: r.at, values: pick(r) || {} })), series, { mark, ...opts });
+  if (legendEl) legendEl.innerHTML = series.map((s) => `<span><i style="background:${s.color}"></i>${esc(label(s.key))}</span>`).join("");
 }
 
 function renderTrends() {
   const runs = [...runHistory].reverse().filter((r) => r.at);
   const mark = runHistory[selected]?.at;
-  const colors = palette();
-  lineChart($("liveChart"), runs.map((r) => ({ at: r.at, values: { live: r.db_live, feed: r.feed_jobs } })),
-    [{ key: "live", color: colors[0] }, { key: "feed", color: colors[1] }], { mark });
-  lineChart($("newChart"), runs.map((r) => ({ at: r.at, values: { new: r.db_new ?? r.created, archived: r.db_archived } })),
-    [{ key: "new", color: colors[0] }, { key: "archived", color: colors[4] }], { mark });
-  multiSeries($("sourceChart"), $("sourceLegend"), runs, (r) => r.sources, mark);
-  multiSeries($("typeChart"), $("typeLegend"), runs, (r) => r.types, mark);
-  lineChart($("recallChart"), runs.map((r) => ({ at: r.at, values: { recall: r.recall } })),
-    [{ key: "recall", color: colors[0] }], { max: 1, format: pct, mark });
-  lineChart($("sizeChart"), runs.map((r) => ({ at: r.at, values: { size: r.db_bytes == null ? null : r.db_bytes / 1048576 } })),
-    [{ key: "size", color: colors[3] }], { mark });
-  lineChart($("durationChart"), runs.map((r) => ({ at: r.at, values: { min: r.duration_s == null ? null : r.duration_s / 60 } })),
-    [{ key: "min", color: colors[2] }], { mark });
+  chart($("liveChart"), $("liveLegend"), runs, (r) => ({ live: r.db_live, total: r.db_total, feed: r.feed_jobs }), mark, { keys: ["live", "total", "feed"] });
+  chart($("newChart"), $("newLegend"), runs, (r) => ({ new: r.db_new ?? r.created, archived: r.db_archived }), mark, { keys: ["new", "archived"] });
+  chart($("sourceChart"), $("sourceLegend"), runs, (r) => r.sources, mark);
+  chart($("skipChart"), $("skipLegend"), runs, (r) => ({ "boards never polled": r.ats_boards_skipped, "429 cooldowns": r.rate_limited }), mark,
+    { keys: ["boards never polled", "429 cooldowns"] });
+  chart($("typeChart"), $("typeLegend"), runs, (r) => r.types, mark);
+  chart($("recallChart"), null, runs, (r) => ({ recall: r.recall }), mark, { max: 1, format: pct, keys: ["recall"] });
+  chart($("sizeChart"), null, runs, (r) => ({ size: r.db_bytes == null ? null : r.db_bytes / 1048576 }), mark, { keys: ["size"] });
+  chart($("durationChart"), null, runs, (r) => ({ min: r.duration_s == null ? null : r.duration_s / 60 }), mark, { keys: ["min"] });
 }
 
 function renderHistory() {
-  table($("history"), [["Finished"], ["Status"], ["Live", 1], ["New", 1], ["Archived", 1], ["Feed", 1], ["Recall", 1], ["Min", 1], ["Failed queries", 1], ["Links"]],
-    runHistory.map((r) => [esc(when(r.at)), `<span class="status ${esc(r.status)}">${esc(r.status)}</span>`,
-      num(r.db_live), num(r.db_new ?? r.created), num(r.db_archived), num(r.feed_jobs), pct(r.recall),
-      r.duration_s ? Math.round(r.duration_s / 60) : "–", num(r.failed_queries),
-      [r.run_url && `<a href="${esc(r.run_url)}" rel="noreferrer">run</a>`, r.log_key && `<a href="${esc(rel(r.log_key))}" download>log</a>`].filter(Boolean).join(" · ") || "–"]));
-  [...$("history").tBodies[0].rows].forEach((tr, i) => {
-    tr.addEventListener("click", (event) => { if (!event.target.closest("a")) select(i); });
-  });
+  table($("history"), [["Finished"], ["Status"], ["Checks"], ["Live", 1], ["New", 1], ["Archived", 1], ["Feed", 1], ["Boards skipped", 1], ["Recall", 1], ["Time", 1], ["Links"]],
+    runHistory.map((r) => [esc(when(r.at)), pill(["failed", "error"].includes(r.status) ? "error" : r.status === "partial" ? "warn" : "ok", r.status),
+      r.checks_error == null ? '<span class="muted">–</span>' : (r.checks_error ? pill("error", `${r.checks_error} err`) + " " : "") + (r.checks_warn ? pill("warn", `${r.checks_warn} warn`) : r.checks_error ? "" : pill("ok", "ok")),
+      num(r.db_live), num(r.db_new ?? r.created), num(r.db_archived), num(r.feed_jobs),
+      r.ats_boards_skipped ? `<span class="err">${num(r.ats_boards_skipped)}</span>` : num(r.ats_boards_skipped), pct(r.recall), dur(r.duration_s),
+      [r.run_url && `<a href="${esc(r.run_url)}" rel="noreferrer">run</a>`, r.log_key && `<a href="${esc(rel(r.log_key))}" download>log</a>`].filter(Boolean).join(" · ") || "–"]),
+    { rowAttrs: (i) => `class="click${i === selected ? " selected" : ""}" data-i="${i}"` });
+  $("history").querySelectorAll("tr[data-i]").forEach((tr) => tr.addEventListener("click", (e) => {
+    if (!e.target.closest("a")) select(Number(tr.dataset.i));
+  }));
 }
 
-function runLabel(r, i) {
-  return `${when(r.at)} · ${r.status ?? "?"}${i === 0 ? " · latest" : ""}`;
+// ------------------------------------------------------------------ tabs + selection
+
+const TABS = [["overview", "Overview"], ["sources", "Sources"], ["data", "Data"], ["coverage", "Coverage"], ["logs", "Logs"], ["trends", "Trends & history"]];
+function renderTabs() {
+  const r = current?.report || {};
+  const checks = r.checks || [];
+  const errs = checks.filter((c) => c.level === "error").length, warns = checks.filter((c) => c.level === "warn").length;
+  const problems = shardRows((r.monitor || {}).shards).filter((x) => x.level !== "ok").length;
+  const logErrs = (current?.logs?.jobs || []).filter((j) => j.errors || j.log_error).length;
+  const badge = { overview: errs ? ["error", errs] : warns ? ["warn", warns] : null, sources: problems ? ["warn", problems] : null, logs: logErrs ? ["warn", logErrs] : null };
+  $("tabs").innerHTML = TABS.map(([k, name]) => `<button data-tab="${k}" class="${k === tab ? "active" : ""}">${name}` +
+    (badge[k] ? `<span class="count ${badge[k][0]}">${badge[k][1]}</span>` : "") + `</button>`).join("");
+  $("tabs").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+}
+function setTab(name) {
+  tab = TABS.some(([k]) => k === name) ? name : "overview";
+  document.querySelectorAll("section[data-tab]").forEach((s) => { s.hidden = s.dataset.tab !== tab; });
+  renderTabs();
+  if (tab === "sources" && current) renderSources(current.report || {});
+  if (tab === "trends") { renderTrends(); renderHistory(); }
+  writeHash();
+}
+function writeHash() {
+  const row = runHistory[selected];
+  const parts = [];
+  if (selected > 0 && row) parts.push(`run=${encodeURIComponent(row.report_key || row.at)}`);
+  if (tab !== "overview") parts.push(`tab=${tab}`);
+  history.replaceState(null, "", parts.length ? `#${parts.join("&")}` : location.pathname);
 }
 
-function renderSelected(report, row) {
-  const r = report || {};
-  const monitor = r.monitor || {}, q = r.query_stats || {}, cov = monitor.coverage || {};
-  const db = r.database || {}, run = r.run || { url: row.run_url, log_key: row.log_key };
-  $("subtitle").innerHTML = `Run finished ${esc(when(row.at))} · <span class="status ${esc(row.status)}">${esc(row.status)}</span>` +
-    (r.error || row.error ? ` · <span class="err">${esc(r.error || row.error)}</span>` : "") +
-    (r.database_error ? ` · <span class="err">DB stats: ${esc(r.database_error)}</span>` : "");
-  $("links").innerHTML = [
-    run.url && `<a href="${esc(run.url)}" rel="noreferrer">GitHub Actions run</a>`,
-    run.log_key && `<a href="${esc(rel(run.log_key))}" download>Download run log</a>`,
-    run.report_key && `<a href="${esc(rel(run.report_key))}">Report JSON</a>`,
-    `<a href="history.json">history.json</a>`,
-  ].filter(Boolean).join("");
-  $("runNote").textContent = report ? "" : "Full details were not stored for this run; showing its history summary.";
-  $("details").hidden = !report;
-
-  const tiles = [
-    ["Live jobs (DB)", num(db.jobs_live ?? row.db_live)],
-    ["New this run", num(db.jobs_new_this_run ?? row.db_new ?? row.created)],
-    ["Updated this run", num(db.jobs_updated_this_run)],
-    ["Archived this run", num(db.jobs_archived_this_run ?? row.db_archived)],
-    ["Feed jobs", num(r.feed?.snapshot_jobs ?? row.feed_jobs)],
-    ["Database size", (db.database_bytes ?? row.db_bytes) >= DB_WARN_BYTES ? `<span class="err">${mib(db.database_bytes ?? row.db_bytes)}</span>` : mib(db.database_bytes ?? row.db_bytes)],
-    ["Simplify recall", pct(cov.recall ?? row.recall)],
-    ["Duration", (r.duration_seconds ?? row.duration_s) ? `${Math.round((r.duration_seconds ?? row.duration_s) / 60)} min` : "–"],
-    ["Failures", report ? num((r.failures || []).length) : num(row.failed_queries)],
-  ];
-  $("tiles").innerHTML = tiles.map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
-  if (!report) return;
-
-  const collectors = Object.entries(monitor.sources || {}).sort((a, b) => (b[1].final_jobs ?? b[1].jobs ?? 0) - (a[1].final_jobs ?? a[1].jobs ?? 0));
-  table($("collectors"), [["Collector"], ["Jobs", 1], ["After gap fill", 1], ["Simplify recall", 1]],
-    collectors.map(([name, s]) => [esc(name), num(s.jobs), num(s.final_jobs), pct(s.simplify_recall)]));
-  table($("shards"), [["Shard"], ["Jobs", 1], ["Seconds", 1], ["Status"]],
-    Object.entries(monitor.shards || {}).map(([name, s]) => [esc(name), num(s.jobs), num(s.seconds),
-      s.missing ? '<span class="err">missing</span>' : s.failures ? `${num(s.failures)} failures` : "ok"]));
-  table($("dbSources"), [["Source"], ["Live jobs", 1], ["Seen this run", 1], ["New this run", 1]],
-    Object.entries(db.sources || {}).map(([name, s]) => [esc(name), num(s.live_jobs), num(s.seen_this_run), num(s.new_this_run)]));
-
-  const order = ["opportunity_type", "new_by_opportunity_type", "job_category", "subcategory_top", "country", "recruiting_term", "work_mode"];
-  const breakdowns = db.breakdowns || {};
-  $("breakdowns").innerHTML = order.map((k) => bars(k, breakdowns[k])).join("") ||
-    '<div class="panel muted">No database statistics in this report.</div>';
-
-  const quality = db.quality || {}, live = db.jobs_live || 0;
-  table($("quality"), [["Check"], ["Jobs", 1], ["Share", 1]], [
-    ["Multi-source (deduplicated across sources)", db.jobs_multi_source],
-    ["With salary", quality.with_salary], ["Description missing or short", quality.no_description],
-    ["No posted date", quality.no_posted_date], ["No country", quality.no_country],
-    ["Category 'other'", quality.category_other], ["Opportunity type unknown", quality.type_unknown],
-    ["In archive (total)", db.jobs_archived_total],
-    ["Reach 4-month archive age within 7 days", db.jobs_archive_next_7_days],
-    ["Closed by the old expiry rule (legacy)", db.jobs_closed],
-  ].map(([k, v]) => [esc(k), num(v), live && v != null ? pct(v / live) : "–"]));
-  table($("tables"), [["Table"], ["Size", 1]],
-    Object.entries(db.table_bytes || {}).map(([name, bytes]) => [esc(name), mib(bytes)]));
-
-  table($("platforms"), [["Platform"], ["Reference", 1], ["Covered", 1], ["Recall", 1]],
-    Object.entries(cov.by_platform || {}).map(([name, p]) => [esc(name), num(p.reference), num(p.covered), pct(p.recall)]));
-  $("misses").innerHTML = (cov.missed_sample || []).map((m) =>
-    `<li>${esc(m.company)}: <a href="${esc(m.url)}" rel="noreferrer">${esc(m.title)}</a> <span class="muted">(${esc(m.platform)})</span></li>`).join("") || "<li class='muted'>None</li>";
-
-  const health = [
-    ["Indeed queries ok / failed", `${num(q.indeed_succeeded)} / ${num(q.indeed_failed)}`],
-    ["LinkedIn queries ok / failed / skipped", `${num(q.linkedin_succeeded)} / ${num(q.linkedin_failed)} / ${num(q.linkedin_skipped)}`],
-    ["LinkedIn IDs discarded (seen in last 24 h)", num(q.linkedin_discarded_seen)],
-    ["LinkedIn shard JDs fetched / failed / unfinished", `${num(q.linkedin_detail_fetched)} / ${num(q.linkedin_detail_failed)} / ${num(q.linkedin_detail_unfinished)}`],
-    ["LinkedIn JD retry: pending / fetched / still missing", `${num(q.linkedin_retry_pending)} / ${num(q.linkedin_retry_detail_fetched)} / ${num((q.linkedin_retry_detail_failed ?? 0) + (q.linkedin_retry_detail_unfinished ?? 0))}`],
-    ["LinkedIn rate-limit waits (lists / JDs / retry)", `${num(q.linkedin_rate_limit_waits)} / ${num(q.linkedin_detail_rate_limit_waits)} / ${num(q.linkedin_retry_detail_rate_limit_waits)}`],
-    ["ATS boards polled / ok", `${num(q.ats_boards)} / ${num(q.ats_boards_ok)}`],
-    ["ATS boards failed / missing", `${num(q.ats_boards_failed)} / ${num(q.ats_boards_missing)}`],
-    ["ATS boards skipped at deadline / truncated", `${num(q.ats_boards_skipped_deadline)} / ${num(q.ats_boards_truncated)}`],
-    ["ATS 429 cooldowns", num(q.ats_rate_limited)],
-    ["Boards discovered (Simplify / Stapply)", `${num(q.ats_boards_from_simplify)} / ${num(q.ats_boards_from_stapply)}`],
-    ["Stapply jobs kept", q.stapply_failed ? '<span class="err">unavailable</span>' : num(q.stapply_jobs_kept)],
-    ["Simplify listings / gap-fill jobs", q.simplify_failed ? '<span class="err">unavailable</span>' : `${num(q.simplify_active_in_scope)} / ${num(q.simplify_gap_fill_jobs)}`],
-    ["Stage seconds (Simplify / Stapply / ATS)", `${num(q.simplify_seconds)} / ${num(q.stapply_seconds)} / ${num(q.ats_seconds)}`],
-    ["Pipeline created / merged / updated / unchanged", ["created", "merged", "updated", "unchanged"].map((k) => num(r.database_stats?.[k])).join(" / ")],
-  ];
-  table($("health"), [["Check"], ["Value", 1]], health.map(([a, b]) => [esc(a), b]));
-  $("failures").innerHTML = (r.failures || []).slice(0, 100).map((f) => `<li>${esc(f)}</li>`).join("") || "<li class='muted'>None</li>";
+async function reportFor(index) {
+  const row = runHistory[index];
+  const key = row.report_key ? rel(row.report_key) : index === 0 ? "latest.json" : null;
+  return key ? cached(key) : null;  // rows written before per-run reports existed have none
+}
+function logsKeyFor(row, report) {
+  const key = row.logs_key || report?.run?.logs_key || (row.log_key ? row.log_key.replace(/\.log$/, "/index.json") : null);
+  return key ? rel(key) : null;
 }
 
 async function select(index) {
@@ -328,26 +667,46 @@ async function select(index) {
   $("runSelect").value = String(selected);
   $("newer").disabled = selected === 0;
   $("older").disabled = selected === runHistory.length - 1;
-  [...$("history").tBodies[0].rows].forEach((tr, i) => tr.classList.toggle("selected", i === selected));
-  window.history.replaceState(null, "", selected === 0 ? location.pathname : `#run=${encodeURIComponent(row.report_key || row.at)}`);
-  renderTrends();
-  renderSelected(await reportFor(selected), row);
+  const report = await reportFor(selected);
+  const logsKey = logsKeyFor(row, report);
+  const logs = logsKey ? await cached(logsKey) : null;
+  current = { row, report, logs };
+  const r = report || {};
+  $("viewer").hidden = true; logState = null;
+  renderBanner(r, row);
+  if (!report) {
+    $("banner").insertAdjacentHTML("beforeend", '<span class="muted">Full details were not stored for this run; showing its history summary.</span>');
+  }
+  renderOverview(r, row, runHistory[selected + 1]);
+  renderSources(r);
+  renderData(r);
+  renderCoverage(r);
+  renderLogs();
+  setTab(tab);
 }
 
 (async () => {
   try { runHistory = await load("history.json"); }
   catch (e) {
-    if (e.status === 404) { $("subtitle").textContent = ""; $("empty").hidden = false; return; }
-    $("subtitle").innerHTML = `<span class="err">${esc(e.message)}</span>`; return;
+    $("loading").hidden = true;
+    if (e.status === 404) { $("empty").hidden = false; return; }
+    $("loading").hidden = false; $("loading").innerHTML = `<span class="err">${esc(e.message)}</span>`; return;
   }
-  if (!Array.isArray(runHistory) || !runHistory.length) { $("subtitle").textContent = ""; $("empty").hidden = false; return; }
-  $("content").hidden = false;
-  $("runSelect").innerHTML = runHistory.map((r, i) => `<option value="${i}">${esc(runLabel(r, i))}</option>`).join("");
+  $("loading").hidden = true;
+  if (!Array.isArray(runHistory) || !runHistory.length) { $("empty").hidden = false; return; }
+  $("content").hidden = false; $("runbar").hidden = false;
+  $("runSelect").innerHTML = runHistory.map((r, i) => `<option value="${i}">${esc(`${when(r.at)} · ${r.status ?? "?"}${i === 0 ? " · latest" : ""}`)}</option>`).join("");
   $("runSelect").addEventListener("change", (e) => select(Number(e.target.value)));
   $("newer").addEventListener("click", () => select(selected - 1));
   $("older").addEventListener("click", () => select(selected + 1));
-  renderHistory();
-  const wanted = decodeURIComponent((location.hash.match(/^#run=(.+)$/) || [])[1] || "");
+  $("shardKind").addEventListener("change", () => renderSources(current.report || {}));
+  $("shardProblems").addEventListener("change", () => renderSources(current.report || {}));
+  $("jobFilter").addEventListener("input", renderLogs);
+  $("logLevel").addEventListener("change", drawLog);
+  let t; $("logSearch").addEventListener("input", () => { clearTimeout(t); t = setTimeout(drawLog, 200); });
+  const params = new URLSearchParams(location.hash.slice(1));
+  tab = params.get("tab") || "overview";
+  const wanted = params.get("run");
   const index = wanted ? runHistory.findIndex((r) => r.report_key === wanted || r.at === wanted) : 0;
   await select(index >= 0 ? index : 0);
 })();
