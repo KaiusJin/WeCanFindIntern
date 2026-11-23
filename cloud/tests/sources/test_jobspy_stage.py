@@ -397,3 +397,78 @@ def test_short_page_ends_the_query_without_a_second_pass(monkeypatch) -> None:
 
     assert calls == [(0, 1000)]  # 3 < 1000 requested: the cursor ended, no re-scan
     assert len(jobs) == 3 and not failures
+
+
+def _linkedin_page(start: int, count: int) -> list:
+    return [
+        normalize_record(
+            {
+                "site": "linkedin",
+                "id": f"li-{start + i}",
+                "title": "Software Engineer Intern",
+                "job_url": f"https://www.linkedin.com/jobs/view/{start + i}",
+                "location": "Toronto, ON, Canada",
+            }
+        )
+        for i in range(count)
+    ]
+
+
+def _linkedin_definition() -> dict:
+    return {
+        **_definition("linkedin-all", "linkedin"),
+        "page_size": 10,
+        "max_results_per_source": 60,
+    }
+
+
+def test_linkedin_short_page_does_not_end_the_query(monkeypatch) -> None:
+    pages = {0: 10, 10: 6, 20: 10, 30: 0}
+    calls = []
+
+    def scrape(query):
+        calls.append(query.offset)
+        return "frame", SimpleNamespace(jobs=_linkedin_page(query.offset, pages[query.offset]))
+
+    monkeypatch.setattr(stage, "scrape_checked", scrape)
+
+    jobs, failures, _ = asyncio.run(stage.collect_queries([_linkedin_definition()]))
+
+    assert calls == [0, 10, 20, 30]  # offsets advance by page; only the empty page ends it
+    assert len(jobs) == 26 and not failures
+
+
+def test_linkedin_page_of_seen_jobs_does_not_end_the_query(monkeypatch) -> None:
+    def scrape(query):
+        start = 0 if query.offset == 10 else query.offset  # offset 10 repeats page 0
+        count = 10 if query.offset < 30 else 0
+        return "frame", SimpleNamespace(jobs=_linkedin_page(start, count))
+
+    monkeypatch.setattr(stage, "scrape_checked", scrape)
+
+    jobs, _, _ = asyncio.run(stage.collect_queries([_linkedin_definition()]))
+
+    assert len(jobs) == 20  # page 20 is still read after an all-duplicate page
+
+
+def test_linkedin_failed_page_retries_the_same_offset(monkeypatch) -> None:
+    calls = []
+
+    def scrape(query):
+        calls.append(query.offset)
+        if query.offset == 10 and calls.count(10) == 1:
+            raise LinkedInException("LinkedIn search failed: Read timed out")
+        count = 10 if query.offset < 20 else 0
+        return "frame", SimpleNamespace(jobs=_linkedin_page(query.offset, count))
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(stage, "scrape_checked", scrape)
+    monkeypatch.setattr(stage.asyncio, "sleep", no_wait)
+
+    jobs, failures, stats = asyncio.run(stage.collect_queries([_linkedin_definition()]))
+
+    assert calls == [0, 10, 10, 20]
+    assert len(jobs) == 20 and not failures
+    assert stats["retried"] == 1

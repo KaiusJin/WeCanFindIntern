@@ -222,10 +222,22 @@ async def collect_queries(
                     if job.source_fingerprint not in seen_for_query
                     and _is_in_country_scope(job, values.get("country_indeed"))
                 ]
-                if not new_jobs:
-                    break
                 seen_for_query.update(job.source_fingerprint for job in new_jobs)
                 query_jobs.extend(new_jobs)
+                log(
+                    f"[{task_idx}/{total_tasks}] Page {definition['name']} / {source} "
+                    f"offset {offset}: requested={requested}, returned={len(result.jobs)}, "
+                    f"new={len(new_jobs)}"
+                )
+                if source == "linkedin":
+                    # LinkedIn's offset is a card position. A call reads cards from
+                    # `offset` until it has `requested` jobs, so it consumed at least
+                    # `requested` cards; overlap with the next call is filtered above.
+                    # A failed page raises, so only an empty page ends the query.
+                    offset += requested
+                    continue
+                if not new_jobs:
+                    break
                 offset += len(result.jobs)
                 if len(result.jobs) < requested:
                     # The provider ran out of results (Indeed's cursor ended). Asking
