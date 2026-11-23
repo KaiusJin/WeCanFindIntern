@@ -1,60 +1,4 @@
-/* Search bar */
-
-/* Workspace Layout */
-.workspace {
-  align-items: start;
-  display: grid;
-}
-
-/* Filters Sidebar */
-.filters-panel {
-  border-right: 1px solid var(--line);
-  padding-right: 18px;
-  position: sticky;
-  top: 16px;
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
-.filters-panel::-webkit-scrollbar {
-  height: 10px;
-  width: 10px;
-}
-
-.filters-panel::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.filters-panel::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  background-clip: padding-box;
-  border: 3px solid transparent;
-  border-radius: 999px;
-}
-
-.filters-panel::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
-  background-clip: padding-box;
-}
-
-.filters-panel select {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  color: var(--ink);
-  font-size: 13px;
-  padding: 8px 10px;
-  width: 100%;
-  outline: 0;
-  transition: border-color 0.2s;
-}
-
-.filters-panel select:focus {
-  border-color: var(--accent);
-}
-
+/* The filter sheet: facet pickers, chip groups and the hourly pay range. */
 .multi-filter {
   position: relative;
   width: 100%;
@@ -62,14 +6,8 @@
 
 .multi-filter-trigger {
   align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  color: var(--ink);
-  font-size: 13px;
   min-height: 38px;
-  padding: 8px 10px;
   text-align: left;
-  width: 100%;
 }
 
 .multi-filter-trigger:hover,
@@ -159,20 +97,10 @@
   padding: 10px;
 }
 
-/* Hourly Salary Filter & Dual Slider */
-.salary-filter-group {
-  margin-top: 15px;
-}
+/* Hourly pay range */
+.salary-range-inputs { display: grid; align-items: start; }
 
-.salary-filter-group .field-label {
-  margin: 0 0 6px;
-}
-
-.salary-range-inputs {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 6px;
-}
+.salary-bound { min-width: 0; }
 
 .salary-input-box {
   align-items: center;
@@ -330,7 +258,7 @@
   color: var(--ink);
   transform: none;
   box-shadow: var(--popover-shadow);
-  scrollbar-gutter: auto;
+  overscroll-behavior: contain;
 }
 
 .filter-sheet[popover]:not(:popover-open) { display: none; }
@@ -503,6 +431,3 @@
   outline: 2px solid var(--focus); outline-offset: 2px;
 }
 
-.salary-range-inputs { align-items: start; }
-
-.salary-bound { min-width: 0; }

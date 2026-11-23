@@ -1,4 +1,4 @@
-/* WaterlooWorks local import */
+/* WaterlooWorks: connection, sync dialog and run summary. The job board itself shares jobs/list.css. */
 .ww-update-times { display: grid; gap: 4px; justify-items: end; text-align: right; }
 
 .ww-board-list { display: grid; margin-top: 15px; }
@@ -27,14 +27,6 @@
 
 .ww-stat-grid strong { font-size: 23px; }
 
-.ww-job-list { display: grid; gap: 12px; }
-
-@media (min-width: 1500px) {
-  .ww-job-list {
-    align-items: start;
-  }
-}
-
 #tab-waterlooworks:not([hidden]) {
   display: flex;
   flex-direction: column;
@@ -45,46 +37,6 @@
 
 #ww-job-filters-sheet .career-input {
   min-height: 42px;
-}
-
-.ww-jobs-scroll-content {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 4px;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-}
-
-.ww-jobs-scroll-content::-webkit-scrollbar {
-  width: 10px;
-}
-
-.ww-jobs-scroll-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.ww-jobs-scroll-content::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  background-clip: padding-box;
-  border: 3px solid transparent;
-  border-radius: 999px;
-}
-
-.ww-job-detail-pane {
-  max-height: none;
-  min-height: 0;
-  overflow-y: auto;
-  position: relative;
-}
-
-.ww-job-list {
-  flex: 0 0 auto;
-  grid-template-columns: minmax(0, 1fr);
-  min-height: auto;
-  overflow: visible;
 }
 
 .ww-sync-dialog {
@@ -105,9 +57,11 @@
 }
 
 .ww-sync-choice-heading {
+  align-items: center;
   cursor: pointer;
   display: flex;
   gap: 10px;
+  justify-content: space-between;
 }
 
 .ww-sync-choice-heading input {
@@ -135,7 +89,7 @@
 .ww-sync-dialog .ww-board-list {
   background: var(--surface-2);
   border-radius: 12px;
-  margin: 14px 0 0 26px;
+  margin: 14px 0 0;
   padding: 8px 14px;
   transition: opacity 0.15s;
 }
@@ -178,19 +132,6 @@
   gap: 16px;
 }
 
-.workspace-form-popover[popover] {
-  position: fixed;
-  inset: 66px 18px auto auto;
-  margin: 0;
-  max-height: calc(100dvh - 84px);
-  overscroll-behavior: contain;
-}
-
-.workspace-form-popover[popover]::backdrop {
-  background: transparent;
-  backdrop-filter: none;
-}
-
 #ww-start-sync { background: var(--action); color: var(--on-action); }
 
 #ww-sync-dialog:popover-open {
@@ -225,10 +166,6 @@
 
 #ww-connection-control { margin-inline-start: auto; }
 
-.ww-sync-choice-heading { align-items: center; justify-content: space-between; }
-
 .ww-sync-choice-heading label { flex: 1; cursor: pointer; }
 
 .ww-sync-choice-heading .lg-switch { flex: none; }
-
-.ww-sync-dialog .ww-board-list { margin-left: 0; }

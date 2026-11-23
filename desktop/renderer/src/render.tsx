@@ -24,6 +24,7 @@ const styles = [
   "/ui/shell.css",
   "/ui/settings.css",
   "/ui/jobs/filters.css",
+  "/ui/jobs/search.css",
   "/ui/jobs/list.css",
   "/ui/jobs/detail.css",
   "/ui/jobs/waterloo-works.css",

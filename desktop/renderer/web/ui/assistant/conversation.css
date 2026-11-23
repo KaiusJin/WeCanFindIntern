@@ -318,6 +318,31 @@
   min-width: 0;
 }
 
+.job-view-btn, .agent-icon-btn {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  transition: all 0.15s ease;
+  width: 32px;
+}
+
+.job-view-btn:hover, .agent-icon-btn:hover, .agent-icon-btn.saved {
+  background: var(--accent-soft);
+  border-color: var(--line-strong);
+  color: var(--accent);
+}
+
+.agent-job-card-tools .agent-icon-btn,
+.agent-job-card-tools .job-view-btn {
+  height: 28px;
+  width: 28px;
+}
+
 .agent-job-card-tools {
   display: flex;
   gap: 6px;

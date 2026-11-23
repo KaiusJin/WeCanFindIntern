@@ -271,7 +271,6 @@
 
 .agent-attach-result-action {
   align-items: center;
-  background: transparent;
   border: 0;
   color: var(--accent);
   display: inline-flex;

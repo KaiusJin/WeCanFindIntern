@@ -43,3 +43,17 @@
   .app-modal-sheet .lg-sheet__grabber-zone { display: flex; }
   .app-modal-sheet .lg-sheet__content { padding: 12px 20px 20px; }
 }
+
+/* Forms that open from a workspace toolbar, such as the WaterlooWorks sync and a new application. */
+.workspace-form-popover[popover] {
+  position: fixed;
+  inset: 66px 18px auto auto;
+  margin: 0;
+  max-height: calc(100dvh - 84px);
+  overscroll-behavior: contain;
+}
+
+.workspace-form-popover[popover]::backdrop {
+  background: transparent;
+  backdrop-filter: none;
+}
