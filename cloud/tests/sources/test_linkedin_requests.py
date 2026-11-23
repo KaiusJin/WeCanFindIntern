@@ -15,7 +15,7 @@ from requests import Response
 import cloud.sources.jobspy.linkedin as linkedin
 import cloud.sources.jobspy.linkedin.request as request
 from cloud.sources.jobspy.adapter import JobSpyQuery, scrape_checked
-from cloud.sources.jobspy.shared.exception import LinkedInRateLimitException
+from cloud.sources.jobspy.shared.exception import LinkedInException, LinkedInRateLimitException
 from cloud.sources.jobspy.shared.model import Country, Location
 
 
@@ -326,3 +326,27 @@ def test_slow_response_overlaps_second_request_and_cannot_undo_429(gate):
     assert stale_completed.is_set()
     assert starts == [0.0, 5.0, 95.0]
     assert limiter.interval_seconds == pytest.approx(1 / 0.12)
+
+
+def test_failed_search_page_raises_instead_of_returning_a_partial_page(monkeypatch, gate):
+    card = """
+    <div class="base-search-card">
+      <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/intern-1"></a>
+      <span class="sr-only">Software Engineer Intern</span>
+    </div>
+    """
+    monkeypatch.setattr(
+        linkedin,
+        "create_session",
+        lambda **kwargs: SimpleNamespace(
+            headers={},
+            get=Mock(side_effect=[response(html=card), response(500, html="oops")]),
+        ),
+    )
+
+    with pytest.raises(LinkedInException, match="status code 500"):
+        scrape_checked(
+            JobSpyQuery(
+                sites=["linkedin"], search_term="intern", location="Canada", results_wanted=10
+            )
+        )

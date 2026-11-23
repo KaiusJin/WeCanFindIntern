@@ -111,6 +111,9 @@ class LinkedIn(Scraper):
                 params["f_TPR"] = f"r{seconds_old}"
 
             params = {k: v for k, v in params.items() if v is not None}
+            # A failed search page raises instead of returning the jobs read so far:
+            # the caller cannot tell a partial page from the end of the results, so
+            # it would stop the query early. The caller retries the same offset.
             try:
                 response = request_gate.get(
                     self.session,
@@ -118,19 +121,17 @@ class LinkedIn(Scraper):
                     params=params,
                     timeout=10,
                 )
-                if response.status_code not in range(200, 400):
-                    err = f"LinkedIn response status code {response.status_code}"
-                    err += f" - {response.text}"
-                    log.error(err)
-                    return JobResponse(jobs=job_list)
             except LinkedInRateLimitException:
                 raise
             except Exception as e:
                 if "Proxy responded with" in str(e):
-                    log.error(f"LinkedIn: Bad proxy")
-                else:
-                    log.error(f"LinkedIn: {str(e)}")
-                return JobResponse(jobs=job_list)
+                    raise LinkedInException("LinkedIn: Bad proxy") from e
+                raise LinkedInException(f"LinkedIn search failed: {e}") from e
+            if response.status_code not in range(200, 400):
+                raise LinkedInException(
+                    f"LinkedIn response status code {response.status_code}"
+                    f" - {response.text[:200]}"
+                )
 
             soup = BeautifulSoup(response.text, "html.parser")
             job_cards = soup.find_all("div", class_="base-search-card")
