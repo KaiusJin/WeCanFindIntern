@@ -1,0 +1,152 @@
+.cl-source-panel {
+  margin-bottom: 12px;
+}
+
+.cl-resume-preview-label {
+  display: block;
+  margin-top: 12px;
+}
+
+.cl-contact-section {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+.cl-contact-section .career-config-grid {
+  margin-bottom: 0;
+}
+
+/* Cover Letter Export Group */
+.export-btn-group {
+  display: flex;
+}
+
+.cl-editor {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.8;
+  margin-top: 10px;
+}
+
+.cl-source-panel { margin-top: 10px; }
+
+.cl-additional-section { margin-bottom: 20px; }
+
+.cl-additional-section > summary { color: var(--accent); font-size: 13px; font-weight: 600; }
+
+.cl-additional-section[open] > summary { margin-bottom: 12px; }
+
+.cl-review-card h3 { margin: 0; color: var(--ink); font-size: 14px; }
+
+.cl-review-card :is(p, ul) { margin-block: 5px 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+.career-workspace .cl-editor { background: var(--surface); font: 15px/1.7 var(--font-sans); }
+
+/* The writing brief gives way to the document once a draft is available. */
+#tab-cover-letter:not([hidden]) { display: block; height: auto; overflow: visible; }
+
+#tab-cover-letter .letter-workspace {
+  display: block;
+  max-width: 930px;
+  margin: 0 auto;
+  padding: clamp(24px, 4vh, 40px) 0 48px;
+  overflow: visible;
+}
+
+.letter-heading, .letter-draft-tools {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+
+.letter-heading { margin-bottom: 20px; }
+
+.letter-heading h1 {
+  margin: 0; color: var(--ink); font-size: clamp(31px, 3.2vw, 48px); line-height: 1.1;
+  letter-spacing: -.045em;
+}
+
+.letter-brief, #cl-result-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.letter-brief { padding-inline: clamp(18px, 2.2vw, 30px); }
+
+.letter-brief > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  padding: 15px 0; color: var(--ink); font-size: 14px; font-weight: 580;
+}
+
+.letter-brief > summary::-webkit-details-marker { display: none; }
+
+.letter-brief > summary > .icon:first-child { color: var(--accent); }
+
+.letter-brief > summary > .icon:last-child { margin-left: auto; width: 14px; transform: rotate(-90deg); }
+
+.letter-brief[open] > summary > .icon:last-child { transform: none; }
+
+.letter-intake { display: grid; grid-template-columns: minmax(282px, 1fr) minmax(0, 1.7fr); gap: clamp(20px, 2.6vw, 38px); padding: 12px 0 26px; }
+
+.letter-role, .letter-source { min-width: 0; }
+
+.letter-source { border-right: 1px solid var(--line); padding-right: clamp(18px, 2vw, 28px); }
+
+.letter-intake:has(#cl-pdf-source[hidden]) { grid-template-columns: 1fr; gap: 20px; }
+
+.letter-intake:has(#cl-pdf-source[hidden]) .letter-source { padding: 0 0 16px; border: 0; border-bottom: 1px solid var(--line); }
+
+.letter-source:has(#cl-pdf-source[hidden]) > .field-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0; }
+
+.letter-source:has(#cl-pdf-source[hidden]) > .field-group > .field-label { margin: 0; }
+
+.letter-source:has(#cl-pdf-source[hidden]) .field-error-message { flex-basis: 100%; }
+
+.letter-intake :is(.field-label,.subfield-label) { margin: 0 0 8px; line-height: 18px; font-weight: 560; }
+
+.letter-intake .career-config-grid { gap: 16px 18px; margin: 0 0 18px; }
+
+.letter-intake .field-group { margin-bottom: 16px; }
+
+.letter-intake .cl-additional-section[open] > summary { margin-bottom: 16px; }
+
+.letter-intake .cl-contact-section { margin-top: 20px; }
+
+.letter-source .career-config-grid { grid-template-columns: 1fr; }
+
+.letter-intake .cl-additional-section { padding: 0; border: 0; background: transparent; margin-bottom: 18px; }
+
+.letter-intake .cl-additional-section summary { color: var(--muted); }
+
+#tab-cover-letter .letter-workspace :is(.career-input,.career-textarea) {
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 65%, var(--canvas));
+}
+
+#cl-jd-text { min-height: 185px; resize: vertical; }
+
+.export-btn-group { flex-wrap: wrap; align-items: center; gap: 10px; }
+
+.letter-draft { padding: 24px 0; max-width: 740px; margin: auto; }
+
+.letter-draft .letter-draft-tools { margin-bottom: 14px; flex-wrap: wrap; }
+
+#cl-result-card { padding: clamp(22px, 3.5vw, 42px); box-shadow: none; }
+
+#cl-result-card .cl-review-card { margin-bottom: 24px; }
+
+#cl-result-card .cl-editor { padding: 14px 18px; font: 16px/1.75 var(--font-sans); }
+
+#cl-loading:not([hidden]) { display: flex; justify-content: flex-start; gap: 12px; background: transparent; }
+
+@media (max-width: 640px) {
+  .letter-intake, .letter-intake .career-config-grid { grid-template-columns: minmax(0, 1fr); }
+
+  .letter-source {
+    padding: 0 0 16px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}

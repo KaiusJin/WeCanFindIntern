@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { stylesSource } from "./stylesheets.mjs";
 
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const moduleSource = await readFile(new URL("../modules/agent.js", import.meta.url), "utf8");
 const jobsSource = await readFile(new URL("../modules/jobs.js", import.meta.url), "utf8");
 const waterlooWorksSource = await readFile(new URL("../modules/waterlooworks.js", import.meta.url), "utf8");
-const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
 test("conversation history exposes a confirmed delete flow", () => {
   assert.doesNotMatch(indexSource, /id="agent-delete-session-dialog"/);

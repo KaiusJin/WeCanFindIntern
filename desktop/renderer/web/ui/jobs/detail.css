@@ -1,0 +1,388 @@
+.detail-location {
+  color: var(--muted);
+}
+
+.detail-description {
+  color: var(--muted);
+  flex: 1 1 auto;
+  font-size: 13.5px;
+  line-height: 1.65;
+  min-height: 120px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+}
+
+.loading-detail {
+  color: var(--muted);
+}
+
+/* AI Action Buttons in Job Detail Dialog */
+.job-ai-actions {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 20px;
+}
+
+.btn-ai-action {
+  align-items: center;
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--accent);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 650;
+  gap: 6px;
+  padding: 9px 14px;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.btn-ai-action:hover {
+  background: var(--accent-soft);
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+
+.posting-workspace > .job-detail-pane {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.posting-workspace > .job-detail-pane::-webkit-scrollbar {
+  width: 10px;
+}
+
+.posting-workspace > .job-detail-pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.posting-workspace > .job-detail-pane::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+.job-detail-pane {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  box-shadow: var(--shadow);
+}
+
+.job-detail-pane-toolbar {
+  align-items: center;
+  background: var(--glass);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  font-weight: 750;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  padding: 10px 14px;
+  position: sticky;
+  text-transform: uppercase;
+  top: 0;
+  z-index: 4;
+}
+
+.job-detail-content {
+  padding: 24px 26px 36px;
+}
+
+.job-detail-pane .detail-description {
+  max-height: none;
+  min-height: 0;
+  overflow: visible;
+  padding-right: 0;
+}
+
+.job-card > button.saved, .job-ai-actions > button.saved { color: var(--accent); }
+
+.job-card > button:hover, .job-ai-actions > button:hover { background: var(--surface-2); }
+
+.discovery-divider, .discovery-workspace > .job-detail-pane:not(.open) { display: none; }
+
+.discovery-workspace:has(> .job-detail-pane.open) {
+  grid-template-columns: clamp(min(270px, 40%), var(--list-width), calc(100% - min(340px, 48%) - 14px)) 14px minmax(0, 1fr);
+}
+
+.discovery-workspace:has(> .job-detail-pane.open) .discovery-divider {
+  display: grid;
+  place-items: center;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  border-radius: 8px;
+}
+
+.discovery-workspace .job-detail-pane {
+  min-width: 0;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  scrollbar-gutter: auto;
+}
+
+.discovery-workspace .job-detail-pane-toolbar {
+  position: static;
+  max-width: 78ch;
+  margin-inline: auto;
+  padding: 20px clamp(14px, 2vw, 32px) 0;
+  font-size: 12px;
+  letter-spacing: 0;
+  font-weight: 550;
+  text-transform: none;
+  border: 0;
+  background: transparent;
+}
+
+.discovery-workspace .job-detail-pane-close .icon { width: 13px; height: 13px; transform: rotate(180deg); }
+
+.discovery-workspace .job-detail-content {
+  margin-inline: auto;
+  max-width: 78ch;
+  padding: 22px clamp(14px, 2vw, 32px) 32px;
+  overflow-wrap: anywhere;
+}
+
+.job-detail-content .job-ai-actions {
+  position: sticky;
+  top: 45px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 6px 0 9px;
+  border: 0;
+  background: var(--surface);
+}
+
+.job-ai-actions .primary-button, .job-tools-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 13px;
+  border-radius: 11px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.job-tools-menu { position: relative; }
+
+.job-tools-menu > summary { gap: 7px; background: var(--surface-2); font-weight: 550; list-style: none; }
+
+.job-tools-menu > summary::-webkit-details-marker { display: none; }
+
+.job-tools-menu > summary::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid;
+  border-bottom: 1.5px solid;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.job-tools-menu > div {
+  display: grid;
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 3px);
+  left: 0;
+  min-width: 145px;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--popover-shadow);
+}
+
+.job-tools-menu .btn-ai-action {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  padding: 8px 10px;
+}
+
+.job-tools-menu .btn-ai-action:hover { background: var(--accent-soft); color: var(--accent); }
+
+.job-detail-content .detail-description { color: var(--ink); line-height: 1.65; font-size: 14px; }
+
+.posting-page .job-detail-pane {
+  container: posting-reader / inline-size;
+  background: var(--reader-surface);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overscroll-behavior: contain;
+}
+
+.posting-page .job-detail-pane-toolbar {
+  position: static;
+  max-width: 830px;
+  margin: 0 auto;
+  padding: 23px clamp(24px, 4.7vw, 82px) 0;
+  background: transparent;
+  border: 0;
+}
+
+.posting-page .job-detail-content {
+  max-width: 830px;
+  margin: 0 auto;
+  padding: clamp(24px, 4vh, 48px) clamp(24px, 4.7vw, 82px) 70px;
+}
+
+.posting-employer strong { display: block; font-size: 15px; line-height: 1.35; font-weight: 620; }
+
+.posting-employer span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+.posting-masthead h2 { margin: 23px 0 9px; color: var(--ink); font: 500 clamp(34px, 3.7vw, 58px)/1.03 var(--posting-serif); letter-spacing: -.045em; text-wrap: balance; }
+
+.posting-date { margin: 0; color: var(--muted); font-size: 12px; }
+
+.job-detail-content .posting-actions {
+  position: sticky;
+  top: 12px;
+  z-index: 4;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 0;
+  padding: 5px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+/* A separate glass layer lets the open menu sample the scrolling document
+   underneath the toolbar without nesting two backdrop filters. */
+.posting-actions-material {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border: 1px solid var(--glass-edge);
+  border-radius: inherit;
+}
+
+.posting-actions .primary-button, .posting-actions .job-tools-menu > summary {
+  justify-content: center;
+  padding: 6px 14px;
+  min-height: 36px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.posting-actions posting-menu { display: inline-flex; }
+
+.posting-actions posting-menu .lg-button[data-icon-only] {
+  width: auto;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+.posting-actions posting-menu .lg-button__icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  white-space: nowrap;
+}
+
+.posting-actions posting-menu .lg-button__icon svg { width: 12px; height: 12px; }
+
+.posting-actions .posting-apply-menu .lg-button { color: var(--on-action); background: var(--action); }
+
+.posting-actions .lg-menu.lg-glass {
+  --lg-glass-fill: color-mix(in srgb, var(--lg-menu-fill) 78%, transparent);
+  --lg-glass-blur: 18px;
+}
+
+.posting-actions .lg-menu__item { min-height: 38px; font-size: 13px; }
+
+.posting-actions .lg-menu__icon { width: 17px; height: 17px; }
+
+.posting-actions .lg-menu__item:focus-visible { outline: 2px solid var(--focus); outline-offset: -3px; }
+
+@container posting-reader (max-width: 410px) {
+  .posting-actions :is(.primary-button, .posting-apply-menu) + posting-menu .lg-menu-surface { left: -68px; }
+}
+
+.posting-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 17px 28px; margin: 27px 0 30px; padding: 19px 0; border-block: 1px solid var(--line); }
+
+.posting-facts div { min-width: 0; }
+
+.posting-facts dt { margin: 0 0 3px; color: var(--muted); font-size: 11px; }
+
+.posting-facts dd { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.45; font-weight: 560; }
+
+.posting-document .posting-body h3, .posting-skills h3 { margin: 0 0 13px; color: var(--ink); font-size: 19px; font-weight: 620; letter-spacing: -.03em; }
+
+.posting-document .detail-description { padding: 0; color: var(--ink); font-size: 14.5px; line-height: 1.75; }
+
+.posting-skills { margin-top: 28px; }
+
+.posting-skills p { margin: 0; color: var(--muted); line-height: 1.65; }
+
+.posting-page .posting-workspace:has(> .job-detail-pane.open) {
+  grid-template-columns: clamp(270px,var(--list-width),calc(100% - 310px)) 7px minmax(0,1fr);
+}
+
+.posting-page .posting-workspace:has(> .job-detail-pane.open) .discovery-divider {
+  display: grid;
+  place-items: center;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  border-radius: 0;
+  background: linear-gradient(90deg, var(--index-surface) 45%, var(--line) 45% 55%, var(--reader-surface) 55%);
+}
+
+@media (max-width: 680px) {
+  .posting-page .posting-workspace:has(> .job-detail-pane.open) { grid-template-columns: minmax(0, 1fr); }
+
+  .posting-page .posting-workspace:has(> .job-detail-pane.open) > :is(.results-panel, .discovery-divider) { display: none; }
+}
+
+.posting-actions .posting-source-menu > summary {
+  color: var(--on-action);
+  background: var(--action);
+}
+
+.posting-actions .posting-source-menu > summary:hover { background: var(--action-hover); }
+
+.posting-source-menu a {
+  padding: 7px 9px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+}
+
+.posting-source-menu a:hover { color: var(--accent); background: var(--accent-soft); }
+
+.posting-page .posting-actions .job-tools-menu > div {
+  border: 1px solid var(--glass-edge);
+  background-color: var(--glass);
+  box-shadow: var(--popover-shadow);
+}
