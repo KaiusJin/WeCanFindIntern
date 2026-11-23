@@ -26,11 +26,11 @@ TRANSIENT_STATUS = {500, 502, 503, 504}
 MISSING_STATUS = {404, 410, 422}
 TRANSIENT_BACKOFF_SECONDS = (2, 5, 15)
 # A 429 pauses only that host and retries the same request; it never fails a board.
-# Workday throttles every client per pod (residential and CSC IPs alike), so short
-# pauses that relax after each success keep the queue moving; a Retry-After header
-# from the host wins over the ladder.
-COOLDOWN_LADDER_SECONDS = (10, 20, 40, 60)
-RETRY_AFTER_MAX_SECONDS = 120
+# Workday throttles every client (residential and CSC IPs alike), so short pauses
+# that relax after each success keep the queue moving; a Retry-After header from the
+# host wins over the ladder.
+COOLDOWN_LADDER_SECONDS = (5, 10, 20, 30)
+RETRY_AFTER_MAX_SECONDS = 60
 # Workday pods (wd1, wd3, wd5, ...) host many tenants and throttle per pod, so each
 # pod gets a single sequential worker; the JSON board APIs tolerate a few in parallel.
 WORKDAY_MIN_INTERVAL_SECONDS = 0.3

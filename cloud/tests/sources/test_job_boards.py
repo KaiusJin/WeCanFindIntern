@@ -475,9 +475,9 @@ def test_cooldown_is_short_and_relaxes_after_each_success(monkeypatch):
         [FakeResponse(429), FakeResponse(429), FakeResponse(429), ok, FakeResponse(429), ok]
     )
     assert get("u") == {"ok": True}
-    assert waits == [10, 20, 40]  # ladder, not the old 30/60/120/300
+    assert waits == [5, 10, 20]  # ladder
     assert get("u") == {"ok": True}
-    assert waits[-1] == 40  # next would have been 60; one success stepped it down
+    assert waits[-1] == 20  # next would have been 30; one success stepped it down
 
 
 def test_retry_after_header_wins_over_the_ladder(monkeypatch):
@@ -487,7 +487,7 @@ def test_retry_after_header_wins_over_the_ladder(monkeypatch):
     huge.headers["Retry-After"] = "9999"
     get, waits = _getter_with([limited, huge, FakeResponse(200, {})])
     assert get("u") == {}
-    assert waits == [3, 120]  # honoured, capped at RETRY_AFTER_MAX_SECONDS
+    assert waits == [3, 60]  # honoured, capped at RETRY_AFTER_MAX_SECONDS
 
 
 def test_workday_pods_get_their_own_sequential_queue():
