@@ -1,0 +1,140 @@
+/* Conversation history menu: switch to or delete an earlier conversation. */
+
+.agent-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.agent-session-chip-row {
+  position: relative;
+  min-width: 0;
+}
+
+.agent-session-chip {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  display: block;
+  font-size: 13px;
+  overflow: hidden;
+  padding: 9px 42px 9px 10px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.agent-session-chip-row .agent-session-chip {
+  display: block;
+}
+
+.agent-session-delete {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 13px;
+  height: 30px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, opacity 150ms ease;
+  width: 30px;
+}
+
+.agent-session-delete svg {
+  fill: none;
+  height: 15px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.1;
+  width: 15px;
+}
+
+.agent-session-chip-row:hover .agent-session-delete,
+.agent-session-delete:focus-visible {
+  opacity: 1;
+}
+
+.agent-session-delete:hover,
+.agent-session-delete:focus-visible {
+  background: var(--danger-soft);
+  border-color: var(--danger-soft);
+  color: var(--danger);
+}
+
+.agent-session-chip:hover {
+  background: var(--canvas);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.agent-session-chip.active {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.conversation-history > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--lg-fg);
+  font-size: 13px; font-weight: 550; line-height: 1.4;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.conversation-history summary::-webkit-details-marker { display: none; }
+
+.conversation-history > summary:hover, .conversation-history[open] > summary {
+  background: var(--surface-2); color: var(--ink);
+}
+
+.conversation-history { position: relative; }
+
+.conversation-history-menu {
+  position: absolute;
+  width: 295px;
+  top: calc(100% + 6px);
+  right: 0;
+}
+
+.conversation-history-menu h2, .conversation-list-status { font-size: 12px; font-weight: 530; margin: 0 8px 8px; color: var(--muted); }
+
+.conversation-list-status { margin-block: 12px; font-weight: 400; }
+
+.conversation-history-menu .agent-session-list { max-height: min(42dvh, 420px); overflow: auto; }
+
+.conversation-history-menu .agent-session-chip { font-size: 13px; padding-block: 9px; }
+
+.conversation-history-menu .agent-session-chip.active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+
+.agent-session-delete { opacity: 0; }
+
+.agent-session-chip-row:focus-within .agent-session-delete, .agent-session-chip-row:hover .agent-session-delete { opacity: 1; }
+
+@media (hover: none) {
+  .agent-session-delete { opacity: 1; }
+}
+
+@media (max-width: 480px) {
+  .conversation-history { position: static; }
+
+  .conversation-history-menu { left: 0; right: auto; width: min(295px, 100%); }
+}

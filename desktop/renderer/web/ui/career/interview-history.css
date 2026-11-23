@@ -1,0 +1,220 @@
+/* Interview practice history: past sessions, score trend and a session's review. */
+
+.history-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.history-head h2 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.interview-trend-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+.history-stat {
+  min-width: 0;
+}
+
+.history-stat strong {
+  display: block;
+  letter-spacing: -0.02em;
+}
+
+.history-stat span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.interview-session-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-empty {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.history-row {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+  display: flex;
+  gap: 16px;
+  padding: 12px 4px;
+}
+
+.history-row:hover {
+  background: var(--canvas);
+}
+
+.history-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-row-top {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.history-progress {
+  border-radius: 999px;
+  height: 5px;
+  max-width: 320px;
+  overflow: hidden;
+}
+
+.history-progress span {
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+}
+
+.history-progress-label {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.history-row-score {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.history-row-score span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.history-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px;
+}
+
+.history-row:hover .history-delete {
+  opacity: 1;
+}
+
+.interview-session-detail {
+  margin-top: 14px;
+}
+
+.interview-detail-answer {
+  border-top: 1px solid var(--surface-2);
+  padding: 10px 0;
+  font-size: 13px;
+}
+
+.timeline-list {
+  display: grid;
+  gap: 10px;
+}
+
+.timeline-event-item {
+  align-items: flex-start;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.timeline-ts {
+  background: var(--accent-soft);
+  border-radius: 6px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.timeline-obs {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ats-breakdown-track, .history-progress { background: var(--line); }
+
+.ats-breakdown-track span, .history-progress span { background: var(--accent); }
+
+#interview-history-card .history-head { margin-bottom: 16px; }
+
+.history-delete { border-radius: var(--control-radius); color: var(--muted); }
+
+.interview-trend-summary { gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+
+.history-stat { text-align: left; }
+
+.history-stat strong { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; }
+
+.history-open {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  padding: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  border-radius: var(--control-radius);
+  cursor: pointer;
+}
+
+.history-row:has(.history-open[aria-expanded=true]) { background: var(--accent-soft); }
+
+.history-open :is(.history-row-main,.history-progress) { display: block; }
+
+.history-delete { opacity: 1; }
+
+#interview-session-detail { border-top: 1px solid var(--line); margin-top: 12px; }
+
+.interview-detail-answer { border-color: var(--line); }
+
+.career-workspace .timeline-event-item,
+.career-workspace .criterion-result { background: var(--surface-2); color: var(--ink); border-color: var(--line); }
+
+.career-workspace .timeline-ts { color: var(--accent); background: var(--accent-soft); white-space: normal; }
+
+.practice-room #interview-history-card { margin-top: 18px; }
+
+.practice-room #interview-history-heading { scroll-margin: 20px; }
+
+.practice-room .interview-trend-summary { border: 0; }
+
+.practice-room .history-stat strong { color: var(--ink); font-family: var(--font-sans); font-weight: 400; font-size: 26px; }
+
+.practice-room .history-delete { min-width: 32px; min-height: 32px; }
+
+.practice-room .history-open:hover { color: var(--accent); }
+
+.practice-room .timeline-event-item, .practice-room .criterion-result { background: var(--surface-2); border-color: var(--line); color: var(--ink); }
+
+.practice-room .timeline-ts { background: var(--accent-soft); color: var(--accent); white-space: normal; }
+
+@container practice-window (max-width: 620px) {
+  .practice-room .history-head { flex-wrap: wrap; }
+}

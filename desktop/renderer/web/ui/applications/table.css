@@ -57,13 +57,11 @@
   width: auto;
 }
 
-.tracker-table td { border-bottom: 1px solid; }
+.tracker-table td { border-bottom: 1px solid; font-size: 12px; vertical-align: middle; }
 
 #tab-tracker .tracker-table td {
   border-color: var(--line);
   color: var(--muted);
-  font-size: 12px;
-  vertical-align: middle;
   overflow-wrap: anywhere;
 }
 

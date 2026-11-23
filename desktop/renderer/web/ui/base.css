@@ -23,20 +23,6 @@ html:has(dialog[open]), body:has(dialog[open]) {
   text-transform: uppercase;
 }
 
-.text-button {
-  background: transparent;
-  border: 0;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 0;
-  cursor: pointer;
-}
-
-.text-button:hover {
-  color: var(--accent);
-}
-
 .field-label {
   color: var(--muted);
   display: block;
@@ -163,12 +149,9 @@ html:has(dialog[open]), body:has(dialog[open]) {
   display: none !important;
 }
 
-.career-card, .profile-editor-panel, .agent-main, .agent-recommendation-card {
+.career-card, .agent-main, .agent-recommendation-card {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-}
-
-.career-card, .profile-editor-panel {
 }
 
 * {
@@ -208,14 +191,10 @@ html:has(dialog[open]), body:has(dialog[open]) {
   border-radius: 8px;
 }
 
-.career-card, .profile-editor-panel, .agent-main {
+.career-card, .agent-main {
   border-color: var(--line);
   border-radius: 11px;
   box-shadow: var(--shadow);
-}
-
-.text-button {
-  color: var(--accent);
 }
 
 button:focus-visible,

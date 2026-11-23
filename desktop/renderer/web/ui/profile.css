@@ -1,36 +1,30 @@
-/* Profile workspace */
-.profile-workspace { display: grid;     }
+/* Profile: a document-style editor, one chapter at a time. Its scrollbar stays on the app stage. */
+#tab-profile:not([hidden]) {
+  display: block;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
 
-.profile-editor-panel { background: var(--surface); border: 1px solid var(--line);  }
+#tab-profile .profile-workspace {
+  display: block;
+  width: min(100%, 1040px);
+  height: auto;
+  min-height: 0;
+  margin-inline: auto;
+  padding: clamp(22px, 4.5vh, 46px) 0 40px;
+  overflow: visible;
+}
 
-.profile-editor-panel {  min-width: 0; }
+#tab-profile .profile-editor-panel {
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  overflow: visible;
+}
 
-.profile-editor-toolbar, .profile-section-heading, .profile-item-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
-
-.profile-editor-toolbar h2 { margin: 3px 0 0; }
-
-.profile-help { color: var(--muted); font-size: 13px; line-height: 1.55; }
-
-.profile-divider { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; margin: 18px 0 12px; text-transform: uppercase; letter-spacing: .07em; }
-
-.profile-divider::before, .profile-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-
-.profile-code-input { font-family: var(--font-mono); font-size: 12px; margin-bottom: 10px; }
-
-.profile-toolbar-actions { display: flex; gap: 9px; }
-
-.profile-section-card { border: 0; border-radius: 0; margin-top: 20px; padding: 20px 0 0; }
-
-#profile-repeat-sections .profile-section-card { border-top: 1px solid var(--line); }
-
-.profile-section-heading { margin-bottom: 16px; }
-
-.profile-section-heading > div { display: flex; align-items: center; gap: 9px; }
-
-.profile-section-heading h3 { margin: 0; font-size: 17px; }
-
-.profile-section-heading small { color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: 3px 7px; }
-
+/* Fields and repeatable entries */
 .profile-basic-grid, .profile-item-grid { display: grid; gap: 14px 12px; }
 
 .profile-basic-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
@@ -47,96 +41,16 @@
 
 .profile-items { display: grid; gap: 12px; }
 
-.profile-item-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 15px; }
-
-.profile-item-head { margin-bottom: 12px; }
-
-.profile-add-item, .profile-remove-item-button { align-items: center; background: transparent; border: 0; border-radius: 7px; color: var(--muted); cursor: pointer; display: inline-flex; flex: 0 0 28px; font-size: 22px; font-weight: 400; height: 28px; justify-content: center; line-height: 1; padding: 0; transition: background-color .15s ease, color .15s ease; width: 28px; }
-
-.profile-add-item { font-size: 25px; }
-
-.profile-add-item:hover, .profile-add-item:focus-visible { background: var(--surface-2); color: var(--accent); }
-
-.profile-remove-item-button:hover, .profile-remove-item-button:focus-visible { background: var(--danger-soft); color: var(--danger); }
-
 .profile-section-skills .profile-items { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 8px; }
 
-.profile-skill-card { background: transparent; border: 0; display: block; padding: 0; position: relative; }
+.profile-item-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 15px; }
 
-.profile-skill-card .profile-item-grid { display: block; flex: 1; min-width: 0; }
+.profile-item-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 12px; }
 
-.profile-skill-card label > span { display: none; }
+/* Resume import sheet */
+.profile-help { color: var(--muted); font-size: 13px; line-height: 1.55; }
 
-.profile-skill-card .career-input { min-height: 34px; padding: 7px 28px 7px 9px; }
-
-.profile-skill-remove { align-items: center; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 50%; box-shadow: 0 1px 3px rgba(23, 45, 58, .12); box-sizing: border-box; color: var(--muted); cursor: pointer; display: flex; font-size: 0; height: 18px; justify-content: center; line-height: 1; padding: 0; position: absolute; right: -5px; top: -5px; transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease, transform .15s ease; width: 18px; z-index: 1; }
-
-.profile-skill-remove::before { background: currentColor; border-radius: 999px; content: ""; height: 1.5px; position: absolute; width: 9px; }
-
-.profile-skill-remove:hover, .profile-skill-remove:focus-visible { background: var(--danger-soft); border-color: var(--danger-soft); box-shadow: 0 2px 5px rgba(180, 35, 24, .16); color: var(--danger); transform: scale(1.06); }
-
-.profile-section-empty { border: 1px dashed var(--line); border-radius: 9px; padding: 18px; color: var(--muted); font-size: 12px; text-align: center; }
-
-.profile-workspace {
-  margin-left: 0;
-  margin-right: 0;
-  max-width: none;
-  padding-left: 0;
-  padding-right: 0;
-}
-
-.profile-workspace {
-  padding-bottom: 44px;
-}
-
-.profile-workspace {
-  align-items: stretch;
-  flex: 1;
-  gap: 16px;
-  grid-template-columns: minmax(260px, 310px) minmax(0, 1fr);
-  min-height: 0;
-  overflow: hidden;
-  padding: 0 0 18px;
-}
-
-#tab-profile:not([hidden]) {
-  flex-direction: column;
-  min-height: 0;
-}
-
-.profile-editor-panel {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 20px;
-}
-
-/* Profile autofill lives in the editor toolbar instead of a separate import card. */
-#tab-profile .profile-workspace {
-  display: block;
-}
-
-#tab-profile .profile-editor-panel {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  overflow-y: auto;
-  padding: 0;
-}
-
-#tab-profile .profile-editor-toolbar {
-  align-items: flex-start;
-  min-height: 52px;
-}
-
-#tab-profile .profile-editor-heading {
-  min-width: 0;
-}
-
-#tab-profile .profile-toolbar-actions {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
+.profile-code-input { font-family: var(--font-mono); font-size: 12px; margin-bottom: 10px; }
 
 .profile-autofill-dialog {
   background: transparent;
@@ -150,14 +64,6 @@
 .profile-autofill-dialog::backdrop {
   background: rgba(22, 66, 91, 0.28);
   backdrop-filter: blur(2px);
-}
-
-.profile-autofill-dialog-card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: 0 18px 50px rgba(22, 66, 91, 0.2);
-  padding: 24px;
 }
 
 .profile-autofill-dialog-head {
@@ -211,27 +117,7 @@
   margin-top: 20px;
 }
 
-/* Profile is a document-style editor: keep its scrollbar on the app stage,
-   rather than creating a second scrollbar inside the editor panel. */
-#tab-profile:not([hidden]) {
-  display: block;
-  height: auto;
-  overflow: visible;
-}
-
-#tab-profile .profile-workspace {
-  height: auto;
-  overflow: visible;
-}
-
-#tab-profile .profile-editor-panel {
-  height: auto;
-  overflow: visible;
-}
-
-/* One editable profile chapter at a time. */
-#tab-profile .profile-workspace { width: min(100%, 1040px); margin-inline: auto; padding: clamp(22px, 4.5vh, 46px) 0 40px; }
-
+/* Heading: identity, completion and import actions */
 #tab-profile .profile-identity {
   display: flex;
   align-items: center;

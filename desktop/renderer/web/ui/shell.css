@@ -160,8 +160,6 @@ html,
 
 .app-stage > main { height: 100%; min-height: 0; background: transparent; scroll-behavior: auto; }
 
-:where(.section-heading) h2 { letter-spacing: -.025em; }
-
 .tab-pane.active { animation: pane-in var(--ease); }
 
 @keyframes pane-in { from { opacity: .55; } to { opacity: 1; } }
