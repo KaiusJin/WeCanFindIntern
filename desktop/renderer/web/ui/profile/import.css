@@ -1,0 +1,102 @@
+/* Resume import sheet: upload or paste a resume to fill in the profile. */
+
+.profile-help { color: var(--muted); font-size: 13px; line-height: 1.55; }
+
+.profile-code-input { font-family: var(--font-mono); font-size: 12px; margin-bottom: 10px; }
+
+.profile-autofill-dialog {
+  background: transparent;
+  border: 0;
+  margin: auto;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  width: 100%;
+}
+
+.profile-autofill-dialog::backdrop {
+  background: rgba(22, 66, 91, 0.28);
+  backdrop-filter: blur(2px);
+}
+
+.profile-autofill-dialog-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.profile-autofill-dialog-head h2 {
+  font-size: 22px;
+  margin: 3px 0 0;
+}
+
+.profile-autofill-close {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 24px;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+}
+
+.profile-autofill-panel {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.profile-autofill-panel[hidden] {
+  display: none;
+}
+
+.profile-autofill-file-name {
+  color: var(--muted);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-autofill-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.profile-document .profile-native-field > textarea, #profile-autofill-dialog .profile-code-input {
+  background: color-mix(in srgb, var(--surface) 65%, var(--canvas));
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+}
+
+#profile-autofill-dialog .profile-import-content { display: grid; gap: 20px; }
+
+#profile-autofill-dialog .profile-autofill-dialog-head { align-items: center; }
+
+#profile-autofill-dialog .profile-autofill-dialog-head h2 { margin: 0; line-height: 1.25; letter-spacing: -.035em; }
+
+#profile-autofill-dialog .profile-autofill-dialog-head .lg-button { flex: none; --lg-h: 32px; }
+
+#profile-autofill-dialog .profile-help { margin: 0; font-size: 14px; line-height: 1.6; }
+
+#profile-autofill-dialog .profile-autofill-panel {
+  flex-wrap: wrap; gap: 12px; margin: 0; padding: 16px;
+  border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
+}
+
+#profile-autofill-dialog .profile-autofill-file-name {
+  flex: 1 1 120px; font-size: 13px; white-space: normal; overflow-wrap: anywhere;
+}
+
+#profile-autofill-dialog .profile-autofill-dialog-actions { margin: 0; padding-top: 20px; border-top: 1px solid var(--line); }
+
+#profile-autofill-dialog .profile-code-input { width: 100%; min-height: 120px; max-height: 42vh; resize: vertical; }
+
+body:has(#profile-autofill-dialog[open]) #app-main { overflow: hidden; }
